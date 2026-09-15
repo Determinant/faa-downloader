@@ -1,121 +1,57 @@
-# Proposed d-TPP procedure builder
+# d-TPP procedure catalog
 
-Status: design for implementation; no builder exists yet
+Status: implemented
 
-`faa-regs` should produce the authoritative, cycle-versioned FAA procedure feed used
-by AWC Plus. It owns source discovery and parsing so downstream applications do not
-independently interpret FAA d-TPP HTML/XML or infer current cycles.
+`faa-regs` builds the cycle-versioned procedure feed used by ZLayers. Downstream
+clients do not need to parse FAA HTML/XML or split the combined TPP PDFs.
 
-## Source
-
-Use the FAA digital Terminal Procedures Publication (d-TPP) current/next catalog and
-XML metafile:
-
-- <https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/>
-- <https://aeronav.faa.gov/d-tpp/Metafile_XML_Definitions.pdf>
-
-The root XML provides the cycle and effective interval. Retain the state, city,
-volume, airport, and record hierarchy, including `apt_ident`, `icao_ident`, `alnum`,
-`chartseq`, `chart_code`, `chart_name`, `useraction`, `pdf_name`, change-notice and
-bound-volume fields, `procuid`, civil/military flags, amendment number, and amendment
-date.
-
-Unknown chart codes or new fields must survive normalization. Do not discard a record
-because its code is not in the initial UI grouping table.
-
-## Commands
-
-Add a standalone builder:
+## Build
 
 ```bash
 npm run build:procedures
-npm run build:procedures -- --airports=KPAO,KSNS,KSBP
-npm run build:procedures -- --volumes=SW1,SW2
-npm run build:procedures -- --all
 npm run build:procedures -- --source-xml=/path/to/d-TPP_Metafile.xml
 ```
 
-Default behavior downloads and validates metadata only. `--airports` and `--volumes`
-download the selected documents; `--all` is the explicit full-mirror operation and
-must print the discovered count/estimated size before transfer. `build:charts` should
-invoke the metadata-only stage so the current chart build also publishes a procedure
-catalog without unexpectedly downloading the entire d-TPP collection.
-
-For a fully local/reproducible test, `--source-xml` plus an explicit local PDF source
-directory performs no network access.
+`build:charts` runs this stage automatically. A local source XML makes the standalone
+build network-free.
 
 ## Output
 
 ```text
-dist/procedures/<cycle>/
+dist/charts/<effective-date>/tpp/
 ├── catalog.json
-├── manifest.json
-└── pdf/
-    └── <selected PDF files>
+└── manifest.json
 ```
 
-`catalog.json` contains normalized records keyed/grouped by both FAA and ICAO airport
-identifiers. A record contains:
+The catalog contains every FAA airport and procedure record for the cycle. It keeps
+all procedure-record fields, including unknown fields, and adds:
 
-- stable record ID and schema version;
-- FAA d-TPP cycle and effective instants;
-- state, city, volume, airport identifiers/name/sort value;
-- original FAA record fields and a normalized procedure kind;
-- canonical source URL and local artifact ID;
-- first-page or named-destination target; and
-- optional validated zero-based page index.
+- a stable record ID and normalized product kind;
+- a canonical FAA individual-PDF URL;
+- the exact named destination used by shared PDFs; and
+- a combined-volume ID and verified zero-based PDF page index when available.
 
-`manifest.json` records the source catalog URL/SHA-256, generated time, record and
-airport counts, selected scope, every downloaded document's byte length/SHA-256, and
-builder/schema versions. Write into a staging directory and replace the cycle output
-only after all required files and JSON schemas pass.
+The manifest records cycle dates, source and volume SHA-256 hashes, counts, and schema
+and builder versions. Its indexed and unindexed counts make partial regional builds
+explicit. Outputs are staged and replaced atomically.
 
-## Individual and shared documents
+## Page targets
 
-Individual airport diagrams, IAPs, DPs/ODPs, and STARs normally point at their own PDF
-files. Shared takeoff, alternate, and radar-minimum PDFs use one asset for many
-airports. FAA links to an airport with a named destination; for example:
+The FAA `bvpage` value is a printed page label, not a PDF page index. The builder reads
+the combined TPP page geometry, matches the printed label at the physical page edge,
+and publishes the zero-based index. It also locates each airport's first page in shared
+sections for takeoff minima, textual ODPs, DVAs, alternate/radar minima, hot spots, and
+LAHSO material.
 
-```text
-https://aeronav.faa.gov/d-tpp/2609/sw2to.pdf#nameddest=(PAO)
-```
+IAPs, airport diagrams, SIDs, charted ODPs, and STARs normally carry direct printed
+page targets. Some military-only products have no combined-volume fields; those retain
+their individual FAA PDF URL and have a null volume target. Any advertised target that
+cannot be resolved makes the build fail.
 
-Store the artifact URL without the fragment and the exact named destination as a
-separate target. Download/checksum a shared asset once. Validate the destination with
-a PDF parser compatible with PDF.js semantics and optionally materialize its page
-index. If resolution fails, mark that record invalid and report it; do not guess using
-text extraction or page order.
+The combined PDFs are immutable inputs. The builder only reads and checksums them; it
+does not split, rewrite, or duplicate them. ZLayers can therefore open one original PDF
+at the indexed page and cache that source file on demand.
 
-## Initial normalized kinds
-
-The first UI mapping covers:
-
-- `APD`: airport diagram;
-- `IAP`: instrument approach;
-- `DP` and `ODP`: departure;
-- `STAR`/`STR`: arrival;
-- `MIN` section `C`: takeoff minima;
-- `MIN` section `E`: alternate minima;
-- `MIN` section `N`: radar minima; and
-- every other code: other, with original fields intact.
-
-This mapping is presentation metadata. It is not permission to omit unusual FAA
-records.
-
-## Current/next cycle handling
-
-Publish current and next catalogs separately when the FAA exposes both. Stage the next
-cycle early but do not relabel it current before its effective instant. Retain at least
-the previous cycle subject to the same explicit storage policy used for chart/NASR
-outputs. Never merge procedure records from two cycles under one revision.
-
-## Initial tests
-
-- Parse a small XML fixture containing KPAO, KSNS, and KSBP.
-- Preserve all known source fields and one unknown chart code.
-- Build one individual-PDF record and one shared-PDF record.
-- Resolve `(PAO)` in the Southwest 2 takeoff-minimum PDF.
-- Deduplicate a shared PDF referenced by multiple airports.
-- Reject checksum mismatch, unresolved named destination, path traversal in
-  `pdf_name`, mixed cycles, and incomplete staged output.
-- Prove metadata-only and fully local builds make no unrequested network calls.
+Only combined volumes already present under `dist/charts/` are indexed. This keeps a
+partial regional chart build valid while the nationwide individual-PDF catalog remains
+complete.

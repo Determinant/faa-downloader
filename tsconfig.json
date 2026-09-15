@@ -17,6 +17,8 @@
   },
   "include": [
     "build-far.ts",
+    "build-chart-manifests.ts",
+    "build-procedures.ts",
     "download-aim.ts",
     "download-charts.ts",
     "download-nasr.ts",

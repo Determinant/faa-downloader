@@ -5,7 +5,7 @@ FAA Downloader is a collection of build tools for creating local, offline-friend
 - FAR: a responsive, searchable PWA generated from Title 14 CFR data.
 - AIM: a local mirror of the FAA Aeronautical Information Manual HTML site.
 - Charts: a downloader and GDAL-based tiler for current FAA aeronautical charts,
-  plus map-ready NASR airports and navigation data.
+  plus map-ready NASR navigation data and a d-TPP procedure catalog.
 
 The generated data is intended for personal reference and offline use. It is not an official FAA publication and should not replace current FAA source material, notices, or operational requirements.
 
@@ -15,10 +15,12 @@ The generated data is intended for personal reference and offline use. It is not
 | --- | --- | --- |
 | npm run build | FAR PWA from the current eCFR snapshot | dist/far/ |
 | npm run build:aim | Offline-capable AIM mirror | dist/aim/ |
-| npm run build:charts | Current FAA charts, WebP MBTiles, and NASR navigation data | dist/charts/, dist/zips/ |
+| npm run build:charts | Current charts, MBTiles, NASR data, and procedure metadata | dist/charts/, dist/zips/ |
+| npm run build:chart-manifests | Verify chart build receipts and refresh cycle manifests | dist/charts/YYYY-MM-DD/chart-manifest.json |
 | npm run build:nasr | Current NASR airports, fixes, VFR waypoints, NAVAIDs, and airways | dist/charts/YYYY-MM-DD/nav/, dist/charts/YYYY-MM-DD/nasr/ |
+| npm run build:procedures | Current airport/procedure catalog and combined-TPP page index | dist/charts/YYYY-MM-DD/tpp/ |
 
-The three builders are independent. Run only the product you need, or build all three into the shared dist/ directory.
+Run only the product you need, or build them into the shared dist/ directory.
 
 ## Data sources
 
@@ -27,14 +29,24 @@ The three builders are independent. Run only the product you need, or build all 
 - AIM: [FAA AIM HTML publication](https://www.faa.gov/air_traffic/publications/atpubs/aim_html/)
 - Charts: [FAA Aeronautical Information Services](https://aeronav.faa.gov/)
 - Airports/navigation: [FAA 28-day NASR Subscription](https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/)
+- Procedures: [FAA digital TPP](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/)
 
-The source date and scope are written into the generated FAR interface. Chart downloads are selected from the latest available FAA directory entries; if FAA has not published a requested regional file for that edition, the builder reports a warning and continues.
+The source date and scope are written into the generated FAR interface. Chart downloads are selected from the latest available FAA directory entries. A configured region absent from an FAA listing produces a warning; a listed file that fails to download aborts the build rather than publishing a silently incomplete collection.
+
+FAA chart GeoTIFFs contain the entire printed sheet, including collars, legends, and
+insets that are not part of the accurately georeferenced main chart. The chart builder
+clips every configured VFR and IFR raster to a reviewed geographic neatline before
+reprojection and MBTiles generation. The sectional, TAC, and IFR cutlines are adapted
+from the MIT-licensed [N129BZ/chartmaker](https://github.com/N129BZ/chartmaker)
+project; the flyway neatlines were measured against the FAA 2026-09-03 rasters. A new
+VFR or IFR raster intentionally fails tiling until its cutline is reviewed and added.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the retained license notice.
 
 ## Quick start
 
 Requirements:
 
-- Node.js 20.9 or newer
+- Node.js 20.16 or newer
 - npm
 - unzip on PATH for safe archive validation and extraction
 - xsltproc on PATH for FAR generation
@@ -53,8 +65,10 @@ Build a product:
 ~~~bash
 npm run build          # FAR PWA
 npm run build:aim      # AIM mirror
-npm run build:charts   # FAA charts, MBTiles, and NASR navigation data
+npm run build:charts   # FAA charts, MBTiles, NASR data, and procedure metadata
+npm run build:chart-manifests # Verify and refresh chart manifests only
 npm run build:nasr     # NASR navigation data without rebuilding chart imagery
+npm run build:procedures # Procedure metadata only
 ~~~
 
 On NixOS, the external command-line prerequisites can be provided with:
@@ -137,11 +151,19 @@ The --clean option used by the npm build replaces an existing mirror only after 
 
 ## FAA charts
 
-npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates WebP MBTiles for raster charts, and builds the current FAA NASR navigation datasets.
+npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates WebP MBTiles for raster charts, and builds the current NASR and d-TPP metadata.
+
+Downloads run four at a time by default, stream to `.part` files, report progress, and
+resume after interruption when the FAA server supports byte ranges. Tune the shared
+chart and NASR download limit when needed:
+
+~~~bash
+npm run build:charts -- --concurrency=8
+~~~
 
 This repository is also the build and maintenance source for the chart artifacts
-published at `https://charts.tedyin.com/charts/`. Downstream applications such as AWC
-Plus should consume those published artifacts together with explicit FAA edition and
+published at `https://charts.tedyin.com/charts/`. Downstream applications such as
+ZLayers should consume those published artifacts together with explicit FAA edition and
 build provenance rather than treating the site as an unrelated third-party source.
 
 Output is organized by publication date:
@@ -153,6 +175,8 @@ dist/
 │       ├── *.pdf
 │       ├── *.tif
 │       ├── *.mbtiles
+│       ├── *.mbtiles.build.json
+│       ├── chart-manifest.json
 │       ├── nav/
 │       │   ├── airports.geojson
 │       │   ├── fixes.geojson
@@ -160,14 +184,17 @@ dist/
 │       │   ├── navaids.geojson
 │       │   ├── airways.json
 │       │   └── manifest.json
-│       └── nasr/
-│           └── *_CSV.zip
+│       ├── nasr/
+│       │   └── *_CSV.zip
+│       └── tpp/
+│           ├── catalog.json
+│           └── manifest.json
 └── zips/
     └── YYYY-MM-DD/
         └── *.zip
 ~~~
 
-The ZIP files are reused on subsequent runs. Generated chart data is ignored by Git because a complete collection is several gigabytes. The chart builder currently produces the download and tile data; it does not provide a chart-viewer PWA.
+Downloaded PDFs and ZIP files are reused on subsequent runs. Each MBTiles file has a build receipt containing source, output, and tiler-configuration hashes; cached tiles are reused only while that receipt still matches. Generated chart data is ignored by Git because a complete collection is several gigabytes. The chart builder currently produces the download and tile data; it does not provide a chart-viewer PWA.
 
 To tile one existing TIFF without downloading anything:
 
@@ -175,7 +202,16 @@ To tile one existing TIFF without downloading anything:
 npm run tile:chart -- --tile=dist/charts/YYYY-MM-DD/chart.tif
 ~~~
 
-The TypeScript tiler preserves the specialized IFR crop windows, expands palette imagery when necessary, reprojects to EPSG:3857, writes WebP MBTiles, and builds overview levels.
+Add `--force` to rebuild an existing MBTiles file. Rebuilds are staged and replaced
+atomically, so the previous chart remains usable if GDAL fails. The original FAA PDF
+and GeoTIFF stay unchanged; MBTiles are static display derivatives.
+
+The TypeScript tiler clips charts to reviewed geographic neatlines, expands palette
+imagery when necessary, uses Lanczos reprojection and overview sampling, writes
+quality-92 WebP MBTiles, and builds every display zoom ahead of publication. Browsers
+only read and cache these static artifacts; the hosting server performs no chart
+rendering. Overview levels extend through factor 128 so high-density clients can retain
+2× chart sampling at the widest supported map view.
 
 ### NASR airports and navigation data
 
@@ -209,10 +245,32 @@ For an offline/local rebuild using previously downloaded group ZIPs:
 npm run build:nasr -- --source-dir=/path/to/zips --cycle=YYYY-MM-DD
 ~~~
 
+### Procedures
+
+The procedure builder reads the FAA d-TPP metafile and catalogs every airport record,
+including IAPs, airport diagrams, SIDs, charted and textual ODPs, STARs, takeoff and
+alternate minima, DVAs, radar minima, hot spots, and uncommon FAA product codes.
+
+Each entry has its FAA individual-PDF URL. When a downloaded electronic TPP volume
+contains the product, it also has a verified zero-based page index. Shared products
+such as takeoff minima are resolved to the first page for that airport. The original
+PDF files are read and checksummed but never rewritten.
+
+To use a saved FAA metafile without network access:
+
+~~~bash
+npm run build:procedures -- --source-xml=/path/to/d-TPP_Metafile.xml
+~~~
+
+Only locally available combined TPP volumes are indexed. The nationwide catalog and
+individual FAA PDF URLs remain complete when chart downloads cover fewer regions.
+
 ## Repository layout
 
 ~~~text
 build-far.ts          FAR source/build entry point
+build-chart-manifests.ts  Chart build-receipt verification and manifest entry point
+build-procedures.ts   d-TPP catalog and combined-volume page-index entry point
 download-aim.ts       AIM mirror entry point
 download-charts.ts    Chart download and MBTiles entry point
 download-nasr.ts      NASR download and normalized navigation-data entry point

@@ -5,7 +5,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { JSDOM } from 'jsdom';
+import {
+    DEFAULT_DOWNLOAD_CONCURRENCY,
+    mapWithConcurrency,
+    parseDownloadConcurrency
+} from './lib/concurrency.ts';
 import { replaceDirectoryAtomically, writeFileAtomic } from './lib/fs-utils.ts';
+import { downloadFile } from './lib/http-download.ts';
 import { buildNasrProducts, type NasrInput } from './lib/nasr.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 
@@ -26,6 +32,7 @@ type Options = {
     output: string;
     retainCycles: number;
     help: boolean;
+    concurrency: number;
     sourceDir?: string;
     cycle?: string;
 };
@@ -34,6 +41,7 @@ function parseArgs(argv: string[]): Options {
     const options: Options = {
         output: 'dist',
         retainCycles: DEFAULT_RETAIN_CYCLES,
+        concurrency: DEFAULT_DOWNLOAD_CONCURRENCY,
         help: false
     };
     for (const arg of argv) {
@@ -41,6 +49,12 @@ function parseArgs(argv: string[]): Options {
         else if (arg.startsWith('--output=')) options.output = arg.slice('--output='.length);
         else if (arg.startsWith('--retain-cycles=')) {
             options.retainCycles = parseRetainCycles(arg.slice('--retain-cycles='.length));
+        }
+        else if (arg.startsWith('--concurrency=')) {
+            options.concurrency = parseDownloadConcurrency(
+                arg.slice('--concurrency='.length),
+                '--concurrency'
+            );
         }
         else if (arg.startsWith('--source-dir=')) options.sourceDir = arg.slice('--source-dir='.length);
         else if (arg.startsWith('--cycle=')) options.cycle = arg.slice('--cycle='.length);
@@ -76,6 +90,7 @@ Downloads the current FAA 28-day NASR CSV groups and creates map-ready data.
 Options:
   --output=DIR        Build root (default: dist)
   --retain-cycles=N   Keep N NASR cycles (default: 2)
+  --concurrency=N     Parallel downloads, 1-16 (default: ${DEFAULT_DOWNLOAD_CONCURRENCY})
   --source-dir=DIR    Use local APT/FIX/NAV/AWY ZIP archives instead of downloading
   --cycle=YYYY-MM-DD  Effective date; required with --source-dir
   --help, -h          Show this help
@@ -144,34 +159,10 @@ async function sha256File(filePath: string): Promise<string> {
 }
 
 export async function downloadNasrFile(url: string, destination: string): Promise<void> {
-    try {
-        const stat = await fs.stat(destination);
-        if (stat.isFile() && stat.size > 0) {
-            try {
-                await validateZipArchive(destination);
-                console.log(`file "${destination}" already exists`);
-                return;
-            } catch (error: any) {
-                console.warn(`replacing invalid cached NASR archive "${destination}": ${error.message}`);
-                await fs.rm(destination, { force: true });
-            }
-        }
-    } catch (error: any) {
-        if (error.code !== 'ENOENT') throw error;
-    }
-
-    console.log(`downloading "${url}"`);
-    const response = await request(url);
-    if (!response.ok) {
-        throw new Error(`FAA request failed (${response.status} ${response.statusText}): ${url}`);
-    }
-    await writeFileAtomic(destination, new Uint8Array(await response.arrayBuffer()));
-    try {
-        await validateZipArchive(destination);
-    } catch (error) {
-        await fs.rm(destination, { force: true });
-        throw error;
-    }
+    await downloadFile(url, destination, {
+        userAgent: 'faa-regs-nasr-builder/1.0',
+        validate: validateZipArchive
+    });
 }
 
 async function findLocalArchive(sourceDir: string, group: NasrGroup): Promise<string> {
@@ -210,13 +201,13 @@ async function acquireArchives(
     const urls = discoverNasrGroupUrls(cycleHtml, current.url);
     const rawDirectory = rawDirectoryForCycle(current.cycle);
     await fs.mkdir(rawDirectory, { recursive: true });
-    const archives = {} as Record<NasrGroup, string>;
-    for (const group of GROUPS) {
+    const downloaded = await mapWithConcurrency(GROUPS, options.concurrency, async group => {
         const filename = path.basename(new URL(urls[group]).pathname);
         const destination = path.join(rawDirectory, filename);
         await downloadNasrFile(urls[group], destination);
-        archives[group] = destination;
-    }
+        return [group, destination] as const;
+    });
+    const archives = Object.fromEntries(downloaded) as Record<NasrGroup, string>;
     return { cycle: current.cycle, archives, urls };
 }
 
@@ -313,6 +304,7 @@ export async function pruneNasrCycles(
 
 type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle'> & {
     retainCycles?: number;
+    concurrency?: number;
 };
 
 export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
@@ -320,6 +312,9 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
         ...options,
         output: options.output || 'dist',
         retainCycles: options.retainCycles ?? DEFAULT_RETAIN_CYCLES,
+        concurrency: parseDownloadConcurrency(
+            options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY
+        ),
         help: false
     };
     if (!Number.isSafeInteger(buildOptions.retainCycles) || buildOptions.retainCycles < 1) {
