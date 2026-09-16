@@ -25,7 +25,12 @@ function parseArgs(argv: string[]): Options {
 function printHelp(): void {
     console.log(`Usage: node --import=tsx build-chart-manifests.ts [options]
 
-Verifies chart build receipts and writes a manifest for each chart cycle.
+Relocates sheet caches into DIR/mbtiles/YYYY-MM-DD/, verifies build receipts,
+and refreshes their chart-manifest.json. Existing delivery packages are flattened
+into DIR/charts/YYYY-MM-DD/mbtiles/ without rerendering or recompressing tiles.
+Requires gdalinfo to read archive bounds and zoom limits.
+Receipts must match the current tiler configuration. Rebuild stale sheets first,
+including IFR sheets made before the Lambert cutline change (see README.md).
 
 Options:
   --output=DIR  Build root (default: dist)
@@ -41,7 +46,7 @@ async function main(): Promise<void> {
     }
     const chartRoot = path.join(options.output, 'charts');
     await writeChartManifests(chartRoot);
-    console.log(`Chart manifests are ready under ${chartRoot}`);
+    console.log(`Chart build caches are ready under ${path.join(options.output, 'mbtiles')}; delivery files remain under ${chartRoot}`);
 }
 
 const entryPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';

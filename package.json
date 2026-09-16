@@ -5,15 +5,17 @@
   "description": "Build offline-friendly FAA FAR, AIM, and chart products.",
   "type": "module",
   "engines": {
-    "node": ">=20.16"
+    "node": ">=24"
   },
   "scripts": {
     "build": "node --import=tsx build-far.ts --combined=dist/far/combined.xml --far=dist/far/far.xml --html=dist/far/index.html --parts-dir=dist/far/far-parts",
     "build:aim": "node --import=tsx download-aim.ts --output=dist/aim --clean",
     "build:chart-manifests": "node --import=tsx build-chart-manifests.ts --output=dist",
+    "build:chart-packages": "node --import=tsx build-chart-packages.ts --output=dist",
     "build:charts": "node --import=tsx download-charts.ts --output=dist",
     "build:nasr": "node --import=tsx download-nasr.ts --output=dist",
     "build:procedures": "node --import=tsx build-procedures.ts --output=dist",
+    "chart-cutlines": "node --import=tsx generate-chart-cutlines.ts",
     "check": "tsc --noEmit",
     "test": "node --import=tsx --test",
     "download-aim": "node --import=tsx download-aim.ts --output=dist/aim",

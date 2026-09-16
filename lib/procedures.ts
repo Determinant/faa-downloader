@@ -3,7 +3,7 @@ import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
 import { JSDOM } from 'jsdom';
 
 export const FAA_DTPP_BASE_URL = 'https://aeronav.faa.gov/d-tpp/';
-export const PROCEDURE_BUILDER_VERSION = 1;
+export const PROCEDURE_BUILDER_VERSION = 2;
 
 export type ProcedureKind =
     | 'airport-diagram'
@@ -169,7 +169,11 @@ export function parseProcedureCatalog(
                 }
                 airportIds.add(airportId);
 
-                const procedures = childElements(airportElement, 'record').map(record => {
+                const activeRecords = childElements(airportElement, 'record').filter(record =>
+                    childText(record, 'useraction').toUpperCase() !== 'D' &&
+                    !/^(?:DELETED_JOB|DEL_APT_SERVED)\.PDF$/i.test(childText(record, 'pdf_name'))
+                );
+                const procedures = activeRecords.map(record => {
                     const chartSequence = requiredChildText(record, 'chartseq');
                     const chartCode = requiredChildText(record, 'chart_code').toUpperCase();
                     const name = requiredChildText(record, 'chart_name');
@@ -293,15 +297,26 @@ export function pageIndexEntry(
     pageHeight: number
 ): IndexedPdfPage {
     const nonempty = textItems.filter(item => item.text.trim());
-    const edgeItems = nonempty.filter(item => item.y <= 35 || item.y >= pageHeight - 35);
+    const text = nonempty.map(item => item.text.trim()).join(' ');
+    // Pacific's inset charts use a separate, left/right-aligned section header.
+    const terminalHeader = nonempty.find(item =>
+        item.text.trim() === 'TERMINAL PROCEDURES' && item.y >= pageHeight - 35
+    );
+    // The Pacific section divider repeats a main-supplement page number.
+    if (terminalHeader && /\btable of contents\b/i.test(text)) {
+        return { pageIndex, text, pageLabels: [] };
+    }
+    const edgeItems = nonempty.filter(item => terminalHeader
+        ? Math.abs(item.y - terminalHeader.y) <= 0.75
+        : item.y <= 20 || item.y >= pageHeight - 20);
     const pageLabels = mergeAdjacentItems(edgeItems).filter(item => {
         const token = normalizePageToken(item.text);
         const centered = Math.abs(item.x + item.width / 2 - pageWidth / 2) <= 12;
-        return centered && isPageLabel(token);
+        return (terminalHeader || centered) && isPageLabel(token);
     }).map(item => normalizePageToken(item.text));
     return {
         pageIndex,
-        text: nonempty.map(item => item.text.trim()).join(' '),
+        text,
         pageLabels: [...new Set(pageLabels)]
     };
 }
@@ -339,7 +354,7 @@ export function discoverDtppEditions(html: string, baseUrl: string): DtppEdition
 
 export function parseVolumeEffectiveInterval(text: string): EffectiveInterval | null {
     const match = text.match(
-        /Effective:\s*\d{4}Z\s+(\d{2})\s+([A-Z]{3})\s+(\d{4})\s+to:\s*\d{4}Z\s+(\d{2})\s+([A-Z]{3})\s+(\d{4})/i
+        /Effective:?\s*\d{4}Z\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})\s+to:?\s*\d{4}Z\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/i
     );
     if (!match) return null;
     const startMonth = MONTHS.get(titleCase(match[2]));
@@ -373,12 +388,19 @@ function findAirportSectionPage(
     if (!section) return null;
     const normalizedSection = section.toUpperCase();
     const identifiers = [airport.faaId, airport.icaoId].filter(Boolean) as string[];
+    // Some military headers use a K-prefixed FAA ID that the XML omits.
+    if (airport.military && !airport.icaoId && airport.faaId.length === 3) {
+        identifiers.push(`K${airport.faaId}`);
+    }
     for (const page of pages) {
         if (!page.pageLabels.some(token =>
             normalizePageToken(token).match(new RegExp(`^${escapeRegExp(normalizedSection)}\\d+$`))
         )) continue;
         const compactText = page.text.toUpperCase().replace(/\s+/g, '');
-        if (identifiers.some(identifier => compactText.includes(`(${identifier})`))) {
+        const parenthesizedIds = compactText.matchAll(/\(([A-Z0-9/]+)\)/g);
+        if ([...parenthesizedIds].some(([, ids]) =>
+            ids.split('/').some(id => identifiers.includes(id))
+        )) {
             return page.pageIndex;
         }
     }

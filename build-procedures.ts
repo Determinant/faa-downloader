@@ -98,8 +98,14 @@ export async function buildProcedureCatalog(options: BuildOptions): Promise<Proc
         assertVolumeCoversDate(pages, catalog.effectiveDate, volume.filePath);
         const resolution = resolveVolumePageIndexes(catalog, volume.id, pages);
         if (resolution.unresolved > 0) {
+            const targets = catalog.airports
+                .filter(airport => airport.volumeId === volume.id)
+                .flatMap(airport => airport.procedures
+                    .filter(procedure => procedure.volumeTarget?.pageIndex === null)
+                    .map(procedure => `${airport.id}: ${procedure.name} (${procedure.pdfName})`));
             throw new Error(
-                `${volume.id}: ${resolution.unresolved} PDF page targets could not be resolved`
+                `${volume.id}: ${resolution.unresolved} PDF page targets could not be resolved:\n` +
+                targets.join('\n')
             );
         }
         catalog.volumes.push({
@@ -236,8 +242,10 @@ async function findVolumeCandidates(
     for (const cycle of cycles) {
         const directory = path.join(chartsRoot, cycle);
         for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-            const match = entry.isFile() ? entry.name.match(/^tpp-([a-z0-9]+)\.pdf$/i) : null;
-            const id = match?.[1].toUpperCase();
+            if (!entry.isFile()) continue;
+            const match = entry.name.match(/^tpp-([a-z0-9]+)\.pdf$/i);
+            const name = match?.[1].toUpperCase();
+            const id = /^cs-pac\.pdf$/i.test(entry.name) ? 'PC1' : name === 'AK' ? 'AK1' : name;
             if (id && requestedVolumes.has(id) && !candidates.has(id)) {
                 candidates.set(id, path.join(directory, entry.name));
             }

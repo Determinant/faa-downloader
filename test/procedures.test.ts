@@ -87,7 +87,9 @@ test('volume page resolver distinguishes printed pages from PDF page indexes', (
             item('approach chart', 10, 300, 50), item('94', 190, 580)
         ], 387, 594),
         pageIndexEntry(220, [
-            item('future chart', 10, 300, 50), item('95', 190, 9)
+            item('future chart', 10, 300, 50), item('95', 190, 9),
+            // A chart-minimums fraction near the footer is not another page label.
+            item('94', 196, 34, 3)
         ], 387, 594)
     ];
 
@@ -101,6 +103,69 @@ test('volume page resolver distinguishes printed pages from PDF page indexes', (
     );
     assert.deepEqual(pages[0].pageLabels, []);
     assert.deepEqual(pages[1].pageLabels, ['L13']);
+    assert.deepEqual(pages[3].pageLabels, ['95']);
+});
+
+test('d-TPP parser excludes deleted procedures and stale deletion placeholders', () => {
+    for (const [action, filename] of [
+        ['D', 'SW2TO.PDF'],
+        ['D', 'DELETED_JOB.PDF'],
+        ['', 'DELETED_JOB.PDF'],
+        ['', 'DEL_APT_SERVED.PDF']
+    ]) {
+        const xml = XML
+            .replace('<useraction></useraction>', `<useraction>${action}</useraction>`)
+            .replace('SW2TO.PDF', filename);
+        const catalog = parseProcedureCatalog(xml, 'test', 'abc', 'now');
+        assert.deepEqual(catalog.airports[0].procedures.map(procedure => procedure.name), [
+            'RNAV (GPS) RWY 28L', 'FUTURE PRODUCT'
+        ], `${action}: ${filename}`);
+        assert.deepEqual(resolveVolumePageIndexes(catalog, 'SW2', [
+            { pageIndex: 219, text: 'approach chart', pageLabels: ['94'] },
+            { pageIndex: 220, text: 'future chart', pageLabels: ['95'] }
+        ]), { resolved: 2, unresolved: 0 });
+    }
+});
+
+test('Pacific page labels come from terminal headers, not other supplement sections', () => {
+    for (const x of [33, 363]) {
+        const label = { text: '94', x, y: 582, width: 9 };
+        assert.deepEqual(pageIndexEntry(200, [
+            { text: 'TERMINAL PROCEDURES', x: 164, y: 582, width: 86 },
+            label,
+            { text: '2', x: 200, y: 47, width: 3 }
+        ], 405, 612).pageLabels, ['94']);
+        assert.deepEqual(pageIndexEntry(20, [
+            { text: 'AIRPORT DIRECTORY', x: 164, y: 582, width: 86 }, label
+        ], 405, 612).pageLabels, []);
+        assert.deepEqual(pageIndexEntry(148, [
+            { text: 'TERMINAL PROCEDURES', x: 164, y: 582, width: 86 }, label,
+            { text: 'Table of Contents', x: 50, y: 500, width: 100 }
+        ], 405, 612).pageLabels, []);
+    }
+});
+
+test('section targets recognize slash-separated FAA and ICAO identifiers', () => {
+    for (const ids of ['KHWD/HWD', 'HWD/KHWD']) {
+        const catalog = parseProcedureCatalog(XML, 'test', 'abc', 'now');
+        resolveVolumePageIndexes(catalog, 'SW2', [
+            { pageIndex: 41, text: 'OTHER (XHWD/HWDX)', pageLabels: ['L12'] },
+            { pageIndex: 42, text: `HAYWARD EXEC (${ids})`, pageLabels: ['L13'] }
+        ]);
+        assert.equal(catalog.airports[0].procedures[0].volumeTarget?.pageIndex, 42);
+    }
+});
+
+test('section targets accept military K-prefixed identifiers missing from the XML', () => {
+    const xml = XML.replace('military="N"', 'military="M"')
+        .replace('apt_ident="HWD" icao_ident="KHWD"', 'apt_ident="W94" icao_ident=""');
+    const catalog = parseProcedureCatalog(xml, 'test', 'abc', 'now');
+    assert.deepEqual(resolveVolumePageIndexes(catalog, 'SW2', [
+        { pageIndex: 39, text: 'Another airport (XW94)', pageLabels: ['L6'] },
+        { pageIndex: 40, text: 'CAMP PEARY LNDG STRIP (KW94)', pageLabels: ['L7'] }
+    ]), { resolved: 1, unresolved: 2 });
+    assert.equal(catalog.airports[0].procedures[0].volumeTarget?.pageIndex, 40);
+    assert.equal(catalog.airports[0].procedures[1].volumeTarget?.pageIndex, null);
 });
 
 test('d-TPP edition discovery selects current or requested metadata', () => {
@@ -130,6 +195,12 @@ test('electronic TPP cover dates define the usable volume interval', () => {
         expirationDate: '2026-10-29'
     });
     assert.equal(parseVolumeEffectiveInterval('not a TPP cover'), null);
+    assert.deepEqual(parseVolumeEffectiveInterval(
+        'CHART SUPPLEMENT PACIFIC Effective 0901Z 3 SEP 2026 to 0901Z 29 OCT 2026'
+    ), {
+        effectiveDate: '2026-09-03',
+        expirationDate: '2026-10-29'
+    });
 });
 
 test('d-TPP parser rejects unsafe PDF paths', () => {
@@ -184,6 +255,46 @@ test('local procedure build does not access the network', async () => {
         assert.equal(rebuilt.airports.length, 1);
     } finally {
         globalThis.fetch = originalFetch;
+        await fs.rm(root, { recursive: true, force: true });
+    }
+});
+
+test('procedure builds index Alaska and Pacific filenames and refresh older catalogs', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-volumes-'));
+    try {
+        for (const [volumeId, filename] of [['AK1', 'tpp-ak.pdf'], ['PC1', 'cs-pac.pdf']]) {
+            const output = path.join(root, volumeId);
+            const cycleDirectory = path.join(output, 'charts', '2026-09-03');
+            const sourceXml = path.join(output, 'metafile.xml');
+            await fs.mkdir(cycleDirectory, { recursive: true });
+            await fs.writeFile(sourceXml, XML.replace('volume="SW-2"', `volume="${volumeId}"`));
+            await fs.copyFile(new URL('./fixtures/procedure-volume.pdf', import.meta.url),
+                path.join(cycleDirectory, filename));
+
+            const catalog = await buildProcedureCatalog({ output, sourceXml });
+            assert.equal(catalog.volumes.length, 1);
+            assert.equal(catalog.volumes[0].id, volumeId);
+            assert.equal(catalog.volumes[0].url, `../${filename}`);
+            assert.equal(catalog.volumes[0].resolvedTargetCount, 3);
+            assert.deepEqual(catalog.airports[0].procedures.map(p => p.volumeTarget?.pageIndex),
+                [0, 1, 2]);
+            const current = await buildProcedureCatalog({ output, sourceXml });
+            assert.equal(current.generatedAt, catalog.generatedAt);
+
+            const catalogPath = path.join(cycleDirectory, 'tpp', 'catalog.json');
+            await fs.writeFile(catalogPath, JSON.stringify({ ...catalog, builderVersion: 1 }));
+            const rebuilt = await buildProcedureCatalog({ output, sourceXml });
+            assert.equal(rebuilt.builderVersion, catalog.builderVersion);
+
+            // A missing active target must fail without replacing the published catalog.
+            const previous = await fs.readFile(catalogPath, 'utf8');
+            await fs.writeFile(sourceXml, XML.replace('volume="SW-2"', `volume="${volumeId}"`)
+                .replace('<bvpage>94</bvpage>', '<bvpage>999</bvpage>'));
+            await assert.rejects(buildProcedureCatalog({ output, sourceXml }),
+                /KHWD: RNAV \(GPS\) RWY 28L \(05015R28L\.PDF\)/);
+            assert.equal(await fs.readFile(catalogPath, 'utf8'), previous);
+        }
+    } finally {
         await fs.rm(root, { recursive: true, force: true });
     }
 });

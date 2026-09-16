@@ -7,12 +7,79 @@ const IFR_ENROUTE_URL = 'https://aeronav.faa.gov/enroute/';
 const VFR_URL = 'https://aeronav.faa.gov/visual/';
 const REQUEST_TIMEOUT_MS = 120_000;
 
-const CS_REGIONS = ['SW'] as const;
-const TPP_REGIONS = ['SW1', 'SW2', 'SW3', 'SW4'] as const;
-const IFR_ENROUTE_REGIONS = ['L02', 'L03', 'L04'] as const;
+const CS_REGIONS = ['AK', 'EC', 'NC', 'NE', 'NW', 'PAC', 'SC', 'SE', 'SW'] as const;
+const TPP_REGIONS = [
+    'AK',
+    'EC1', 'EC2', 'EC3',
+    'NC1', 'NC2', 'NC3',
+    'NE1', 'NE2', 'NE3', 'NE4',
+    'NW1',
+    'SC1', 'SC2', 'SC3', 'SC4', 'SC5',
+    'SE1', 'SE2', 'SE3', 'SE4',
+    'SW1', 'SW2', 'SW3', 'SW4'
+] as const;
+// The FAA currently publishes the conterminous U.S. low-altitude series as L01-L36.
+const IFR_ENROUTE_REGIONS = Array.from(
+    { length: 36 },
+    (_, index) => `L${String(index + 1).padStart(2, '0')}`
+);
+const VFR_SECTIONAL_REGIONS = [
+    'Albuquerque',
+    'Anchorage',
+    'Atlanta',
+    'Bethel',
+    'Billings',
+    'Brownsville',
+    'Cape_Lisburne',
+    'Charlotte',
+    'Cheyenne',
+    'Chicago',
+    'Cincinnati',
+    'Cold_Bay',
+    'Dallas-Ft_Worth',
+    'Dawson',
+    'Denver',
+    'Detroit',
+    'Dutch_Harbor',
+    'El_Paso',
+    'Fairbanks',
+    'Great_Falls',
+    'Green_Bay',
+    'Halifax',
+    'Hawaiian_Islands',
+    'Houston',
+    'Jacksonville',
+    'Juneau',
+    'Kansas_City',
+    'Ketchikan',
+    'Klamath_Falls',
+    'Kodiak',
+    'Lake_Huron',
+    'Las_Vegas',
+    'Los_Angeles',
+    'McGrath',
+    'Memphis',
+    'Miami',
+    'Montreal',
+    'New_Orleans',
+    'New_York',
+    'Nome',
+    'Omaha',
+    'Phoenix',
+    'Point_Barrow',
+    'Salt_Lake_City',
+    'San_Antonio',
+    'San_Francisco',
+    'Seattle',
+    'Seward',
+    'St_Louis',
+    'Twin_Cities',
+    'Washington',
+    'Western_Aleutian_Islands',
+    'Wichita'
+] as const;
 // San Diego is a TAC covered by the Los Angeles Sectional; the FAA does not
 // publish a separate San_Diego.zip in the sectional-files directory.
-const VFR_SECTIONAL_REGIONS = ['San_Francisco', 'Los_Angeles', 'Las_Vegas'] as const;
 const VFR_TERMINAL_REGIONS = [
     'San_Francisco',
     'Los_Angeles',
@@ -20,12 +87,95 @@ const VFR_TERMINAL_REGIONS = [
     'Las_Vegas'
 ] as const;
 
-export type UnzipMap = Record<string, string>;
+export type ChartExtraction = {
+    sourceName: string;
+    filename: string;
+};
+
+function ifrExtractions(region: string): ChartExtraction[] {
+    if (region === 'L06') {
+        return [
+            {
+                sourceName: 'ENR_L06N.tif',
+                filename: 'ifr-enroute-low-l06n.tif'
+            },
+            {
+                sourceName: 'ENR_L06S.tif',
+                filename: 'ifr-enroute-low-l06s.tif'
+            }
+        ];
+    }
+    return [{
+        sourceName: `ENR_${region}.tif`,
+        filename: `ifr-enroute-low-${region.toLowerCase()}.tif`
+    }];
+}
+
+function sectionalExtractions(region: string): ChartExtraction[] {
+    if (region === 'Hawaiian_Islands') {
+        return [
+            {
+                sourceName: 'Hawaiian_Islands_SEC.tif',
+                filename: 'vfr-sectional-hawaiian_islands.tif'
+            },
+            {
+                sourceName: 'Honolulu_Inset_SEC.tif',
+                filename: 'vfr-sectional-honolulu_inset.tif'
+            },
+            {
+                sourceName: 'Mariana_Islands_Inset_SEC.tif',
+                filename: 'vfr-sectional-mariana_islands_inset.tif'
+            },
+            {
+                sourceName: 'Samoan_Islands_Inset_SEC.tif',
+                filename: 'vfr-sectional-samoan_islands_inset.tif'
+            }
+        ];
+    }
+    if (region === 'Western_Aleutian_Islands') {
+        // The east panel crosses the antimeridian. Extract it twice so each
+        // hemisphere can be cut and projected without spanning the whole world.
+        return [
+            {
+                sourceName: 'Western_Aleutian_Islands_East_SEC.tif',
+                filename: 'vfr-sectional-western_aleutian_islands-east-eastern_hemisphere.tif'
+            },
+            {
+                sourceName: 'Western_Aleutian_Islands_East_SEC.tif',
+                filename: 'vfr-sectional-western_aleutian_islands-east-western_hemisphere.tif'
+            },
+            {
+                sourceName: 'Western_Aleutian_Islands_West_SEC.tif',
+                filename: 'vfr-sectional-western_aleutian_islands-west.tif'
+            }
+        ];
+    }
+    return [{
+        sourceName: `${region}_SEC.tif`,
+        filename: `vfr-sectional-${region.toLowerCase()}.tif`
+    }];
+}
+
+function terminalExtractions(region: string): ChartExtraction[] {
+    const prefix = `vfr-terminal-${region.toLowerCase()}`;
+    return [
+        { sourceName: `${region}_TAC.tif`, filename: `${prefix}.tif` },
+        { sourceName: `${region}_FLY.tif`, filename: `${prefix}-flyway.tif` }
+    ];
+}
+
+export function configuredRasterFilenames(): string[] {
+    return [
+        ...IFR_ENROUTE_REGIONS.flatMap(region => ifrExtractions(region)),
+        ...VFR_SECTIONAL_REGIONS.flatMap(region => sectionalExtractions(region)),
+        ...VFR_TERMINAL_REGIONS.flatMap(region => terminalExtractions(region))
+    ].map(extraction => extraction.filename).sort();
+}
 
 export type ChartCandidate = {
     url: string;
     date: string;
-    unzip?: UnzipMap;
+    extractions?: ChartExtraction[];
 };
 
 type RegionListing = {
@@ -188,7 +338,7 @@ async function discoverIfrEnroute(context: DiscoveryContext): Promise<RegionMap>
         addCandidate(files, region, {
             url: new URL(href || filename, directory.url).href,
             date: directory.date,
-            unzip: { [`ENR_${region}.tif`]: '.tif' }
+            extractions: ifrExtractions(region)
         }, context.today);
     }
     return files;
@@ -225,7 +375,7 @@ async function discoverVfr(context: DiscoveryContext): Promise<{
         addCandidate(sectional, region, {
             url: new URL(href || filename, sectionalUrl).href,
             date: directory.date,
-            unzip: { [`${region}_SEC.tif`]: '.tif' }
+            extractions: sectionalExtractions(region)
         }, context.today);
     }
 
@@ -238,10 +388,7 @@ async function discoverVfr(context: DiscoveryContext): Promise<{
         addCandidate(terminal, region, {
             url: new URL(href || filename, terminalUrl).href,
             date: directory.date,
-            unzip: {
-                [`${region}_TAC.tif`]: '.tif',
-                [`${region}_FLY.tif`]: '-flyway.tif'
-            }
+            extractions: terminalExtractions(region)
         }, context.today);
     }
     return { sectional, terminal };
@@ -263,6 +410,21 @@ export async function discoverCharts(options: {
         discoverIfrEnroute(context),
         discoverVfr(context)
     ]);
+    const requiredRasterGroups = [
+        { prefix: 'ifr-enroute-low', files: ifrEnroute },
+        { prefix: 'vfr-sectional', files: vfr.sectional },
+        { prefix: 'vfr-terminal', files: vfr.terminal }
+    ];
+    const missing = requiredRasterGroups.flatMap(group =>
+        Object.entries(group.files).flatMap(([region, listing]) =>
+            listing.current ? [] : [`${group.prefix}/${region}`]
+        )
+    );
+    if (missing.length > 0) {
+        throw new Error(
+            `FAA listings are missing required current charts: ${missing.join(', ')}`
+        );
+    }
     return [
         { prefix: 'cs', files: supplements },
         { prefix: 'tpp', files: terminalProcedures },

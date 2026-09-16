@@ -5,8 +5,10 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+    DEFAULT_DOWNLOAD_CONCURRENCY,
+    DEFAULT_TILE_CONCURRENCY,
     mapWithConcurrency,
-    parseDownloadConcurrency
+    parseConcurrency
 } from '../lib/concurrency.ts';
 import { downloadFile } from '../lib/http-download.ts';
 import { validatePdfFile } from '../lib/pdf.ts';
@@ -37,10 +39,12 @@ test('parallel work respects its concurrency limit and preserves result order', 
     assert.deepEqual(results, [10, 20, 30, 40, 50]);
 });
 
-test('download concurrency accepts only the supported range', () => {
-    assert.equal(parseDownloadConcurrency('4'), 4);
+test('download and tile concurrency default to four and accept only the supported range', () => {
+    assert.equal(DEFAULT_DOWNLOAD_CONCURRENCY, 4);
+    assert.equal(DEFAULT_TILE_CONCURRENCY, 4);
+    assert.equal(parseConcurrency('4'), 4);
     for (const value of ['0', '1.5', '17', 'invalid']) {
-        assert.throws(() => parseDownloadConcurrency(value), /integer from 1 to 16/);
+        assert.throws(() => parseConcurrency(value), /integer from 1 to 16/);
     }
 });
 

@@ -8,7 +8,7 @@ import { JSDOM } from 'jsdom';
 import {
     DEFAULT_DOWNLOAD_CONCURRENCY,
     mapWithConcurrency,
-    parseDownloadConcurrency
+    parseConcurrency
 } from './lib/concurrency.ts';
 import { replaceDirectoryAtomically, writeFileAtomic } from './lib/fs-utils.ts';
 import { downloadFile } from './lib/http-download.ts';
@@ -20,7 +20,7 @@ const NASR_INDEX_URL =
 const GROUPS = ['APT', 'FIX', 'NAV', 'AWY'] as const;
 const DEFAULT_RETAIN_CYCLES = 2;
 const REQUIRED_FILES: Record<(typeof GROUPS)[number], string[]> = {
-    APT: ['APT_BASE.csv', 'APT_RWY.csv'],
+    APT: ['APT_BASE.csv', 'APT_RWY.csv', 'APT_RWY_END.csv'],
     FIX: ['FIX_BASE.csv'],
     NAV: ['NAV_BASE.csv'],
     AWY: ['AWY_BASE.csv', 'AWY_SEG_ALT.csv']
@@ -51,7 +51,7 @@ function parseArgs(argv: string[]): Options {
             options.retainCycles = parseRetainCycles(arg.slice('--retain-cycles='.length));
         }
         else if (arg.startsWith('--concurrency=')) {
-            options.concurrency = parseDownloadConcurrency(
+            options.concurrency = parseConcurrency(
                 arg.slice('--concurrency='.length),
                 '--concurrency'
             );
@@ -234,15 +234,16 @@ async function extractRequiredFiles(
 
 async function readNasrInput(sourceDirectory: string): Promise<NasrInput> {
     const read = (filename: string) => fs.readFile(path.join(sourceDirectory, filename), 'utf8');
-    const [airports, runways, fixes, navaids, airways, airwaySegments] = await Promise.all([
+    const [airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments] = await Promise.all([
         read('APT_BASE.csv'),
         read('APT_RWY.csv'),
+        read('APT_RWY_END.csv'),
         read('FIX_BASE.csv'),
         read('NAV_BASE.csv'),
         read('AWY_BASE.csv'),
         read('AWY_SEG_ALT.csv')
     ]);
-    return { airports, runways, fixes, navaids, airways, airwaySegments };
+    return { airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments };
 }
 
 async function writeJson(filePath: string, value: unknown): Promise<void> {
@@ -312,7 +313,7 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
         ...options,
         output: options.output || 'dist',
         retainCycles: options.retainCycles ?? DEFAULT_RETAIN_CYCLES,
-        concurrency: parseDownloadConcurrency(
+        concurrency: parseConcurrency(
             options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY
         ),
         help: false

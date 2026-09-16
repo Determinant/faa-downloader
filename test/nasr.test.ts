@@ -154,6 +154,16 @@ test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway
                 [effective, '00001.', 'H', 'H1', 50, 50, 'CONC']
             ]
         ),
+        runwayEnds: csv(
+            ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'RWY_ID', 'RWY_END_ID',
+                'TRUE_ALIGNMENT', 'RIGHT_HAND_TRAFFIC_PAT_FLAG'],
+            [
+                [effective, '00001.', 'A', '13/31', '13', 140, 'Y'],
+                [effective, '00001.', 'A', '13/31', '31', 320, 'N'],
+                [effective, '00001.', 'H', 'H1', 'H1', '', ''],
+                [effective, 'unrelated', 'A', '13/31', '13', 999, 'Y']
+            ]
+        ),
         fixes: csv(
             [
                 'EFF_DATE', 'FIX_ID', 'ICAO_REGION_CODE', 'STATE_CODE', 'COUNTRY_CODE',
@@ -206,14 +216,19 @@ test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway
         id: '13/31',
         lengthFt: 2443,
         widthFt: 70,
-        surface: 'ASPH'
+        surface: 'ASPH',
+        ends: [
+            { id: '13', trueHeadingDeg: 140, trafficPattern: 'right' },
+            { id: '31', trueHeadingDeg: 320, trafficPattern: 'left' }
+        ]
     }]);
     assert.equal(products.airports.features[1].properties.longestRunwayFt, 50);
     assert.deepEqual(products.airports.features[1].properties.runways, [{
         id: 'H1',
         lengthFt: 50,
         widthFt: 50,
-        surface: 'CONC'
+        surface: 'CONC',
+        ends: [{ id: 'H1' }]
     }]);
     assert.equal(products.airports.features[0].properties.towered, true);
     assert.equal(products.fixes.features.length, 2);

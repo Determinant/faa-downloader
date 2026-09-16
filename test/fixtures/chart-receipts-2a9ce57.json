@@ -1,0 +1,59 @@
+{
+  "revision": "2a9ce57",
+  "source": "source raster\n",
+  "output": "finished mbtiles\n",
+  "receipts": {
+    "ifr-enroute-low-l02.tif": {
+      "schemaVersion": 1,
+      "tilerVersion": 1,
+      "configurationSha256": "61a5fa70552504c54e512158297454bcbe0bb78624b59bbbb9c25efa51226c23",
+      "source": {
+        "byteLength": 14,
+        "sha256": "208ff23bd6ecc6868e79591e6d9a4b35b06ce4dafe246e70567c7475ba2036f9"
+      },
+      "output": {
+        "byteLength": 17,
+        "sha256": "f3f8f0abde4664e022597c852edec31da164d170345d2237ab25f12a2eef5f43"
+      }
+    },
+    "ifr-enroute-low-l03.tif": {
+      "schemaVersion": 1,
+      "tilerVersion": 1,
+      "configurationSha256": "0b16ab5984f744e3e66c78a4161d1b857da6e402433d4b0f2ad44d61fb173902",
+      "source": {
+        "byteLength": 14,
+        "sha256": "208ff23bd6ecc6868e79591e6d9a4b35b06ce4dafe246e70567c7475ba2036f9"
+      },
+      "output": {
+        "byteLength": 17,
+        "sha256": "f3f8f0abde4664e022597c852edec31da164d170345d2237ab25f12a2eef5f43"
+      }
+    },
+    "ifr-enroute-low-l04.tif": {
+      "schemaVersion": 1,
+      "tilerVersion": 1,
+      "configurationSha256": "9c079d58a7f4b427f50b39c9994d775ee11d019866559bbe6a3d0959af4d8125",
+      "source": {
+        "byteLength": 14,
+        "sha256": "208ff23bd6ecc6868e79591e6d9a4b35b06ce4dafe246e70567c7475ba2036f9"
+      },
+      "output": {
+        "byteLength": 17,
+        "sha256": "f3f8f0abde4664e022597c852edec31da164d170345d2237ab25f12a2eef5f43"
+      }
+    },
+    "vfr-sectional-san_francisco.tif": {
+      "schemaVersion": 1,
+      "tilerVersion": 1,
+      "configurationSha256": "e1f2b8926e63f303b2fc01107dee2075d7bf539b3674b16c3d41b3c4d5c67805",
+      "source": {
+        "byteLength": 14,
+        "sha256": "208ff23bd6ecc6868e79591e6d9a4b35b06ce4dafe246e70567c7475ba2036f9"
+      },
+      "output": {
+        "byteLength": 17,
+        "sha256": "f3f8f0abde4664e022597c852edec31da164d170345d2237ab25f12a2eef5f43"
+      }
+    }
+  }
+}

@@ -2,8 +2,8 @@
 
 ## N129BZ/chartmaker chart cutlines
 
-The reviewed sectional, terminal-area, and IFR enroute cutline coordinates in
-`lib/chart-tiler.ts` are adapted from
+The generated sectional, terminal-area, and IFR enroute cutline coordinates in
+`lib/chartmaker-cutlines.ts` are adapted from the `clipshapes` data in
 [N129BZ/chartmaker](https://github.com/N129BZ/chartmaker), commit
 `1d71db443916b8052dde41d612c3311bac25a5ae`.
 

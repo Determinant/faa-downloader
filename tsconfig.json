@@ -18,10 +18,12 @@
   "include": [
     "build-far.ts",
     "build-chart-manifests.ts",
+    "build-chart-packages.ts",
     "build-procedures.ts",
     "download-aim.ts",
     "download-charts.ts",
     "download-nasr.ts",
+    "generate-chart-cutlines.ts",
     "lib/**/*.ts",
     "test/**/*.ts",
     "types/**/*.d.ts"

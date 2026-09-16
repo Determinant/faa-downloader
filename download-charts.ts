@@ -4,17 +4,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildProcedureCatalog } from './build-procedures.ts';
+import { buildChartPackages, readOfflineRegions } from './build-chart-packages.ts';
 import { buildNasrData } from './download-nasr.ts';
 import {
     discoverCharts,
     type ChartCandidate,
-    type ChartGroup,
-    type UnzipMap
+    type ChartExtraction,
+    type ChartGroup
 } from './lib/chart-discovery.ts';
 import {
     DEFAULT_DOWNLOAD_CONCURRENCY,
+    DEFAULT_TILE_CONCURRENCY,
     mapWithConcurrency,
-    parseDownloadConcurrency
+    parseConcurrency
 } from './lib/concurrency.ts';
 import {
     tileCharts,
@@ -35,11 +37,11 @@ type Options = {
     tile?: string;
     force: boolean;
     concurrency: number;
+    tileConcurrency: number;
+    regions?: string;
 };
 
 type ChartDownload = {
-    group: ChartGroup;
-    region: string;
     candidate: ChartCandidate;
     localPath: string;
 };
@@ -49,7 +51,8 @@ function parseArgs(argv: string[]): Options {
         output: DEFAULT_OUTPUT,
         help: false,
         force: false,
-        concurrency: DEFAULT_DOWNLOAD_CONCURRENCY
+        concurrency: DEFAULT_DOWNLOAD_CONCURRENCY,
+        tileConcurrency: DEFAULT_TILE_CONCURRENCY
     };
 
     for (const arg of argv) {
@@ -59,12 +62,19 @@ function parseArgs(argv: string[]): Options {
             options.output = arg.slice('--output='.length);
         } else if (arg.startsWith('--tile=')) {
             options.tile = arg.slice('--tile='.length);
+        } else if (arg.startsWith('--regions=')) {
+            options.regions = arg.slice('--regions='.length);
         } else if (arg === '--force') {
             options.force = true;
         } else if (arg.startsWith('--concurrency=')) {
-            options.concurrency = parseDownloadConcurrency(
+            options.concurrency = parseConcurrency(
                 arg.slice('--concurrency='.length),
                 '--concurrency'
+            );
+        } else if (arg.startsWith('--tile-concurrency=')) {
+            options.tileConcurrency = parseConcurrency(
+                arg.slice('--tile-concurrency='.length),
+                '--tile-concurrency'
             );
         } else {
             throw new Error(`Unknown argument: ${arg}`);
@@ -77,24 +87,29 @@ function parseArgs(argv: string[]): Options {
     if (options.tile !== undefined && !options.tile.trim()) {
         throw new Error('--tile must not be empty');
     }
+    if (options.regions !== undefined && !options.regions.trim()) throw new Error('--regions must not be empty');
     return options;
 }
 
 function printHelp(): void {
     console.log(`Usage: node --import=tsx download-charts.ts [options]
 
-Downloads current FAA charts, produces WebP MBTiles, and builds navigation metadata.
+Downloads current FAA charts, produces spatial/zoom WebP MBTiles, and builds navigation metadata.
 
 Options:
-  --output=DIR     Build root (default: dist)
-  --tile=FILE      Convert one existing TIFF to WebP MBTiles
-  --force          Rebuild existing MBTiles atomically
-  --concurrency=N  Parallel downloads, 1-16 (default: ${DEFAULT_DOWNLOAD_CONCURRENCY})
-  --help, -h       Show this help
+  --output=DIR          Build root (default: dist)
+  --tile=FILE           Convert one TIFF into the chart build cache
+  --force               Rebuild existing MBTiles atomically
+  --concurrency=N       Parallel downloads, 1-16 (default: ${DEFAULT_DOWNLOAD_CONCURRENCY})
+  --tile-concurrency=N  Parallel MBTiles builds, 1-16 (default: ${DEFAULT_TILE_CONCURRENCY})
+  --regions=FILE        Optional named offline region bounds (JSON)
+  --help, -h            Show this help
 
 Output layout:
-  DIR/charts/      PDFs, GeoTIFFs, and MBTiles grouped by publication date
+  DIR/charts/      Original PDFs and GeoTIFFs grouped by publication date
   DIR/zips/        Downloaded source ZIP archives grouped by publication date
+  DIR/mbtiles/YYYY-MM-DD/        Intermediate sheet MBTiles, receipts, and chart-manifest.json
+  DIR/charts/YYYY-MM-DD/mbtiles/ Spatial/zoom delivery archives and manifest.json
   DIR/charts/YYYY-MM-DD/nav/   Normalized NASR map data
   DIR/charts/YYYY-MM-DD/nasr/  Downloaded NASR CSV ZIP archives
   DIR/charts/YYYY-MM-DD/tpp/   Airport/procedure catalog and PDF page index
@@ -125,22 +140,21 @@ async function extractChart(
     archivePath: string,
     chartRoot: string,
     date: string,
-    group: ChartGroup,
-    region: string,
-    unzip: UnzipMap
+    extractions: ChartExtraction[]
 ): Promise<void> {
-    const chartPrefix = `${group.prefix}-${region.toLowerCase()}`;
-
     console.log(`extracting "${archivePath}"`);
     const entries = await listZipEntries(archivePath);
-    for (const [sourceName, suffix] of Object.entries(unzip)) {
+    for (const { sourceName, filename } of extractions) {
+        if (path.basename(filename) !== filename || !filename.endsWith('.tif')) {
+            throw new Error(`Unsafe chart extraction filename: ${filename}`);
+        }
         const matches = entries.filter(entry => normalizeArchivePath(entry) === sourceName);
         if (matches.length !== 1) {
             throw new Error(
                 `${path.basename(archivePath)} contains ${matches.length} entries for ${sourceName}`
             );
         }
-        const chartFilePath = path.join(chartRoot, date, `${chartPrefix}${suffix}`);
+        const chartFilePath = path.join(chartRoot, date, filename);
         await extractZipEntry(archivePath, matches[0], chartFilePath);
     }
 }
@@ -158,11 +172,9 @@ function createDownloadPlan(
                 console.warn(`no current chart found for ${group.prefix}/${region}`);
                 continue;
             }
-            const extension = candidate.unzip ? 'zip' : 'pdf';
-            const destinationRoot = candidate.unzip ? downloadRoot : chartRoot;
+            const extension = candidate.extractions ? 'zip' : 'pdf';
+            const destinationRoot = candidate.extractions ? downloadRoot : chartRoot;
             downloads.push({
-                group,
-                region,
                 candidate,
                 localPath: path.join(
                     destinationRoot,
@@ -190,7 +202,7 @@ async function buildCharts(options: Options): Promise<void> {
     );
 
     console.log(`Acquiring ${downloads.length} chart files with concurrency ${options.concurrency}`);
-    const acquired = await mapWithConcurrency(
+    await mapWithConcurrency(
         downloads,
         options.concurrency,
         async download => {
@@ -198,26 +210,19 @@ async function buildCharts(options: Options): Promise<void> {
                 userAgent: 'faa-regs-chart-builder/1.0',
                 validate: validateChartDownload
             });
-            return download;
+            if (download.candidate.extractions) {
+                await extractChart(
+                    download.localPath,
+                    chartRoot,
+                    download.candidate.date,
+                    download.candidate.extractions
+                );
+            }
         }
     );
-    const archives = acquired.flatMap(download => (
-        download.candidate.unzip
-            ? [{ ...download, unzip: download.candidate.unzip }]
-            : []
-    ));
-    await mapWithConcurrency(archives, options.concurrency, async archive => {
-        await extractChart(
-            archive.localPath,
-            chartRoot,
-            archive.candidate.date,
-            archive.group,
-            archive.region,
-            archive.unzip
-        );
-    });
 
-    await tileCharts(chartRoot, options.force);
+    await tileCharts(chartRoot, options.force, options.tileConcurrency);
+    await buildChartPackages(options.output, options.regions);
     await buildNasrData({ output: options.output, concurrency: options.concurrency });
     await buildProcedureCatalog({ output: options.output });
     console.log(`Charts are ready under ${chartRoot}`);
@@ -231,6 +236,8 @@ async function main(): Promise<void> {
         await verifyGdalTools();
         await tileMbtilesFromTiff(path.resolve(options.tile), options.force);
     } else {
+        // Reject a bad region file before starting lengthy downloads or GDAL work.
+        await readOfflineRegions(options.regions);
         await buildCharts(options);
     }
 }

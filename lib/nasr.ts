@@ -24,6 +24,7 @@ export type NasrFeatureCollection = {
 export type NasrInput = {
     airports: string;
     runways: string;
+    runwayEnds: string;
     fixes: string;
     navaids: string;
     airways: string;
@@ -186,6 +187,7 @@ function normalizeAirways(
 export function buildNasrProducts(input: NasrInput): NasrProducts {
     const airportRows = parseCsvRecords(input.airports, 'APT_BASE.csv');
     const runwayRows = parseCsvRecords(input.runways, 'APT_RWY.csv');
+    const runwayEndRows = parseCsvRecords(input.runwayEnds, 'APT_RWY_END.csv');
     const fixRows = parseCsvRecords(input.fixes, 'FIX_BASE.csv');
     const navaidRows = parseCsvRecords(input.navaids, 'NAV_BASE.csv');
     const airwayRows = parseCsvRecords(input.airways, 'AWY_BASE.csv');
@@ -193,11 +195,32 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
     const effective = effectiveDate([
         airportRows,
         runwayRows,
+        runwayEndRows,
         fixRows,
         navaidRows,
         airwayRows,
         segmentRows
     ]);
+
+    const runwayEnds = new Map<string, Record<string, unknown>[]>();
+    for (const row of runwayEndRows) {
+        const siteNumber = present(row.SITE_NO);
+        const facilityType = present(row.SITE_TYPE_CODE);
+        const runwayId = present(row.RWY_ID);
+        const id = present(row.RWY_END_ID);
+        if (!siteNumber || !facilityType || !runwayId || !id) continue;
+        const key = `${siteNumber}:${facilityType}:${runwayId}`;
+        const ends = runwayEnds.get(key) || [];
+        const heading = numberValue(row.TRUE_ALIGNMENT);
+        const rightTraffic = booleanFlag(row.RIGHT_HAND_TRAFFIC_PAT_FLAG);
+        ends.push(compactObject({
+            id,
+            trueHeadingDeg: heading !== undefined && heading >= 0 && heading <= 360
+                ? heading : undefined,
+            trafficPattern: rightTraffic === undefined ? undefined : rightTraffic ? 'right' : 'left'
+        }));
+        runwayEnds.set(key, ends);
+    }
 
     const runways = new Map<string, Record<string, unknown>[]>();
     for (const row of runwayRows) {
@@ -212,7 +235,8 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
             widthFt: numberValue(row.RWY_WIDTH),
             surface: present(row.SURFACE_TYPE_CODE),
             condition: present(row.COND),
-            lighting: present(row.RWY_LGT_CODE)
+            lighting: present(row.RWY_LGT_CODE),
+            ends: runwayEnds.get(`${facilityKey}:${present(row.RWY_ID)}`) || []
         }));
         runways.set(facilityKey, values);
     }

@@ -1,11 +1,26 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
-import { writeFileAtomic } from './fs-utils.ts';
+import {
+    CHART_DEFINITIONS,
+    type ChartDefinition,
+    type ChartPresentation
+} from './chart-definitions.ts';
+import {
+    DEFAULT_TILE_CONCURRENCY,
+    mapWithConcurrency
+} from './concurrency.ts';
+import { readChartMetadata, type ChartMetadata } from './chart-metadata.ts';
+import { sha256File, writeFileAtomic } from './fs-utils.ts';
+import { chartCacheDirectory, chartMbtilesPath } from './chart-paths.ts';
+import { flattenChartPackages } from './chart-package-layout.ts';
+import { acquireChartBuildLock } from './chart-build-lock.ts';
+
+export { sha256File } from './fs-utils.ts';
+export { acquireChartBuildLock } from './chart-build-lock.ts';
 
 const RESAMPLING = 'lanczos';
 const WEBP_QUALITY = 92;
@@ -13,16 +28,32 @@ const OVERVIEW_FACTORS = ['2', '4', '8', '16', '32', '64', '128'] as const;
 const TARGET_SRS = 'EPSG:3857';
 const TILE_FORMAT = 'WEBP';
 const TILER_VERSION = 1;
-const CHARTMAKER_PROVENANCE =
-    'N129BZ/chartmaker@1d71db443916b8052dde41d612c3311bac25a5ae';
-const MEASURED_FLYWAY_PROVENANCE = 'local-measurement@faa-raster-2026-09-03';
+const GEOGRAPHIC_CUTLINE_SRS = 'EPSG:4326';
+// FAA IFR enroute GeoTIFFs use this Lambert Conformal Conic projection. Keeping
+// their four reviewed corners in this CRS makes the edges follow the raster's
+// straight neatlines instead of bowing through the scale rulers in EPSG:4326.
+const IFR_LOW_PROJECTION = {
+    latitudeOfOrigin: 39,
+    centralMeridian: -95,
+    firstParallel: 45,
+    secondParallel: 33,
+    semiMajorAxis: 6_378_137,
+    inverseFlattening: 298.257221999999
+} as const;
+const IFR_LOW_CUTLINE_SRS = [
+    '+proj=lcc', `+lat_0=${IFR_LOW_PROJECTION.latitudeOfOrigin}`,
+    `+lon_0=${IFR_LOW_PROJECTION.centralMeridian}`,
+    `+lat_1=${IFR_LOW_PROJECTION.firstParallel}`,
+    `+lat_2=${IFR_LOW_PROJECTION.secondParallel}`,
+    '+x_0=0', '+y_0=0', `+a=${IFR_LOW_PROJECTION.semiMajorAxis}`,
+    `+rf=${IFR_LOW_PROJECTION.inverseFlattening}`,
+    '+units=m', '+no_defs'
+].join(' ');
 const execFileAsync = promisify(execFile);
 
-type LongitudeLatitude = readonly [longitude: number, latitude: number];
-
-type ChartCutline = {
-    coordinates: readonly LongitudeLatitude[];
-    provenance: typeof CHARTMAKER_PROVENANCE | typeof MEASURED_FLYWAY_PROVENANCE;
+export type ChartCutline = {
+    srs: string;
+    wkt: string;
 };
 
 type FileIdentity = {
@@ -38,201 +69,22 @@ export type ChartBuildReceipt = {
     output: FileIdentity;
 };
 
-type ChartKind = 'vfr-sectional' | 'vfr-terminal' | 'vfr-flyway' | 'ifr-low';
-
-type ChartPresentation = {
-    title: string;
-    kind: ChartKind;
-    minZoom: number;
-    maxZoom: number;
-};
-
 export type ChartManifest = {
     schemaVersion: 1;
     effectiveDate: string;
     generatedAt: string;
-    charts: Array<ChartPresentation & {
+    charts: Array<ChartPresentation & ChartMetadata & {
         id: string;
         file: string;
-        bounds: [west: number, south: number, east: number, north: number];
         byteLength: number;
         sha256: string;
         sourceByteLength: number;
         sourceSha256: string;
         tilerVersion: number;
         buildConfigurationSha256: string;
-        cutlineProvenance: ChartCutline['provenance'];
+        cutlineProvenance: ChartDefinition['provenance'];
     }>;
 };
-
-function chartmakerCutline(coordinates: readonly LongitudeLatitude[]): ChartCutline {
-    return {
-        coordinates,
-        provenance: CHARTMAKER_PROVENANCE
-    };
-}
-
-function measuredFlywayCutline(coordinates: readonly LongitudeLatitude[]): ChartCutline {
-    return { coordinates, provenance: MEASURED_FLYWAY_PROVENANCE };
-}
-
-// FAA rasters include the complete printed sheet, but only the main body inside the
-// neatline is accurately georeferenced. Geographic cutlines remain stable when pixel
-// dimensions change between cycles. Sectional, TAC, and IFR polygons are adapted from
-// N129BZ/chartmaker commit 1d71db443916b8052dde41d612c3311bac25a5ae. Flyway polygons
-// were measured from the 2026-09-03 FAA rasters because chartmaker does not publish them.
-const CHART_CUTLINES = {
-    'vfr-sectional-las_vegas.tif': chartmakerCutline([
-        [-117.9364037, 40.0302008],
-        [-110.7654255, 40.0217622],
-        [-110.9497411, 35.6129585],
-        [-115.3507031, 35.6627363],
-        [-117.9293341, 35.6258583]
-    ]),
-    'vfr-sectional-los_angeles.tif': chartmakerCutline([
-        [-121.6174638, 36.1022061],
-        [-119.8891148, 36.1380044],
-        [-118.8381774, 36.1431171],
-        [-117.4010521, 36.1380044],
-        [-116.2361576, 36.1277780],
-        [-115.4384581, 36.1073212],
-        [-114.5521253, 36.0919751],
-        [-114.7547157, 32.0073689],
-        [-120.0980361, 31.9966312],
-        [-120.1296909, 33.5561808],
-        [-122.0099826, 33.5456285],
-        [-122.0036516, 34.2288425],
-        [-121.5351614, 34.2393106]
-    ]),
-    'vfr-sectional-san_francisco.tif': chartmakerCutline([
-        [-124.9799519, 40.2040795],
-        [-123.4685695, 40.2396587],
-        [-122.1201684, 40.2498947],
-        [-120.7031642, 40.2454651],
-        [-119.2094844, 40.2283077],
-        [-117.6799031, 40.1903398],
-        [-117.7352113, 39.1253284],
-        [-117.7849207, 38.2628965],
-        [-117.8201948, 37.3906311],
-        [-117.8879928, 36.0182349],
-        [-119.1420907, 36.0134553],
-        [-120.3536795, 36.0171455],
-        [-121.9218280, 36.0251811],
-        [-123.4629973, 36.0175673],
-        [-124.9771074, 36.0194916]
-    ]),
-    'vfr-terminal-las_vegas.tif': chartmakerCutline([
-        [-115.6113964, 36.7311736],
-        [-113.8718172, 36.7279904],
-        [-113.8817463, 35.6961824],
-        [-115.6133822, 35.6961824]
-    ]),
-    'vfr-terminal-los_angeles.tif': chartmakerCutline([
-        [-119.1473072, 34.5156185],
-        [-116.7933348, 34.5131413],
-        [-116.8113729, 33.4185800],
-        [-119.1262628, 33.4160704]
-    ]),
-    'vfr-terminal-san_diego.tif': chartmakerCutline([
-        [-117.9774441, 33.6097533],
-        [-116.2928819, 33.6079383],
-        [-116.2994197, 32.4992459],
-        [-117.9643686, 32.5047597]
-    ]),
-    'vfr-terminal-san_francisco.tif': chartmakerCutline([
-        [-123.1614591, 38.1860050],
-        [-121.3794589, 38.1860050],
-        [-121.3834815, 37.0051811],
-        [-123.1473800, 37.0116055]
-    ]),
-    'vfr-terminal-las_vegas-flyway.tif': measuredFlywayCutline([
-        [-115.6206143, 36.7335859],
-        [-113.8640911, 36.7282806],
-        [-113.8810639, 35.6960094],
-        [-115.6131342, 35.7012372]
-    ]),
-    'vfr-terminal-los_angeles-flyway.tif': measuredFlywayCutline([
-        [-119.1506369, 34.5167127],
-        [-116.7919421, 34.5160958],
-        [-116.8094547, 33.4104841],
-        [-119.1339565, 33.4110912]
-    ]),
-    'vfr-terminal-san_diego-flyway.tif': measuredFlywayCutline([
-        [-117.9808246, 33.6110718],
-        [-116.2873074, 33.6105635],
-        [-116.2999752, 32.5001958],
-        [-117.9690959, 32.5006960]
-    ]),
-    'vfr-terminal-san_francisco-flyway.tif': measuredFlywayCutline([
-        [-123.1630347, 38.1881322],
-        [-121.3710227, 38.1883972],
-        [-121.3852576, 37.0079315],
-        [-123.1482484, 37.0076709]
-    ]),
-    'ifr-enroute-low-l02.tif': chartmakerCutline([
-        [-124.8741167, 42.7766746],
-        [-121.5724209, 43.1159202],
-        [-120.6798624, 37.2771615],
-        [-123.7682233, 36.9747908]
-    ]),
-    'ifr-enroute-low-l03.tif': chartmakerCutline([
-        [-123.5471038, 38.6166339],
-        [-120.6999909, 39.7247453],
-        [-117.3713560, 33.7509157],
-        [-120.0793236, 32.7470033]
-    ]),
-    'ifr-enroute-low-l04.tif': chartmakerCutline([
-        [-120.6656026, 34.9512527],
-        [-114.5099049, 34.3990029],
-        [-114.8709389, 32.2482623],
-        [-120.8773507, 32.7983886]
-    ])
-} satisfies Readonly<Record<string, ChartCutline>>;
-
-const CHART_PRESENTATION = {
-    'vfr-sectional-las_vegas.tif': {
-        title: 'Sectional · Las Vegas', kind: 'vfr-sectional', minZoom: 7, maxZoom: 12
-    },
-    'vfr-sectional-los_angeles.tif': {
-        title: 'Sectional · Los Angeles', kind: 'vfr-sectional', minZoom: 7, maxZoom: 12
-    },
-    'vfr-sectional-san_francisco.tif': {
-        title: 'Sectional · San Francisco', kind: 'vfr-sectional', minZoom: 5, maxZoom: 12
-    },
-    'vfr-terminal-las_vegas.tif': {
-        title: 'Terminal · Las Vegas', kind: 'vfr-terminal', minZoom: 8, maxZoom: 13
-    },
-    'vfr-terminal-los_angeles.tif': {
-        title: 'Terminal · Los Angeles', kind: 'vfr-terminal', minZoom: 8, maxZoom: 13
-    },
-    'vfr-terminal-san_diego.tif': {
-        title: 'Terminal · San Diego', kind: 'vfr-terminal', minZoom: 8, maxZoom: 13
-    },
-    'vfr-terminal-san_francisco.tif': {
-        title: 'Terminal · San Francisco', kind: 'vfr-terminal', minZoom: 8, maxZoom: 13
-    },
-    'vfr-terminal-las_vegas-flyway.tif': {
-        title: 'Flyway · Las Vegas', kind: 'vfr-flyway', minZoom: 8, maxZoom: 13
-    },
-    'vfr-terminal-los_angeles-flyway.tif': {
-        title: 'Flyway · Los Angeles', kind: 'vfr-flyway', minZoom: 8, maxZoom: 13
-    },
-    'vfr-terminal-san_diego-flyway.tif': {
-        title: 'Flyway · San Diego', kind: 'vfr-flyway', minZoom: 8, maxZoom: 13
-    },
-    'vfr-terminal-san_francisco-flyway.tif': {
-        title: 'Flyway · San Francisco', kind: 'vfr-flyway', minZoom: 8, maxZoom: 13
-    },
-    'ifr-enroute-low-l02.tif': {
-        title: 'IFR Low · L02', kind: 'ifr-low', minZoom: 5, maxZoom: 12
-    },
-    'ifr-enroute-low-l03.tif': {
-        title: 'IFR Low · L03', kind: 'ifr-low', minZoom: 7, maxZoom: 12
-    },
-    'ifr-enroute-low-l04.tif': {
-        title: 'IFR Low · L04', kind: 'ifr-low', minZoom: 7, maxZoom: 12
-    }
-} satisfies Record<keyof typeof CHART_CUTLINES, ChartPresentation>;
 
 async function runCommand(
     command: string,
@@ -284,32 +136,157 @@ async function findTiffs(directory: string): Promise<string[]> {
     const tiffs: string[] = [];
     for (const entry of entries) {
         const entryPath = path.join(directory, entry.name);
-        if (entry.isDirectory()) tiffs.push(...await findTiffs(entryPath));
-        else if (entry.isFile() && /\.tif$/i.test(entry.name)) tiffs.push(entryPath);
+        if (entry.isDirectory() && entry.name !== 'mbtiles') {
+            tiffs.push(...await findTiffs(entryPath));
+        } else if (entry.isFile() && /\.tif$/i.test(entry.name)) {
+            tiffs.push(entryPath);
+        }
     }
     return tiffs.sort();
 }
 
-export function chartCutlineForFilename(filePath: string): string | undefined {
-    const cutline = CHART_CUTLINES[path.basename(filePath).toLowerCase()];
-    if (!cutline) return undefined;
-    const first = cutline.coordinates[0];
-    if (!first || cutline.coordinates.length < 3) {
-        throw new Error(`invalid chart cutline for ${path.basename(filePath)}`);
-    }
-    const ring = [...cutline.coordinates, first];
-    return `POLYGON ((${ring.map(([longitude, latitude]) =>
-        `${longitude} ${latitude}`
-    ).join(', ')}))`;
+const ifrLowCoordinate = (() => {
+    const flattening = 1 / IFR_LOW_PROJECTION.inverseFlattening;
+    const eccentricity = Math.sqrt(2 * flattening - flattening ** 2);
+    const radians = Math.PI / 180;
+    const latitudeOfOrigin = IFR_LOW_PROJECTION.latitudeOfOrigin * radians;
+    const firstParallel = IFR_LOW_PROJECTION.firstParallel * radians;
+    const secondParallel = IFR_LOW_PROJECTION.secondParallel * radians;
+    const centralMeridian = IFR_LOW_PROJECTION.centralMeridian * radians;
+    const m = (value: number): number => Math.cos(value) /
+        Math.sqrt(1 - eccentricity ** 2 * Math.sin(value) ** 2);
+    const t = (value: number): number => Math.tan(Math.PI / 4 - value / 2) /
+        ((1 - eccentricity * Math.sin(value)) /
+            (1 + eccentricity * Math.sin(value))) ** (eccentricity / 2);
+    const cone = (Math.log(m(firstParallel)) - Math.log(m(secondParallel))) /
+        (Math.log(t(firstParallel)) - Math.log(t(secondParallel)));
+    const scale = m(firstParallel) / (cone * t(firstParallel) ** cone);
+    const originRadius = IFR_LOW_PROJECTION.semiMajorAxis *
+        scale * t(latitudeOfOrigin) ** cone;
+
+    return ([longitude, latitude]: ChartDefinition['coordinates'][number]) => {
+        const radius = IFR_LOW_PROJECTION.semiMajorAxis *
+            scale * t(latitude * radians) ** cone;
+        const angle = cone * (longitude * radians - centralMeridian);
+        return [
+            radius * Math.sin(angle),
+            originRadius - radius * Math.cos(angle)
+        ] as [number, number];
+    };
+})();
+
+function cutlineForDefinition(definition: ChartDefinition): ChartCutline {
+    const srs = definition.kind === 'ifr-low'
+        ? IFR_LOW_CUTLINE_SRS
+        : GEOGRAPHIC_CUTLINE_SRS;
+    const coordinates = definition.kind === 'ifr-low'
+        ? definition.coordinates.map(ifrLowCoordinate)
+        : definition.coordinates;
+    const first = coordinates[0];
+    const ring = [...coordinates, first];
+    return {
+        srs,
+        wkt: `POLYGON ((${ring.map(([x, y]) => `${x} ${y}`).join(', ')}))`
+    };
+}
+
+export function chartCutlineForFilename(filePath: string): ChartCutline | undefined {
+    const definition = CHART_DEFINITIONS[path.basename(filePath).toLowerCase()];
+    if (!definition) return undefined;
+    return cutlineForDefinition(definition);
 }
 
 function buildReceiptPath(mbtilesPath: string): string {
     return `${mbtilesPath}.build.json`;
 }
 
+function legacyTemporaryChartPaths(basePath: string): string[] {
+    const nextMbtilesPath = `${basePath}.next.mbtiles`;
+    const partialTilesPath = `${basePath}.next.partial_tiles.db`;
+    return [
+        `${basePath}-rgb.vrt`,
+        `${basePath}-alpha.vrt`,
+        nextMbtilesPath,
+        `${nextMbtilesPath}-journal`,
+        `${nextMbtilesPath}-shm`,
+        `${nextMbtilesPath}-wal`,
+        partialTilesPath,
+        `${partialTilesPath}-journal`,
+        `${partialTilesPath}-shm`,
+        `${partialTilesPath}-wal`
+    ];
+}
+
+async function removeStaleChartWork(basePath: string): Promise<void> {
+    const directory = path.dirname(basePath);
+    const prefix = `${path.basename(basePath)}.work-`;
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    await Promise.all(
+        entries
+            .filter(entry => entry.isDirectory() && entry.name.startsWith(prefix))
+            .map(entry => fs.rm(path.join(directory, entry.name), {
+                recursive: true,
+                force: true
+            }))
+    );
+    await Promise.all(
+        legacyTemporaryChartPaths(basePath).map(filePath => fs.rm(filePath, { force: true }))
+    );
+}
+
+async function withChartOutput<T>(
+    tifPath: string,
+    action: (mbtilesPath: string) => Promise<T>
+): Promise<T> {
+    const sourceBasePath = tifPath.replace(/\.tif$/i, '');
+    const mbtilesPath = chartMbtilesPath(tifPath);
+    // Keep the lock keyed to the source so old and new layout builds cannot race.
+    const releaseLock = await acquireChartBuildLock(sourceBasePath);
+    try {
+        await fs.mkdir(path.dirname(mbtilesPath), { recursive: true });
+        await removeStaleChartWork(sourceBasePath);
+        await removeStaleChartWork(mbtilesPath.replace(/\.mbtiles$/i, ''));
+        const moves: Array<[string, string]> = [];
+        const oldPaths = [
+            `${sourceBasePath}.mbtiles`,
+            path.join(path.dirname(tifPath), 'mbtiles', path.basename(mbtilesPath))
+        ].filter(file => path.resolve(file) !== path.resolve(mbtilesPath));
+        const destinations = new Set<string>();
+        for (const legacyPath of oldPaths) {
+            for (const suffix of ['', '.build.json']) {
+                const source = `${legacyPath}${suffix}`;
+                const destination = `${mbtilesPath}${suffix}`;
+                if (!await fileExists(source)) continue;
+                if (await fileExists(destination) || destinations.has(destination)) {
+                    throw new Error(`Chart layout conflict: both ${source} and ${destination} exist`);
+                }
+                moves.push([source, destination]);
+                destinations.add(destination);
+            }
+        }
+        // Receipts contain content identities, not paths: relocating does not
+        // invalidate a verified build or require rendering several GB again.
+        // Check both destinations first; resume safely if an earlier move stopped
+        // between the archive and its receipt. Never overwrite a destination.
+        for (const [source, destination] of moves) await fs.rename(source, destination);
+        return await action(mbtilesPath);
+    } finally {
+        await releaseLock();
+    }
+}
+
 function configurationSha256(tifPath: string): string {
     const filename = path.basename(tifPath).toLowerCase();
-    const cutline = CHART_CUTLINES[filename as keyof typeof CHART_CUTLINES] ?? null;
+    const definition = CHART_DEFINITIONS[filename];
+    const cutline = definition
+        ? {
+            coordinates: definition.coordinates,
+            provenance: definition.provenance,
+            ...(definition.kind === 'ifr-low'
+                ? { edgeSrs: IFR_LOW_CUTLINE_SRS }
+                : {})
+        }
+        : null;
     const configuration = {
         tilerVersion: TILER_VERSION,
         targetSrs: TARGET_SRS,
@@ -410,87 +387,90 @@ export async function writeChartBuildReceipt(
     return receipt;
 }
 
-export async function writeChartManifests(chartRoot: string): Promise<void> {
-    await writeChartManifestsWithReceipts(chartRoot, new Map());
+export async function writeChartManifests(
+    chartRoot: string,
+    readMetadata = readChartMetadata
+): Promise<void> {
+    await writeChartManifestsWithReceipts(chartRoot, new Map(), readMetadata);
 }
 
 async function writeChartManifestsWithReceipts(
     chartRoot: string,
-    verifiedReceipts: ReadonlyMap<string, ChartBuildReceipt>
+    verifiedReceipts: ReadonlyMap<string, ChartBuildReceipt>,
+    readMetadata = readChartMetadata
 ): Promise<void> {
     const entries = await fs.readdir(chartRoot, { withFileTypes: true });
     for (const entry of entries) {
         if (!entry.isDirectory() || !isIsoDate(entry.name)) continue;
         const cycleDirectory = path.join(chartRoot, entry.name);
-        const charts = await Promise.all(
-            Object.entries(CHART_PRESENTATION).map(async ([tiff, presentation]) => {
-                const definition = CHART_CUTLINES[tiff as keyof typeof CHART_CUTLINES];
-                const file = tiff.replace(/\.tif$/i, '.mbtiles');
-                const filePath = path.join(cycleDirectory, file);
-                const tifPath = path.join(cycleDirectory, tiff);
-                if (!await fileExists(filePath)) {
-                    await fs.rm(buildReceiptPath(filePath), { force: true });
-                    return undefined;
-                }
-                const receipt = verifiedReceipts.get(path.resolve(filePath))
-                    ?? await currentBuildReceipt(tifPath, filePath);
-                if (!receipt) {
-                    throw new Error(
-                        `Chart cache is stale or unverifiable: ${filePath}; rebuild the chart`
-                    );
-                }
-                return {
-                    id: file.replace(/\.mbtiles$/i, ''),
-                    ...presentation,
-                    file,
-                    bounds: boundsForCoordinates(definition.coordinates),
-                    byteLength: receipt.output.byteLength,
-                    sha256: receipt.output.sha256,
-                    sourceByteLength: receipt.source.byteLength,
-                    sourceSha256: receipt.source.sha256,
-                    tilerVersion: receipt.tilerVersion,
-                    buildConfigurationSha256: receipt.configurationSha256,
-                    cutlineProvenance: definition.provenance
-                };
-            })
-        );
-        const published = charts.filter(chart => chart !== undefined)
-            .sort((left, right) => left.id.localeCompare(right.id));
-        const manifestPath = path.join(cycleDirectory, 'chart-manifest.json');
-        if (published.length === 0) {
-            await fs.rm(manifestPath, { force: true });
-            continue;
-        }
-        const manifest: ChartManifest = {
-            schemaVersion: 1,
-            effectiveDate: entry.name,
-            generatedAt: new Date().toISOString(),
-            charts: published
-        };
-        await writeFileAtomic(
-            manifestPath,
-            `${JSON.stringify(manifest, null, 2)}\n`
-        );
+        const deliveryDirectory = path.join(cycleDirectory, 'mbtiles');
+        await fs.mkdir(deliveryDirectory, { recursive: true });
+        const release = await acquireChartBuildLock(path.join(deliveryDirectory, 'packages'));
+        try {
+            const charts = await mapWithConcurrency(
+                Object.entries(CHART_DEFINITIONS),
+                DEFAULT_TILE_CONCURRENCY,
+                ([tiff, definition]) => withChartOutput(
+                    path.join(cycleDirectory, tiff),
+                    async filePath => {
+                        const file = tiff.replace(/\.tif$/i, '.mbtiles');
+                        const tifPath = path.join(cycleDirectory, tiff);
+                        if (!await fileExists(filePath)) {
+                            await fs.rm(buildReceiptPath(filePath), { force: true });
+                            return undefined;
+                        }
+                        const receipt = verifiedReceipts.get(path.resolve(filePath))
+                            ?? await currentBuildReceipt(tifPath, filePath);
+                        if (!receipt) {
+                            throw new Error(
+                                `Chart cache is stale or unverifiable: ${filePath}; rebuild the chart`
+                            );
+                        }
+                        return {
+                            id: file.replace(/\.mbtiles$/i, ''),
+                            title: definition.title,
+                            kind: definition.kind,
+                            file,
+                            // GDAL's cropped raster extent includes curved Lambert
+                            // edges; family defaults and corner-only bounds do not.
+                            ...await readMetadata(filePath),
+                            byteLength: receipt.output.byteLength,
+                            sha256: receipt.output.sha256,
+                            sourceByteLength: receipt.source.byteLength,
+                            sourceSha256: receipt.source.sha256,
+                            tilerVersion: receipt.tilerVersion,
+                            buildConfigurationSha256: receipt.configurationSha256,
+                            cutlineProvenance: definition.provenance
+                        };
+                    }
+                )
+            );
+            const published = charts.filter(chart => chart !== undefined)
+                .sort((left, right) => left.id.localeCompare(right.id));
+            const manifestPath = path.join(chartCacheDirectory(cycleDirectory), 'chart-manifest.json');
+            const legacyManifests = [
+                path.join(cycleDirectory, 'chart-manifest.json'),
+                path.join(deliveryDirectory, 'chart-manifest.json')
+            ].filter(file => path.resolve(file) !== path.resolve(manifestPath));
+            if (published.length === 0) {
+                await fs.rm(manifestPath, { force: true });
+                for (const file of legacyManifests) await fs.rm(file, { force: true });
+                continue;
+            }
+            const manifest: ChartManifest = {
+                schemaVersion: 1,
+                effectiveDate: entry.name,
+                generatedAt: new Date().toISOString(),
+                charts: published
+            };
+            await writeFileAtomic(
+                manifestPath,
+                `${JSON.stringify(manifest, null, 2)}\n`
+            );
+            await flattenChartPackages(deliveryDirectory);
+            for (const file of legacyManifests) await fs.rm(file, { force: true });
+        } finally { await release(); }
     }
-}
-
-function boundsForCoordinates(
-    coordinates: readonly LongitudeLatitude[]
-): [number, number, number, number] {
-    const longitudes = coordinates.map(([longitude]) => longitude);
-    const latitudes = coordinates.map(([, latitude]) => latitude);
-    return [
-        Math.min(...longitudes),
-        Math.min(...latitudes),
-        Math.max(...longitudes),
-        Math.max(...latitudes)
-    ];
-}
-
-async function sha256File(filePath: string): Promise<string> {
-    const hash = createHash('sha256');
-    for await (const chunk of createReadStream(filePath)) hash.update(chunk);
-    return hash.digest('hex');
 }
 
 function isIsoDate(value: string): boolean {
@@ -503,79 +483,82 @@ export async function tileMbtilesFromTiff(
     tifPath: string,
     force = false
 ): Promise<ChartBuildReceipt> {
-    const basePath = tifPath.replace(/\.tif$/i, '');
-    const rgbVrtPath = `${basePath}-rgb.vrt`;
-    const alphaVrtPath = `${basePath}-alpha.vrt`;
-    const mbtilesPath = `${basePath}.mbtiles`;
-    const nextMbtilesPath = `${basePath}.next.mbtiles`;
-    const temporaryPaths = [rgbVrtPath, alphaVrtPath, nextMbtilesPath];
-
     const cutline = chartCutlineForFilename(tifPath);
     if (!cutline && /^(?:vfr-|ifr-)/.test(path.basename(tifPath).toLowerCase())) {
         throw new Error(`no reviewed chart cutline for ${path.basename(tifPath)}`);
     }
-    if (await fileExists(mbtilesPath) && !force) {
-        const receipt = await currentBuildReceipt(tifPath, mbtilesPath);
-        if (receipt) {
-            await Promise.all(temporaryPaths.map(filePath => fs.rm(filePath, { force: true })));
-            console.log(`file "${mbtilesPath}" is current`);
-            return receipt;
+    return withChartOutput(tifPath, async mbtilesPath => {
+        const basePath = mbtilesPath.replace(/\.mbtiles$/i, '');
+        if (await fileExists(mbtilesPath) && !force) {
+            const receipt = await currentBuildReceipt(tifPath, mbtilesPath);
+            if (receipt) {
+                console.log(`file "${mbtilesPath}" is current`);
+                return receipt;
+            }
+            console.warn(`rebuilding stale or unverifiable chart cache "${mbtilesPath}"`);
         }
-        console.warn(`rebuilding stale or unverifiable chart cache "${mbtilesPath}"`);
-    }
 
-    let sourcePath = tifPath;
-    try {
-        const info = await runCommand('gdalinfo', [sourcePath]);
-        if (info.stdout.includes('ColorInterp=Palette')) {
+        const workDirectory = await fs.mkdtemp(`${basePath}.work-`);
+        const rgbVrtPath = path.join(workDirectory, 'rgb.vrt');
+        const alphaVrtPath = path.join(workDirectory, 'alpha.vrt');
+        const nextMbtilesPath = path.join(workDirectory, 'next.mbtiles');
+        let sourcePath = tifPath;
+        try {
+            const info = await runCommand('gdalinfo', [sourcePath]);
+            if (info.stdout.includes('ColorInterp=Palette')) {
+                await runCommand('gdal_translate', [
+                    '-expand', 'rgb', '-of', 'VRT', sourcePath, rgbVrtPath
+                ]);
+                sourcePath = rgbVrtPath;
+            }
+
+            console.log(`rendering mbtiles for "${tifPath}"`);
+            const warpArguments = [
+                '-r', RESAMPLING,
+                '-t_srs', TARGET_SRS, '-dstalpha', '-of', 'VRT'
+            ];
+            if (cutline) {
+                warpArguments.push(
+                    '-cutline_srs', cutline.srs,
+                    '-cutline', cutline.wkt,
+                    '-crop_to_cutline'
+                );
+            }
+            warpArguments.push(sourcePath, alphaVrtPath);
+            await runCommand('gdalwarp', warpArguments);
             await runCommand('gdal_translate', [
-                '-expand', 'rgb', '-of', 'VRT', sourcePath, rgbVrtPath
+                '-of', 'MBTILES',
+                '-co', `NAME=${path.basename(basePath)}`,
+                '-co', `DESCRIPTION=${path.basename(basePath)}`,
+                '-co', `TILE_FORMAT=${TILE_FORMAT}`,
+                '-co', `QUALITY=${WEBP_QUALITY}`,
+                '-co', `RESAMPLING=${RESAMPLING.toUpperCase()}`,
+                '-co', 'ZOOM_LEVEL_STRATEGY=UPPER',
+                alphaVrtPath,
+                nextMbtilesPath
             ]);
-            sourcePath = rgbVrtPath;
+            await runCommand('gdaladdo', [
+                '-r', RESAMPLING,
+                '-oo', `TILE_FORMAT=${TILE_FORMAT}`,
+                '-oo', `QUALITY=${WEBP_QUALITY}`,
+                nextMbtilesPath,
+                ...OVERVIEW_FACTORS
+            ]);
+            await fs.rename(nextMbtilesPath, mbtilesPath);
+            const receipt = await writeChartBuildReceipt(tifPath, mbtilesPath);
+            console.log(`Wrote ${mbtilesPath}`);
+            return receipt;
+        } finally {
+            await fs.rm(workDirectory, { recursive: true, force: true });
         }
-
-        console.log(`rendering mbtiles for "${tifPath}"`);
-        const warpArguments = [
-            '-r', RESAMPLING,
-            '-t_srs', TARGET_SRS, '-dstalpha', '-of', 'VRT'
-        ];
-        if (cutline) {
-            warpArguments.push(
-                '-cutline_srs', 'EPSG:4326',
-                '-cutline', cutline,
-                '-crop_to_cutline'
-            );
-        }
-        warpArguments.push(sourcePath, alphaVrtPath);
-        await runCommand('gdalwarp', warpArguments);
-        await runCommand('gdal_translate', [
-            '-of', 'MBTILES',
-            '-co', `NAME=${path.basename(basePath)}`,
-            '-co', `DESCRIPTION=${path.basename(basePath)}`,
-            '-co', `TILE_FORMAT=${TILE_FORMAT}`,
-            '-co', `QUALITY=${WEBP_QUALITY}`,
-            '-co', `RESAMPLING=${RESAMPLING.toUpperCase()}`,
-            '-co', 'ZOOM_LEVEL_STRATEGY=UPPER',
-            alphaVrtPath,
-            nextMbtilesPath
-        ]);
-        await runCommand('gdaladdo', [
-            '-r', RESAMPLING,
-            '-oo', `TILE_FORMAT=${TILE_FORMAT}`,
-            '-oo', `QUALITY=${WEBP_QUALITY}`,
-            nextMbtilesPath,
-            ...OVERVIEW_FACTORS
-        ]);
-        await fs.rename(nextMbtilesPath, mbtilesPath);
-        const receipt = await writeChartBuildReceipt(tifPath, mbtilesPath);
-        console.log(`Wrote ${mbtilesPath}`);
-        return receipt;
-    } finally {
-        await Promise.all(temporaryPaths.map(filePath => fs.rm(filePath, { force: true })));
-    }
+    });
 }
 
-export async function tileCharts(chartRoot: string, force = false): Promise<void> {
+export async function tileCharts(
+    chartRoot: string,
+    force = false,
+    concurrency = DEFAULT_TILE_CONCURRENCY
+): Promise<void> {
     await verifyGdalTools();
     const tiffs = await findTiffs(chartRoot);
     if (tiffs.length === 0) {
@@ -583,10 +566,14 @@ export async function tileCharts(chartRoot: string, force = false): Promise<void
         await writeChartManifests(chartRoot);
         return;
     }
-    const verifiedReceipts = new Map<string, ChartBuildReceipt>();
-    for (const tifPath of tiffs) {
+    console.log(`Rendering ${tiffs.length} chart TIFFs with concurrency ${concurrency}`);
+    const builds = await mapWithConcurrency(tiffs, concurrency, async tifPath => {
         const receipt = await tileMbtilesFromTiff(tifPath, force);
-        verifiedReceipts.set(path.resolve(tifPath.replace(/\.tif$/i, '.mbtiles')), receipt);
-    }
+        return [
+            path.resolve(chartMbtilesPath(tifPath)),
+            receipt
+        ] as const;
+    });
+    const verifiedReceipts = new Map(builds);
     await writeChartManifestsWithReceipts(chartRoot, verifiedReceipts);
 }

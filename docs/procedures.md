@@ -23,7 +23,9 @@ dist/charts/<effective-date>/tpp/
 └── manifest.json
 ```
 
-The catalog contains every FAA airport and procedure record for the cycle. It keeps
+The catalog contains every FAA airport and active procedure record for the cycle.
+It excludes records marked deleted and the FAA's `DELETED_JOB.PDF` and
+`DEL_APT_SERVED.PDF` placeholders, including those with a blank action flag. It keeps
 all procedure-record fields, including unknown fields, and adds:
 
 - a stable record ID and normalized product kind;
@@ -42,6 +44,10 @@ the combined TPP page geometry, matches the printed label at the physical page e
 and publishes the zero-based index. It also locates each airport's first page in shared
 sections for takeoff minima, textual ODPs, DVAs, alternate/radar minima, hot spots, and
 LAHSO material.
+
+FAA metadata volume `AK-1` maps to `tpp-ak.pdf`, and `PC-1` maps to `cs-pac.pdf`.
+Pacific procedures use the supplement's terminal-procedure section headers for page
+labels, so they cannot collide with the supplement's other numbered sections.
 
 IAPs, airport diagrams, SIDs, charted ODPs, and STARs normally carry direct printed
 page targets. Some military-only products have no combined-volume fields; those retain

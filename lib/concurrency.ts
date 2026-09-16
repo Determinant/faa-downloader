@@ -1,13 +1,14 @@
 export const DEFAULT_DOWNLOAD_CONCURRENCY = 4;
-export const MAX_DOWNLOAD_CONCURRENCY = 16;
+export const DEFAULT_TILE_CONCURRENCY = 4;
+export const MAX_CONCURRENCY = 16;
 
-export function parseDownloadConcurrency(
+export function parseConcurrency(
     raw: string | number,
     label = 'concurrency'
 ): number {
     const value = typeof raw === 'number' ? raw : Number(raw);
-    if (!Number.isInteger(value) || value < 1 || value > MAX_DOWNLOAD_CONCURRENCY) {
-        throw new Error(`${label} must be an integer from 1 to ${MAX_DOWNLOAD_CONCURRENCY}`);
+    if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENCY) {
+        throw new Error(`${label} must be an integer from 1 to ${MAX_CONCURRENCY}`);
     }
     return value;
 }
