@@ -61,3 +61,30 @@ at the indexed page and cache that source file on demand.
 Only combined volumes already present under `dist/charts/` are indexed. This keeps a
 partial regional chart build valid while the nationwide individual-PDF catalog remains
 complete.
+
+## Chart Supplement airport pages
+
+`npm run build:supplements -- --effective-date=YYYY-MM-DD` builds
+`dist/charts/YYYY-MM-DD/cs/catalog.json` from the existing `cs-*.pdf` books and FAA's
+small `afd_<edition>.xml` airport index. `build:charts` runs it automatically after
+the TPP catalog. `--source-xml=PATH` supports offline builds; downloaded XML is cached
+under `dist/supplements/`, outside the published chart tree.
+
+Reruns hash the selected books and XML and verify the catalog against a local build
+receipt before reusing it. Unchanged inputs skip directory-page scanning and leave
+the catalog untouched. Changes to the available books, their contents or paths, the
+XML, or the builder version require indexing again. Missing or modified catalogs
+are rebuilt. `--force` explicitly rescans the books. Receipts also live under
+`dist/supplements/` and do not need to be published.
+
+The exporter verifies the PDF cover and XML effective dates, resolves printed page
+numbers only inside the airport/facility-directory section, and fails on missing or
+ambiguous targets. This avoids confusing Pacific's restarted terminal-procedure
+numbering with its airport directory. NAVAID-only records and separate notice PDFs
+are not airport entry points. Border airports may have an entry in two books.
+
+The catalog carries the CS edition's own 56-day interval, exact zero-based page
+indexes, and whole-book sizes and SHA-256 hashes. It includes airports without TPP
+procedures. Publish this one JSON file alongside the existing PDFs; no MBTiles or
+PDF rebuild is needed. ZLayer loads the small catalog when Plates opens, and only
+downloads a regional book when its Chart Supplement row is selected.

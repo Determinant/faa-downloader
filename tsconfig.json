@@ -20,6 +20,7 @@
     "build-chart-manifests.ts",
     "build-chart-packages.ts",
     "build-procedures.ts",
+    "build-chart-supplements.ts",
     "download-aim.ts",
     "download-charts.ts",
     "download-nasr.ts",

@@ -15,11 +15,10 @@
     "build:charts": "node --import=tsx download-charts.ts --output=dist",
     "build:nasr": "node --import=tsx download-nasr.ts --output=dist",
     "build:procedures": "node --import=tsx build-procedures.ts --output=dist",
+    "build:supplements": "node --import=tsx build-chart-supplements.ts --output=dist",
     "chart-cutlines": "node --import=tsx generate-chart-cutlines.ts",
     "check": "tsc --noEmit",
-    "test": "node --import=tsx --test",
-    "download-aim": "node --import=tsx download-aim.ts --output=dist/aim",
-    "tile:chart": "node --import=tsx download-charts.ts"
+    "test": "node --import=tsx --test"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.9.12",

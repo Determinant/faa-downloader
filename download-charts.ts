@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildProcedureCatalog } from './build-procedures.ts';
+import { buildChartSupplements } from './build-chart-supplements.ts';
 import { buildChartPackages, readOfflineRegions } from './build-chart-packages.ts';
 import { buildNasrData } from './download-nasr.ts';
 import {
@@ -99,7 +100,7 @@ Downloads current FAA charts, produces spatial/zoom WebP MBTiles, and builds nav
 Options:
   --output=DIR          Build root (default: dist)
   --tile=FILE           Convert one TIFF into the chart build cache
-  --force               Rebuild existing MBTiles atomically
+  --force               Rebuild MBTiles, packages, and Chart Supplement indexes
   --concurrency=N       Parallel downloads, 1-16 (default: ${DEFAULT_DOWNLOAD_CONCURRENCY})
   --tile-concurrency=N  Parallel MBTiles builds, 1-16 (default: ${DEFAULT_TILE_CONCURRENCY})
   --regions=FILE        Optional named offline region bounds (JSON)
@@ -222,9 +223,10 @@ async function buildCharts(options: Options): Promise<void> {
     );
 
     await tileCharts(chartRoot, options.force, options.tileConcurrency);
-    await buildChartPackages(options.output, options.regions);
+    await buildChartPackages(options.output, options.regions, options.force);
     await buildNasrData({ output: options.output, concurrency: options.concurrency });
-    await buildProcedureCatalog({ output: options.output });
+    const procedures = await buildProcedureCatalog({ output: options.output });
+    await buildChartSupplements({ output: options.output, effectiveDate: procedures.effectiveDate, force: options.force });
     console.log(`Charts are ready under ${chartRoot}`);
 }
 

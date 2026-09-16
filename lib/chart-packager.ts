@@ -12,7 +12,8 @@ import {
     type ChartPackageArchive, type ChartOfflineRegion, type Tile
 } from './chart-package-grid.ts';
 import { mapWithConcurrency } from './concurrency.ts';
-import { sha256File, writeFileAtomic } from './fs-utils.ts';
+import { sha256File } from './fs-utils.ts';
+import { buildFingerprint, readCachedJson, writeCachedJson } from './build-cache.ts';
 import type { ChartKind } from './chart-definitions.ts';
 
 export type OfflineRegionDefinition = Omit<ChartOfflineRegion, 'archiveIds'>;
@@ -25,6 +26,8 @@ export type ChartPackageManifest = Omit<ChartManifest, 'schemaVersion'> & {
 };
 type EncodedTile = Tile & { data: Buffer };
 export const MAXIMUM_ARCHIVE_BYTES = 4 * 1024 * 1024;
+// Bump when packaging algorithms or encoding settings change.
+const PACKAGING_VERSION = 1;
 
 async function removeAbandonedPackageWork(directory: string): Promise<void> {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
@@ -45,7 +48,7 @@ async function removeAbandonedPackageWork(directory: string): Promise<void> {
 export async function packageChartCycle(
     directory: string,
     output: string,
-    options: { maximumArchiveBytes?: number; regions?: OfflineRegionDefinition[] } = {}
+    options: { maximumArchiveBytes?: number; regions?: OfflineRegionDefinition[]; force?: boolean } = {}
 ): Promise<ChartPackageManifest> {
     const maximumBytes = options.maximumArchiveBytes ?? MAXIMUM_ARCHIVE_BYTES;
     if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 32_768) {
@@ -69,18 +72,17 @@ export async function packageChartCycle(
         validateRegions(footprints);
         const regions = options.regions ?? footprints;
         if (options.regions !== undefined) validateRegions(options.regions);
+        const { generatedAt: _generatedAt, ...inputs } = manifest;
+        const inputSha256 = buildFingerprint({ packagingVersion: PACKAGING_VERSION, inputs, regions, maximumBytes });
+        const manifestFile = path.join(output, 'manifest.json');
+        const receiptFile = path.join(directory, `chart-packages-${buildFingerprint(path.resolve(output)).slice(0, 16)}.build.json`);
         // Publish ownership in the mkdir itself, before any SQLite files or
         // source hard links exist, so interruption cannot leave an ownerless pin.
         scratch = await fs.mkdtemp(path.join(directory, `.packages-work-${process.pid}-`));
         const snapshots = path.join(scratch, 'sources');
         await fs.mkdir(snapshots);
-        work = new DatabaseSync(path.join(scratch, 'work.sqlite'));
-        work.exec(`PRAGMA journal_mode=OFF; PRAGMA cache_size=-16384;
-            CREATE TABLE overviews(source TEXT,z INTEGER,x INTEGER,y INTEGER,data BLOB,PRIMARY KEY(source,z,x,y)) WITHOUT ROWID;
-            CREATE TABLE coverage(kind TEXT,z INTEGER,bx INTEGER,by INTEGER,x INTEGER,y INTEGER,
-                PRIMARY KEY(kind,z,bx,by,x,y)) WITHOUT ROWID;`);
-        const add = work.prepare('INSERT OR IGNORE INTO coverage VALUES (?,?,?,?,?,?)');
-        for (const chart of [...manifest.charts].sort((a, b) => a.id.localeCompare(b.id))) {
+        const charts = [...manifest.charts].sort((a, b) => a.id.localeCompare(b.id));
+        for (const chart of charts) {
             assert.ok(['vfr-sectional', 'vfr-terminal', 'vfr-flyway', 'ifr-low'].includes(chart.kind),
                 `Unknown chart kind: ${chart.kind}`);
             assert.ok(Number.isInteger(chart.minZoom) && chart.minZoom >= 0 &&
@@ -94,7 +96,22 @@ export async function packageChartCycle(
             await fs.link(path.join(directory, chart.file), file);
             assert.equal((await fs.stat(file)).size, chart.byteLength, `Stale chart: ${chart.id}`);
             assert.equal(await sha256File(file), chart.sha256, `Stale chart: ${chart.id}`);
-            const source = new PackageSource(chart, file, work);
+        }
+        if (!options.force) {
+            const existing = await readCachedJson<ChartPackageManifest>(manifestFile, receiptFile, inputSha256);
+            if (existing && await verifyPackages(output, existing.archives)) {
+                console.log(`Chart packages for ${manifest.effectiveDate} are already current`);
+                return existing;
+            }
+        }
+        work = new DatabaseSync(path.join(scratch, 'work.sqlite'));
+        work.exec(`PRAGMA journal_mode=OFF; PRAGMA cache_size=-16384;
+            CREATE TABLE overviews(source TEXT,z INTEGER,x INTEGER,y INTEGER,data BLOB,PRIMARY KEY(source,z,x,y)) WITHOUT ROWID;
+            CREATE TABLE coverage(kind TEXT,z INTEGER,bx INTEGER,by INTEGER,x INTEGER,y INTEGER,
+                PRIMARY KEY(kind,z,bx,by,x,y)) WITHOUT ROWID;`);
+        const add = work.prepare('INSERT OR IGNORE INTO coverage VALUES (?,?,?,?,?,?)');
+        for (const chart of charts) {
+            const source = new PackageSource(chart, path.join(snapshots, chart.file), work);
             sources.push(source);
             await source.prepare();
             work.exec('BEGIN');
@@ -126,14 +143,14 @@ export async function packageChartCycle(
             if (++count % 100 === 0) console.log(`Packaged ${count} spatial/zoom blocks (${archives.length} files)`);
         }
         const result: ChartPackageManifest = {
-            ...manifest, schemaVersion: 2, packagingVersion: 1,
+            ...manifest, schemaVersion: 2, packagingVersion: PACKAGING_VERSION,
             generatedAt: new Date().toISOString(), maximumArchiveBytes: maximumBytes,
             archives,
             regions: regions.map(region => ({ ...region, archiveIds: regionArchives(region.bounds, archives) }))
         };
         // Immutable, content-addressed files are present before the pointer changes.
         // Previous files remain valid for open clients and previously saved regions.
-        await writeFileAtomic(path.join(output, 'manifest.json'), `${JSON.stringify(result)}\n`);
+        await writeCachedJson(manifestFile, receiptFile, inputSha256, result);
         return result;
     } finally {
         for (const source of sources) source.close();
@@ -141,6 +158,20 @@ export async function packageChartCycle(
         if (scratch) await fs.rm(scratch, { recursive: true, force: true });
         await release();
     }
+}
+
+async function verifyPackages(output: string, archives: ChartPackageArchive[]): Promise<boolean> {
+    for (const archive of archives) {
+        const file = path.join(output, archive.file);
+        try {
+            assert.equal((await fs.stat(file)).size, archive.byteLength, `Corrupt existing package: ${archive.file}`);
+            assert.equal(await sha256File(file), archive.sha256, `Corrupt existing package: ${archive.file}`);
+        } catch (error) {
+            if (error.code === 'ENOENT') return false;
+            throw error;
+        }
+    }
+    return true;
 }
 
 async function writeShard(

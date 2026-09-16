@@ -13,6 +13,7 @@ import { packageChartCycle, validateRegions, type ChartPackageManifest } from '.
 import { tileBounds, type Bounds, type Tile } from '../lib/chart-package-grid.ts';
 import { sha256File, type ChartManifest } from '../lib/chart-tiler.ts';
 import { CHARTMAKER_COMMIT } from '../lib/chartmaker-cutlines.ts';
+import { PackageSource } from '../lib/chart-package-source.ts';
 
 async function fixture(t: TestContext) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-packages-'));
@@ -57,7 +58,7 @@ async function pausePackager(t: TestContext, directory: string, output: string) 
                 process.send('pinned');
             });
         };
-        await packageChartCycle(${JSON.stringify(directory)}, ${JSON.stringify(output)});
+        await packageChartCycle(${JSON.stringify(directory)}, ${JSON.stringify(output)}, { force: true });
         process.disconnect();
     `], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
     const exited = once(child, 'exit');
@@ -158,6 +159,82 @@ test('validates region definitions before expensive packaging work', () => {
     for (const invalid of [null, {}, [null], [{ id: 'bad', title: 'Bad', bounds: [[170, 50, -170, 55]] }]]) {
         assert.throws(() => validateRegions(invalid as never), /region/i);
     }
+});
+
+test('verified packages skip composition even after a sheet-manifest timestamp refresh', async t => {
+    const f = await fixture(t);
+    await f.add('sheet', [-180, -85, 180, 85], [{ z: 0, x: 0, y: 0, data: await color('#ff0000') }]);
+    await f.save();
+    const prepare = t.mock.method(PackageSource.prototype, 'prepare');
+    const original = await packageChartCycle(f.directory, f.output);
+    assert.equal(prepare.mock.callCount(), 1);
+    const file = path.join(f.output, 'manifest.json');
+    await fs.utimes(file, 1, 1);
+    f.manifest.generatedAt = '2026-09-16T00:00:00Z';
+    await f.save();
+    assert.deepEqual(await packageChartCycle(f.directory, f.output), original);
+    assert.equal(prepare.mock.callCount(), 1, 'no overviews or composition on a verified cache hit');
+    assert.equal((await fs.stat(file)).mtimeMs, 1000, 'published manifest is not rewritten');
+    assert.equal((await fs.stat(path.join(f.directory, 'sheet.mbtiles'))).nlink, 1);
+
+    await packageChartCycle(f.directory, f.output, { force: true });
+    assert.equal(prepare.mock.callCount(), 2);
+    const db = new DatabaseSync(path.join(f.directory, 'sheet.mbtiles'));
+    try { db.exec('UPDATE tiles SET tile_column=1'); } finally { db.close(); }
+    await assert.rejects(packageChartCycle(f.directory, f.output), /Stale chart/);
+});
+
+test('package reuse invalidates changed regions, budgets, provenance, and sheet contents', async t => {
+    const f = await fixture(t);
+    const bounds: Bounds = [-180, -85, 180, 85];
+    await f.add('sheet', bounds, [{ z: 0, x: 0, y: 0, data: await color('#ff0000') }]);
+    await f.save();
+    const prepare = t.mock.method(PackageSource.prototype, 'prepare');
+    await packageChartCycle(f.directory, f.output);
+    const regions = [{ id: 'trip', title: 'Trip', bounds: [bounds] }];
+    const custom = await packageChartCycle(f.directory, f.output, { regions });
+    assert.equal(custom.regions[0].id, 'trip');
+    const maximumArchiveBytes = 64 * 1024;
+    const smaller = await packageChartCycle(f.directory, f.output, { regions, maximumArchiveBytes });
+    assert.equal(smaller.maximumArchiveBytes, maximumArchiveBytes);
+    f.manifest.charts[0].buildConfigurationSha256 = 'c'.repeat(64);
+    await f.save();
+    await packageChartCycle(f.directory, f.output, { regions, maximumArchiveBytes });
+
+    const db = new DatabaseSync(path.join(f.directory, 'sheet.mbtiles'));
+    try { db.prepare('UPDATE tiles SET tile_data=?').run(await color('#0000ff')); }
+    finally { db.close(); }
+    f.manifest.charts[0].sha256 = await sha256File(path.join(f.directory, 'sheet.mbtiles'));
+    f.manifest.charts[0].byteLength = (await fs.stat(path.join(f.directory, 'sheet.mbtiles'))).size;
+    await f.save();
+    const changed = await packageChartCycle(f.directory, f.output, { regions, maximumArchiveBytes });
+    assert.equal(prepare.mock.callCount(), 5);
+    const pixels = await sharp(await packagedTile(f.directory, changed, { z: 0, x: 0, y: 0 })).raw().toBuffer();
+    assert.ok(pixels[2] > 240, 'updated imagery reaches the packages');
+});
+
+test('missing package outputs rebuild; corrupt archives fail before reuse', async t => {
+    const f = await fixture(t);
+    await f.add('sheet', [-180, -85, 180, 85], [{ z: 0, x: 0, y: 0, data: await color('#ff0000') }]);
+    await f.save();
+    const prepare = t.mock.method(PackageSource.prototype, 'prepare');
+    const original = await packageChartCycle(f.directory, f.output);
+    const archive = path.join(f.output, original.archives[0].file);
+    await fs.rm(archive);
+    assert.deepEqual((await packageChartCycle(f.directory, f.output)).archives, original.archives);
+    const manifestFile = path.join(f.output, 'manifest.json');
+    await fs.writeFile(manifestFile, JSON.stringify({ ...original, archives: [] }));
+    assert.deepEqual((await packageChartCycle(f.directory, f.output)).archives, original.archives);
+    const receipt = (await fs.readdir(f.directory)).find(file => file.startsWith('chart-packages-'))!;
+    await fs.writeFile(path.join(f.directory, receipt), '{broken');
+    await packageChartCycle(f.directory, f.output);
+    assert.equal(prepare.mock.callCount(), 4);
+
+    const bytes = await fs.readFile(archive);
+    bytes[bytes.length - 1] ^= 1;
+    await fs.writeFile(archive, bytes);
+    await assert.rejects(packageChartCycle(f.directory, f.output), /Corrupt existing package/);
+    assert.equal(prepare.mock.callCount(), 4, 'corrupt existing packages are rejected before expensive work');
 });
 
 test('a sheet replaced after pinning retains its verified imagery and provenance', async t => {

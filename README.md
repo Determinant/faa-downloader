@@ -5,7 +5,7 @@ FAA Downloader is a collection of build tools for creating local, offline-friend
 - FAR: a responsive, searchable PWA generated from Title 14 CFR data.
 - AIM: a local mirror of the FAA Aeronautical Information Manual HTML site.
 - Charts: a downloader and GDAL-based tiler for current FAA aeronautical charts,
-  plus map-ready NASR navigation data and a d-TPP procedure catalog.
+  plus NASR navigation data, a d-TPP procedure catalog, and Chart Supplement page indexes.
 
 The generated data is intended for personal reference and offline use. It is not an official FAA publication and should not replace current FAA source material, notices, or operational requirements.
 
@@ -15,13 +15,11 @@ The generated data is intended for personal reference and offline use. It is not
 | --- | --- | --- |
 | npm run build | FAR PWA from the current eCFR snapshot | dist/far/ |
 | npm run build:aim | Offline-capable AIM mirror | dist/aim/ |
-| npm run build:charts | Current charts, MBTiles, NASR data, and procedure metadata | dist/charts/, dist/zips/ |
-| npm run build:chart-manifests | Migrate old layouts, verify sheet receipts, and refresh build manifests | dist/mbtiles/YYYY-MM-DD/chart-manifest.json |
-| npm run build:chart-packages | Stitch existing sheet archives into small spatial/zoom packages and offline regions | dist/charts/YYYY-MM-DD/mbtiles/ |
-| npm run build:nasr | Current NASR airports, fixes, VFR waypoints, NAVAIDs, and airways | dist/charts/YYYY-MM-DD/nav/, dist/charts/YYYY-MM-DD/nasr/ |
-| npm run build:procedures | Current airport/procedure catalog and combined-TPP page index | dist/charts/YYYY-MM-DD/tpp/ |
+| npm run build:charts | Charts, MBTiles, navigation, procedures, and Chart Supplement indexes | dist/charts/ |
 
 Run only the product you need, or build them into the shared dist/ directory.
+`build` builds FAR only. `build:charts` includes the chart metadata and packaging
+stages automatically; no follow-up build commands are needed.
 
 ## Data sources
 
@@ -69,11 +67,7 @@ Build a product:
 ~~~bash
 npm run build          # FAR PWA
 npm run build:aim      # AIM mirror
-npm run build:charts   # FAA charts, MBTiles, NASR data, and procedure metadata
-npm run build:chart-manifests # Verify and refresh chart manifests only
-npm run build:chart-packages # Repackage verified MBTiles without downloading or rerendering TIFFs
-npm run build:nasr     # NASR navigation data without rebuilding chart imagery
-npm run build:procedures # Procedure metadata only
+npm run build:charts   # Charts, MBTiles, navigation, procedures, and CS indexes
 ~~~
 
 On NixOS, the external command-line prerequisites can be provided with:
@@ -81,6 +75,24 @@ On NixOS, the external command-line prerequisites can be provided with:
 ~~~bash
 nix-shell -p libxslt gdal unzip
 ~~~
+
+## Targeted rebuilds and maintenance
+
+Use these when updating one stage of an existing chart build:
+
+| Command | Purpose |
+| --- | --- |
+| npm run build:nasr | Refresh navigation data without rebuilding imagery |
+| npm run build:procedures | Refresh the airport/procedure catalog and combined-TPP page index |
+| npm run build:supplements | Refresh airport page indexes in the existing Chart Supplement PDFs |
+| npm run build:chart-packages | Package verified sheet MBTiles or update offline region definitions |
+| npm run build:chart-manifests | Verify sheet receipts, refresh manifests, and migrate older layouts |
+| npm run chart-cutlines | Verify or regenerate checked-in cutlines during development |
+
+Single-sheet tiling uses `npm run build:charts -- --tile=PATH` (the former
+`tile:chart` alias). Use `build:aim` for AIM updates; the former `download-aim`
+alias's create-only behavior is available through
+`node --import=tsx download-aim.ts --output=dist/aim`.
 
 ## FAR PWA
 
@@ -156,7 +168,7 @@ The --clean option used by the npm build replaces an existing mirror only after 
 
 ## FAA charts
 
-npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR and d-TPP metadata.
+npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR, d-TPP, and Chart Supplement metadata.
 
 The selected PDF coverage includes all 25 TPP volumes: AK, EC1–EC3, NC1–NC3,
 NE1–NE4, NW1, SC1–SC5, SE1–SE4, and SW1–SW4. It also includes all nine
@@ -203,6 +215,8 @@ dist/
 │       │   └── manifest.json
 │       ├── nasr/
 │       │   └── *_CSV.zip
+│       ├── cs/
+│       │   └── catalog.json
 │       └── tpp/
 │           ├── catalog.json
 │           └── manifest.json
@@ -210,7 +224,11 @@ dist/
 │   └── YYYY-MM-DD/
 │       ├── <sheet>.mbtiles
 │       ├── <sheet>.mbtiles.build.json
+│       ├── chart-packages-<output-id>.build.json
 │       └── chart-manifest.json
+├── supplements/                     # local XML and index-build cache; do not upload
+│   ├── afd_<edition>.xml
+│   └── YYYY-MM-DD.build.json
 └── zips/                            # local source cache; do not upload
     └── YYYY-MM-DD/
         └── *.zip
@@ -246,7 +264,7 @@ changed, follow the manifest command with `npm run build:chart-packages`.
 Upgrading from builds made before the Lambert IFR cutline change requires rebuilding
 the affected IFR sheets (L02–L04 in the former default coverage). Their old receipts
 are intentionally invalid: a manifest refresh cannot correct the imagery. Run
-`npm run tile:chart -- --tile=dist/charts/YYYY-MM-DD/ifr-enroute-low-l02.tif`
+`npm run build:charts -- --tile=dist/charts/YYYY-MM-DD/ifr-enroute-low-l02.tif`
 for each affected sheet, then rerun `build:chart-manifests` and `build:chart-packages`.
 Alternatively, `npm run build:charts` rebuilds stale sheets as part of the full pipeline.
 If a manifest refresh has already stopped on a stale receipt, its completed file moves
@@ -293,9 +311,17 @@ are supported; antimeridian regions use separate rectangles on either side of ±
 These are chart-imagery dependencies within published coverage, not a promise of
 navigation, procedures, weather, basemap availability, or a completed offline-download UI.
 
-Packaging is a separate, restartable stage: existing sheet receipts remain reusable,
-but a packaging rerun recomposes the mosaic. Package filenames contain their content
-hash; unchanged outputs reuse the same identity. The local index is replaced atomically
+Packaging is a separate, restartable stage. Reruns verify source and delivery-file
+sizes and SHA-256 hashes, then reuse packages when sheet metadata, regions, archive
+size limits, and the packaging version match. A refreshed source-manifest timestamp
+alone does not trigger composition or rewrite the delivery manifest. Local receipts
+also verify the delivery manifest itself. Missing outputs rebuild; corrupt existing
+archives fail verification. Use `npm run build:chart-packages -- --force` to recompose
+verified inputs explicitly. Full chart builds apply the same checks to each cached
+cycle, including older cycles.
+
+Package filenames contain their content hash; unchanged outputs reuse the same
+identity. The local index is replaced atomically
 only after every referenced file is present. Upload package files **before** their
 manifest; keep previously published hashed files for open/offline clients. Old packages
 are deliberately not garbage-collected automatically. For current ZLayers imagery
@@ -315,7 +341,7 @@ justify it; it should not introduce a second large regional MBTiles storage form
 To tile one existing TIFF without downloading anything:
 
 ~~~bash
-npm run tile:chart -- --tile=dist/charts/YYYY-MM-DD/chart.tif
+npm run build:charts -- --tile=dist/charts/YYYY-MM-DD/chart.tif
 ~~~
 
 Add `--force` to rebuild an existing MBTiles file. Rebuilds are staged and replaced
@@ -397,6 +423,15 @@ The chart downloader selects all 25 combined TPP volumes. The standalone procedu
 builder also indexes Pacific procedures in Chart Supplement Pacific. It indexes
 whichever volumes are available locally; the nationwide catalog and
 individual FAA PDF URLs remain complete even with only a subset of the volume PDFs.
+
+### Chart Supplement airport pages
+
+`npm run build:supplements` indexes airport entries in existing regional books.
+It verifies the selected PDFs, FAA XML, and existing catalog before reusing page
+indexes; unchanged builds skip directory-page scanning and preserve the catalog.
+New or removed books, changed PDFs or XML, and builder-version changes invalidate
+the cache. Use `--force` to rescan explicitly. See [docs/procedures.md](docs/procedures.md)
+for offline XML input, cycle selection, and the catalog format.
 
 ## Repository layout
 
