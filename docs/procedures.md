@@ -13,7 +13,12 @@ npm run build:procedures -- --source-xml=/path/to/d-TPP_Metafile.xml
 ```
 
 `build:charts` runs this stage automatically. A local source XML makes the standalone
-build network-free.
+build network-free. The standalone stage indexes TPP books already present under
+`charts/`; it does not download them. Without local books, the catalog still includes
+individual plate URLs, and its manifest reports unindexed procedures.
+
+SID/STAR waypoint sequences belong to `build:nav` and its `nav/terminal-procedures.json`
+product. This stage owns the plate catalog and PDF page targets in `tpp/`.
 
 ## Output
 

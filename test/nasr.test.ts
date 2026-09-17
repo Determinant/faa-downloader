@@ -3,14 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { DatabaseSync } from 'node:sqlite';
+import { gunzipSync } from 'node:zlib';
+import { promisify } from 'node:util';
 import {
+    buildNasrData,
     discoverCurrentNasrCycle,
     discoverNasrGroupUrls,
     downloadNasrFile,
     pruneNasrCycles
 } from '../download-nasr.ts';
 import { parseCsvRecords, parseCsvRows } from '../lib/csv.ts';
-import { buildNasrProducts } from '../lib/nasr.ts';
+import { buildNasrProducts, type NasrInput } from '../lib/nasr.ts';
 import { assertSafeZipEntry } from '../lib/zip.ts';
 
 function csv(headers: string[], rows: Array<Array<string | number>>): string {
@@ -42,7 +48,7 @@ test('NASR discovery selects the latest effective cycle and all required groups'
         }
     );
 
-    const cycle = ['APT', 'FIX', 'NAV', 'AWY']
+    const cycle = ['APT', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR']
         .map(group => `<a href="https://nfdc.faa.gov/data_2026_${group}_CSV.zip">${group}</a>`)
         .join('');
     assert.deepEqual(
@@ -51,9 +57,56 @@ test('NASR discovery selects the latest effective cycle and all required groups'
             APT: 'https://nfdc.faa.gov/data_2026_APT_CSV.zip',
             FIX: 'https://nfdc.faa.gov/data_2026_FIX_CSV.zip',
             NAV: 'https://nfdc.faa.gov/data_2026_NAV_CSV.zip',
-            AWY: 'https://nfdc.faa.gov/data_2026_AWY_CSV.zip'
+            AWY: 'https://nfdc.faa.gov/data_2026_AWY_CSV.zip',
+            PFR: 'https://nfdc.faa.gov/data_2026_PFR_CSV.zip',
+            DP: 'https://nfdc.faa.gov/data_2026_DP_CSV.zip',
+            STAR: 'https://nfdc.faa.gov/data_2026_STAR_CSV.zip'
         }
     );
+    assert.throws(
+        () => discoverNasrGroupUrls(cycle.replace(/<a[^>]*>PFR<\/a>/, ''), 'https://www.faa.gov/cycle/'),
+        /missing CSV groups: PFR/
+    );
+});
+
+test('navigation builds reject invalid options before fetching or creating output', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nav-options-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const output = path.join(root, 'output');
+    let requests = 0;
+    t.mock.method(globalThis, 'fetch', async () => {
+        requests++;
+        throw new Error('Unexpected network request');
+    });
+    const cases: [Partial<Parameters<typeof buildNasrData>[0]>, RegExp][] = [
+        [{ cycle: '2026-09-03' }, /--cycle requires --source-dir/],
+        [{ sourceDir: root }, /--cycle is required with --source-dir/],
+        [{ sourceDir: root, cycle: '2026-02-30' }, /valid YYYY-MM-DD date/],
+        [{ sourceDir: root, cycle: '2026-13-01' }, /valid YYYY-MM-DD date/],
+        [{ sourceDir: root, cycle: 'bad-date' }, /valid YYYY-MM-DD date/],
+        [{ sourceDir: ' ' }, /--source-dir must not be empty/],
+        [{ routeHistorySource: ' ' }, /--route-history-source must not be empty/],
+        [{ retainCycles: 0 }, /--retain-cycles must be a positive integer/],
+        [{ output: ' ' }, /--output must not be empty/],
+        [{ output: '' }, /--output must not be empty/]
+    ];
+    for (const [options, expected] of cases) {
+        await assert.rejects(buildNasrData({ output, ...options }), expected);
+    }
+    assert.equal(requests, 0);
+    assert.deepEqual(await fs.readdir(root), []);
+});
+
+test('navigation CLI rejects an online cycle override before starting a build', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nav-cli-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    await assert.rejects(promisify(execFile)(process.execPath, [
+        '--import=tsx', 'download-nasr.ts', `--output=${path.join(root, 'output')}`, '--cycle=2026-09-03'
+    ], { cwd: new URL('..', import.meta.url), timeout: 10_000 }), {
+        code: 1,
+        stderr: /--cycle requires --source-dir/
+    });
+    assert.deepEqual(await fs.readdir(root), []);
 });
 
 test('NASR retention removes only stale nested data from chart cycle directories', async () => {
@@ -131,6 +184,7 @@ test('NASR downloader replaces a corrupt cache and removes an invalid response',
 test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway products', () => {
     const effective = '2026/09/03';
     const products = buildNasrProducts({
+        ...preferredRouteInput(),
         airports: csv(
             [
                 'EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'ICAO_ID', 'ARPT_NAME',
@@ -197,13 +251,13 @@ test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway
             [
                 'EFF_DATE', 'REGULATORY', 'AWY_LOCATION', 'AWY_ID', 'POINT_SEQ', 'FROM_POINT',
                 'FROM_PT_TYPE', 'TO_POINT', 'MAG_COURSE', 'MAG_COURSE_DIST',
-                'MIN_ENROUTE_ALT', 'MAX_AUTH_ALT'
+                'MIN_ENROUTE_ALT', 'MAX_AUTH_ALT', 'AWY_SEG_GAP_FLAG'
             ],
             [
                 [effective, 'Y', 'C', 'V25', 10, 'SNS', 'VOR', 'ENI', '321.5', '92.4',
-                    '5000', '17500'],
+                    '5000', '17500', 'N'],
                 [effective, 'N', 'C', 'V25', 10, 'OAK', 'VOR', 'SFO', '270', '11',
-                    '3000', '17500']
+                    '3000', '17500', 'Y']
             ]
         )
     });
@@ -243,7 +297,234 @@ test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway
     assert.equal(products.airways.airways[0].regulatory, true);
     assert.deepEqual(products.airways.airways[0].points, ['SNS', 'ENI']);
     assert.equal((products.airways.airways[0].segments as any[])[0].meaFt, 5000);
+    assert.equal((products.airways.airways[0].segments as any[])[0].gap, false);
     assert.equal(products.airways.airways[1].regulatory, false);
     assert.deepEqual(products.airways.airways[1].points, ['OAK', 'SFO']);
     assert.equal((products.airways.airways[1].segments as any[])[0].meaFt, 3000);
+    assert.equal((products.airways.airways[1].segments as any[])[0].gap, true);
+});
+
+const preferredHeaders = [
+    'EFF_DATE', 'ORIGIN_ID', 'ORIGIN_CITY', 'ORIGIN_STATE_CODE', 'ORIGIN_COUNTRY_CODE',
+    'DSTN_ID', 'DSTN_CITY', 'DSTN_STATE_CODE', 'DSTN_COUNTRY_CODE', 'PFR_TYPE_CODE', 'ROUTE_NO',
+    'SPECIAL_AREA_DESCRIP', 'ALT_DESCRIP', 'AIRCRAFT', 'HOURS', 'ROUTE_DIR_DESCRIP', 'DESIGNATOR',
+    'NAR_TYPE', 'INLAND_FAC_FIX', 'COASTAL_FIX', 'DESTINATION', 'ROUTE_STRING'
+];
+const preferredSegmentHeaders = [
+    'EFF_DATE', 'ORIGIN_ID', 'DSTN_ID', 'PFR_TYPE_CODE', 'ROUTE_NO', 'SEGMENT_SEQ', 'SEG_VALUE',
+    'SEG_TYPE', 'STATE_CODE', 'COUNTRY_CODE', 'ICAO_REGION_CODE', 'NAV_TYPE', 'NEXT_SEG'
+];
+const routeRow = {
+    EFF_DATE: '2026/09/03', ORIGIN_ID: 'SBA', ORIGIN_CITY: 'SANTA BARBARA', ORIGIN_STATE_CODE: 'CA',
+    ORIGIN_COUNTRY_CODE: 'US', DSTN_ID: 'SMO', DSTN_CITY: 'SANTA MONICA', DSTN_STATE_CODE: 'CA',
+    DSTN_COUNTRY_CODE: 'US', PFR_TYPE_CODE: 'TEC', ROUTE_NO: 4,
+    SPECIAL_AREA_DESCRIP: 'SBA TO SMO', ALT_DESCRIP: 'PQ70', DESIGNATOR: 'SBAQ12',
+    ROUTE_STRING: 'KWANG CMA VNY V186 DARTS'
+};
+const segmentRow = {
+    EFF_DATE: '2026/09/03', ORIGIN_ID: 'SBA', DSTN_ID: 'SMO', PFR_TYPE_CODE: 'TEC', ROUTE_NO: 4,
+    SEGMENT_SEQ: 5, SEG_VALUE: 'KWANG', SEG_TYPE: 'FIX', STATE_CODE: 'CA', COUNTRY_CODE: 'US',
+    ICAO_REGION_CODE: 'K2', NEXT_SEG: 'CMA'
+};
+function recordCsv(headers: string[], rows: Record<string, string | number>[]): string {
+    return csv(headers, rows.map(row => headers.map(header => row[header] ?? '')));
+}
+function preferredRouteInput(overrides: Partial<NasrInput> = {}): NasrInput {
+    const empty = csv(['EFF_DATE'], []);
+    return {
+        airports: empty, runways: empty, runwayEnds: empty, fixes: empty,
+        navaids: empty, airways: empty, airwaySegments: empty,
+        preferredRoutes: recordCsv(preferredHeaders, [routeRow]),
+        preferredRouteSegments: recordCsv(preferredSegmentHeaders, [segmentRow]),
+        ...overrides
+    };
+}
+
+test('preferred routes retain directional variants, coded restrictions, NAR fields, and ordered segments', () => {
+    const products = buildNasrProducts(preferredRouteInput({
+        preferredRoutes: recordCsv(preferredHeaders, [
+            routeRow,
+            { ...routeRow, ROUTE_NO: 5, DESIGNATOR: 'SBAQ13', ALT_DESCRIP: 'J110M90',
+                ROUTE_STRING: 'HENER FIM V186 DARTS' },
+            { ...routeRow, PFR_TYPE_CODE: 'L', DESIGNATOR: '', AIRCRAFT: 'PROPS LESS THAN 210 KTS IAS',
+                HOURS: '1100-0400', ROUTE_DIR_DESCRIP: 'EAST FLOW' },
+            { ...routeRow, ORIGIN_ID: 'SMO', DSTN_ID: 'SBA' },
+            { EFF_DATE: routeRow.EFF_DATE, ORIGIN_ID: 'ALLEX', DSTN_ID: 'ALLRY', PFR_TYPE_CODE: 'NAR',
+                ROUTE_NO: 1, NAR_TYPE: 'COMMON', INLAND_FAC_FIX: 'ALLEX', COASTAL_FIX: 'ALLRY',
+                DESTINATION: 'ANDREWS', ROUTE_STRING: 'ALLEX ALLRY' }
+        ]),
+        preferredRouteSegments: recordCsv(preferredSegmentHeaders, [
+            { ...segmentRow, SEGMENT_SEQ: 10, SEG_VALUE: 'CMA', SEG_TYPE: 'NAVAID',
+                NAV_TYPE: 'VOR/DME', NEXT_SEG: 'VNY' },
+            { ...segmentRow, ROUTE_NO: 5, SEG_VALUE: 'HENER', NEXT_SEG: 'FIM' },
+            { ...segmentRow, PFR_TYPE_CODE: 'L', SEG_VALUE: 'LOWRT', NEXT_SEG: '' },
+            segmentRow
+        ])
+    }));
+    const { preferredRoutes } = products;
+    assert.equal(products.airways.type, 'ZLayerAirways');
+    assert.equal(preferredRoutes.type, 'ZLayerPreferredRoutes');
+    assert.equal(preferredRoutes.metadata.effectiveDate, '2026-09-03');
+    assert.equal(preferredRoutes.metadata.source, 'FAA 28-day NASR subscription');
+    const [first, second, low, reverse, nar] = preferredRoutes.routes;
+    assert.equal(new Set(preferredRoutes.routes.map(route => route.id)).size, 5);
+    assert.equal(first.id, 'preferred-route:SBA:SMO:TEC:4');
+    assert.equal(first.originId, 'SBA');
+    assert.equal(first.destinationId, 'SMO');
+    assert.equal(first.originCity, 'SANTA BARBARA');
+    assert.equal(first.destinationState, 'CA');
+    assert.equal(first.originCountry, 'US');
+    assert.equal(first.routeType, 'TEC');
+    assert.equal(first.routeNumber, 4);
+    assert.equal(first.area, 'SBA TO SMO');
+    assert.equal(first.altitude, 'PQ70');
+    assert.equal(first.route, 'KWANG CMA VNY V186 DARTS');
+    assert.equal(first.designator, 'SBAQ12');
+    assert.equal(Object.hasOwn(first, 'aircraft'), false);
+    assert.deepEqual(first.segments, [
+        { sequence: 5, value: 'KWANG', type: 'FIX', state: 'CA', country: 'US',
+            icaoRegion: 'K2', next: 'CMA' },
+        { sequence: 10, value: 'CMA', type: 'NAVAID', state: 'CA', country: 'US',
+            icaoRegion: 'K2', navaidType: 'VOR/DME', next: 'VNY' }
+    ]);
+    assert.equal(second.altitude, 'J110M90');
+    assert.equal((second.segments as any[])[0].value, 'HENER');
+    assert.equal((low.segments as any[])[0].value, 'LOWRT');
+    assert.equal(low.aircraft, 'PROPS LESS THAN 210 KTS IAS');
+    assert.equal(low.hours, '1100-0400');
+    assert.equal(low.direction, 'EAST FLOW');
+    assert.equal(reverse.id, 'preferred-route:SMO:SBA:TEC:4');
+    assert.deepEqual(reverse.segments, []);
+    assert.equal(nar.narType, 'COMMON');
+    assert.equal(nar.inlandFix, 'ALLEX');
+    assert.equal(nar.coastalFix, 'ALLRY');
+    assert.equal(nar.narDestination, 'ANDREWS');
+    assert.deepEqual(nar.segments, []);
+});
+
+test('preferred routes reject ambiguous joins and mismatched cycles', () => {
+    const routes = (rows: Record<string, string | number>[]) => ({
+        preferredRoutes: recordCsv(preferredHeaders, rows)
+    });
+    const segments = (rows: Record<string, string | number>[]) => ({
+        preferredRouteSegments: recordCsv(preferredSegmentHeaders, rows)
+    });
+    const cases: [Partial<NasrInput>, RegExp][] = [
+        [routes([]), /no preferred routes/],
+        [routes([routeRow, routeRow]), /duplicate/],
+        [routes([{ ...routeRow, DSTN_ID: '' }]), /invalid route identity/],
+        [routes([{ ...routeRow, ROUTE_NO: 'bad' }]), /invalid route identity/],
+        [segments([{ ...segmentRow, ROUTE_NO: 5 }]), /no parent route/],
+        [segments([segmentRow, segmentRow]), /duplicate segment sequence/],
+        [segments([{ ...segmentRow, SEGMENT_SEQ: '' }]), /invalid segment/],
+        [segments([{ ...segmentRow, SEG_VALUE: '' }]), /invalid segment/],
+        [routes([{ ...routeRow, EFF_DATE: '' }]), /missing or mismatched effective date/],
+        [segments([{ ...segmentRow, EFF_DATE: '  ' }]), /missing or mismatched effective date/],
+        [{ preferredRoutes: recordCsv(preferredHeaders.filter(header => header !== 'EFF_DATE'), [routeRow]) },
+            /missing or mismatched effective date/],
+        [{ preferredRouteSegments: recordCsv(preferredSegmentHeaders.filter(header => header !== 'EFF_DATE'), [segmentRow]) },
+            /missing or mismatched effective date/],
+        [routes([{ ...routeRow, EFF_DATE: '2026/08/06' }]), /one effective date/],
+        [segments([{ ...segmentRow, EFF_DATE: '2026/08/06' }]), /one effective date/]
+    ];
+    for (const [overrides, error] of cases) {
+        assert.throws(() => buildNasrProducts(preferredRouteInput(overrides)), error);
+    }
+});
+
+test('NASR cycle build packages preferred routes and filed history atomically', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-pfr-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const sourceDir = path.join(root, 'sources');
+    await fs.mkdir(sourceDir);
+    const input = preferredRouteInput({
+        airports: csv(
+            ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'ICAO_ID', 'LAT_DECIMAL', 'LONG_DECIMAL'],
+            [
+                ['2026/09/03', '00001.', 'A', 'SBA', 'KSBA', 34.4278, -119.84],
+                ['2026/09/03', '00002.', 'A', 'SMO', 'KSMO', 34.015, -118.4511]
+            ]
+        )
+    });
+    const terminal = JSON.parse(await fs.readFile(new URL('./fixtures/terminal-procedures.json', import.meta.url), 'utf8'));
+    const files: Record<string, string> = {
+        'APT_BASE.csv': input.airports, 'APT_RWY.csv': input.runways, 'APT_RWY_END.csv': input.runwayEnds,
+        'FIX_BASE.csv': input.fixes, 'NAV_BASE.csv': input.navaids,
+        'AWY_BASE.csv': input.airways, 'AWY_SEG_ALT.csv': input.airwaySegments,
+        'PFR_BASE.csv': input.preferredRoutes, 'PFR_SEG.csv': input.preferredRouteSegments,
+        'DP_BASE.csv': terminal.departures, 'DP_APT.csv': terminal.departureAirports, 'DP_RTE.csv': terminal.departureRoutes,
+        'STAR_BASE.csv': terminal.arrivals, 'STAR_APT.csv': terminal.arrivalAirports, 'STAR_RTE.csv': terminal.arrivalRoutes
+    };
+    for (const [name, contents] of Object.entries(files)) await fs.writeFile(path.join(sourceDir, name), contents);
+    const archive = async (group: string) => promisify(execFile)('zip', [
+        '-q', `${group}_CSV.zip`, ...Object.keys(files).filter(name => name.startsWith(`${group}_`))
+    ], { cwd: sourceDir });
+    for (const group of ['APT', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR']) await archive(group);
+    const routeHistorySource = path.join(root, 'routes.sqlite');
+    const database = new DatabaseSync(routeHistorySource);
+    database.exec(await fs.readFile(new URL('./fixtures/route-history.sql', import.meta.url), 'utf8'));
+    database.close();
+    const options = { output: path.join(root, 'output'), sourceDir, cycle: '2026-09-03', routeHistorySource };
+    await buildNasrData(options);
+    const cycleDir = path.join(options.output, 'charts', options.cycle);
+    const nav = path.join(cycleDir, 'nav');
+    const originalManifest = await fs.readFile(path.join(nav, 'manifest.json'), 'utf8');
+    const manifest = JSON.parse(originalManifest);
+    assert.deepEqual(manifest.products.find(product => product.id === 'terminal-procedures'), {
+        id: 'terminal-procedures', file: 'terminal-procedures.json', count: 2
+    });
+    const procedureData = JSON.parse(await fs.readFile(path.join(nav, 'terminal-procedures.json'), 'utf8'));
+    assert.deepEqual(procedureData.procedures.map(procedure => procedure.ident), ['SPTNS1', 'OHSEA3']);
+    const historyProduct = manifest.products.find(product => product.id === 'route-history');
+    assert.equal(historyProduct.file, 'route-history.json.gz');
+    assert.equal(historyProduct.compression, 'gzip');
+    assert.equal(historyProduct.count, 2);
+    const originalHistory = await fs.readFile(path.join(nav, historyProduct.file));
+    assert.equal(originalHistory.length, historyProduct.bytes);
+    const history = JSON.parse(gunzipSync(originalHistory).toString());
+    assert.equal(history.type, 'ZLayerRouteHistory');
+    assert.equal(history.version, 1);
+    assert.equal(history.effectiveDate, options.cycle);
+    assert.equal(history.countBasis, 'source-filed-route-use-count');
+    assert.equal(history.observationRange.lastSeen, '2026-01-25');
+    assert.deepEqual(manifest.products.find(product => product.id === 'preferred-routes'), {
+        id: 'preferred-routes', file: 'preferred-routes.json', count: 1
+    });
+    const source = manifest.sourceArchives.find(source => source.group === 'PFR');
+    assert.equal(source.filename, 'PFR_CSV.zip');
+    assert.match(source.url, /PFR_CSV\.zip$/);
+    const bytes = await fs.readFile(path.join(cycleDir, 'nasr', source.filename));
+    assert.equal(source.sha256, createHash('sha256').update(bytes).digest('hex'));
+    const originalRoutes = await fs.readFile(path.join(nav, 'preferred-routes.json'), 'utf8');
+    assert.deepEqual(JSON.parse(originalRoutes), buildNasrProducts(input).preferredRoutes);
+    const snapshot = new Map(await Promise.all((await fs.readdir(nav)).map(async name =>
+        [name, await fs.readFile(path.join(nav, name))] as const)));
+    const assertUnchanged = async () => {
+        assert.deepEqual((await fs.readdir(nav)).sort(), [...snapshot.keys()].sort());
+        for (const [name, bytes] of snapshot) assert.deepEqual(await fs.readFile(path.join(nav, name)), bytes, name);
+        assert.deepEqual((await fs.readdir(cycleDir)).sort(), ['nasr', 'nav']);
+    };
+
+    for (const group of ['DP', 'STAR']) {
+        const names = Object.keys(files).filter(name => name.startsWith(`${group}_`));
+        for (const name of names) await fs.writeFile(path.join(sourceDir, name), files[name].split('\n')[0] + '\n');
+        await archive(group);
+        await assert.rejects(buildNasrData(options), /BASE\.csv contains no procedures/);
+        await assertUnchanged();
+        for (const name of names) await fs.writeFile(path.join(sourceDir, name), files[name]);
+        await archive(group);
+    }
+
+    await fs.rename(routeHistorySource, `${routeHistorySource}.saved`);
+    await fs.writeFile(routeHistorySource, 'invalid database');
+    await assert.rejects(buildNasrData(options), /not a database/);
+    await assertUnchanged();
+    await fs.rename(`${routeHistorySource}.saved`, routeHistorySource);
+
+    await fs.writeFile(path.join(sourceDir, 'PFR_SEG.csv'), recordCsv(preferredSegmentHeaders, [
+        { ...segmentRow, ROUTE_NO: 99 }
+    ]));
+    await archive('PFR');
+    await assert.rejects(buildNasrData(options), /no parent route/);
+    await assertUnchanged();
 });

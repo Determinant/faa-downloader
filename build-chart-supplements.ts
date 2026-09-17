@@ -146,7 +146,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
         else if (arg === '--force') options.force = true;
         else if (arg === '--help' || arg === '-h') {
             console.log('Usage: npm run build:supplements -- [--output=dist] [--effective-date=YYYY-MM-DD] [--source-xml=PATH] [--force]\n' +
-                'Index existing regional books; reuse verified catalogs unless --force is supplied.');
+                'Index existing regional books into DIR/charts/YYYY-MM-DD/cs/; does not download PDFs.\n' +
+                'Uses cached/downloaded XML unless --source-xml is provided. Reuses verified catalogs unless --force is supplied.');
             process.exit(0);
         }
         else throw new Error(`Unknown argument: ${arg}`);

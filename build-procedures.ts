@@ -422,9 +422,12 @@ function parseDateKey(value: string): string {
 }
 
 function printHelp(): void {
-    console.log(`Usage: node --import=tsx build-procedures.ts [options]
+    console.log(`Usage: npm run build:procedures -- [options]
 
-Builds a complete FAA d-TPP airport/procedure catalog without changing PDF files.
+Builds the FAA d-TPP plate catalog in DIR/charts/YYYY-MM-DD/tpp/.
+Downloads the current XML catalog unless --source-xml is provided. Indexes existing
+TPP books without downloading or changing PDFs; missing books leave plate URLs
+available without local page targets. SID/STAR waypoint sequences use build:nav.
 
 Options:
   --output=DIR              Build root (default: dist)

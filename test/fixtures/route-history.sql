@@ -1,0 +1,14 @@
+CREATE TABLE sfdps_routes_by_type (
+    origin TEXT, destination TEXT, engine_class TEXT, route_string TEXT,
+    route_type TEXT, use_count INTEGER, first_seen TEXT, last_seen TEXT,
+    route_json BLOB
+);
+INSERT INTO sfdps_routes_by_type VALUES
+('KSBA', 'KSMO', 'Piston', 'KSBA KSMO', 'f', 75, '2025-07-25T19:48:10.682000+00:00', '2026-01-25T18:50:27.659000+00:00', X'28B52FFD'),
+('KSBA', 'KSMO', 'Unknown', 'KSBA KSMO', 'f', 39, '2025-05-08T14:38:48.260000+00:00', '2026-01-23T00:27:00.496000+00:00', NULL),
+('KSBA', 'KSMO', 'Piston', 'KSBA SBAP12 KSMO', 'f', 19, '2025-08-08T15:21:05.720000+00:00', '2025-12-21T20:38:57.841000+00:00', NULL),
+('KSBA', 'KSMO', 'Jet', 'KSBA KWANG CMA VNY V186 DARTS KSMO', 'f', 11, '2025-03-25T20:57:00.031000+00:00', '2026-01-20T01:38:08.729000+00:00', NULL),
+('KSMO', 'KSBA', '', 'KSMO KSBA', 'f', 1, '2026-01-03T09:00:00+00:00', '2026-01-03T09:00:00+00:00', NULL),
+('KSMO', 'KSBA', NULL, 'KSMO KSBA', 'f', 1, '2026-01-03T20:00:00+00:00', '2026-01-03T20:00:00+00:00', NULL),
+('KSBA', 'KSMO', '', 'PREFERRED ONLY', 'p', 900, NULL, NULL, NULL),
+('KSBA', 'KSMO', '', 'UNUSED', 'f', 0, NULL, NULL, NULL);

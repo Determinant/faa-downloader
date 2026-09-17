@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -10,20 +9,25 @@ import {
     mapWithConcurrency,
     parseConcurrency
 } from './lib/concurrency.ts';
-import { replaceDirectoryAtomically, writeFileAtomic } from './lib/fs-utils.ts';
+import { replaceDirectoryAtomically, sha256File, writeFileAtomic } from './lib/fs-utils.ts';
 import { downloadFile } from './lib/http-download.ts';
 import { buildNasrProducts, type NasrInput } from './lib/nasr.ts';
+import { buildRouteHistory } from './lib/route-history.ts';
+import { buildTerminalProcedures, type TerminalProcedureInput } from './lib/terminal-procedures.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 
 const NASR_INDEX_URL =
     'https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/';
-const GROUPS = ['APT', 'FIX', 'NAV', 'AWY'] as const;
+const GROUPS = ['APT', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR'] as const;
 const DEFAULT_RETAIN_CYCLES = 2;
 const REQUIRED_FILES: Record<(typeof GROUPS)[number], string[]> = {
     APT: ['APT_BASE.csv', 'APT_RWY.csv', 'APT_RWY_END.csv'],
     FIX: ['FIX_BASE.csv'],
     NAV: ['NAV_BASE.csv'],
-    AWY: ['AWY_BASE.csv', 'AWY_SEG_ALT.csv']
+    AWY: ['AWY_BASE.csv', 'AWY_SEG_ALT.csv'],
+    PFR: ['PFR_BASE.csv', 'PFR_SEG.csv'],
+    DP: ['DP_BASE.csv', 'DP_APT.csv', 'DP_RTE.csv'],
+    STAR: ['STAR_BASE.csv', 'STAR_APT.csv', 'STAR_RTE.csv']
 };
 const REQUEST_TIMEOUT_MS = 120_000;
 
@@ -34,6 +38,7 @@ type Options = {
     help: boolean;
     concurrency: number;
     sourceDir?: string;
+    routeHistorySource?: string;
     cycle?: string;
 };
 
@@ -57,20 +62,38 @@ function parseArgs(argv: string[]): Options {
             );
         }
         else if (arg.startsWith('--source-dir=')) options.sourceDir = arg.slice('--source-dir='.length);
+        else if (arg.startsWith('--route-history-source=')) options.routeHistorySource = arg.slice('--route-history-source='.length);
         else if (arg.startsWith('--cycle=')) options.cycle = arg.slice('--cycle='.length);
         else throw new Error(`Unknown argument: ${arg}`);
     }
+    validateOptions(options);
+    return options;
+}
+
+function validateOptions(options: Options): void {
     if (!options.output.trim()) throw new Error('--output must not be empty');
+    if (!Number.isSafeInteger(options.retainCycles) || options.retainCycles < 1) {
+        throw new Error('--retain-cycles must be a positive integer');
+    }
     if (options.sourceDir !== undefined && !options.sourceDir.trim()) {
         throw new Error('--source-dir must not be empty');
     }
-    if (options.cycle !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(options.cycle)) {
-        throw new Error('--cycle must use YYYY-MM-DD');
+    if (options.routeHistorySource !== undefined && !options.routeHistorySource.trim()) {
+        throw new Error('--route-history-source must not be empty');
+    }
+    if (options.cycle !== undefined) {
+        const date = new Date(`${options.cycle}T00:00:00Z`);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(options.cycle)
+            || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== options.cycle) {
+            throw new Error('--cycle must be a valid YYYY-MM-DD date');
+        }
+        if (!options.sourceDir) {
+            throw new Error('--cycle requires --source-dir; online builds select the current FAA cycle');
+        }
     }
     if (options.sourceDir && !options.cycle) {
         throw new Error('--cycle is required with --source-dir');
     }
-    return options;
 }
 
 function parseRetainCycles(raw: string): number {
@@ -83,20 +106,25 @@ function parseRetainCycles(raw: string): number {
 }
 
 function printHelp(): void {
-    console.log(`Usage: node --import=tsx download-nasr.ts [options]
+    console.log(`Usage: npm run build:nav -- [options]
 
-Downloads the current FAA 28-day NASR CSV groups and creates map-ready data.
+Builds the navigation bundle: FAA NASR map points, airways, preferred routes,
+terminal procedure sequences, and Aeronautic AQ historical filed routes.
+Online builds download the current FAA cycle and AQ snapshot. Local builds use
+all seven CSV ZIP groups and include history only with --route-history-source.
+Replaces the cycle's complete nav/ directory after all products succeed.
 
 Options:
   --output=DIR        Build root (default: dist)
   --retain-cycles=N   Keep N NASR cycles (default: 2)
   --concurrency=N     Parallel downloads, 1-16 (default: ${DEFAULT_DOWNLOAD_CONCURRENCY})
-  --source-dir=DIR    Use local APT/FIX/NAV/AWY ZIP archives instead of downloading
-  --cycle=YYYY-MM-DD  Effective date; required with --source-dir
+  --source-dir=DIR    Use local APT/FIX/NAV/AWY/PFR/DP/STAR ZIP archives instead of downloading
+  --route-history-source=FILE  Use a local Aeronautic AQ .sqlite or .sqlite.zst
+  --cycle=YYYY-MM-DD  Local effective date; required with and only valid with --source-dir
   --help, -h          Show this help
 
 Output layout:
-  DIR/charts/YYYY-MM-DD/nav/   Normalized GeoJSON, airways, and manifest
+  DIR/charts/YYYY-MM-DD/nav/   Map points, routes, terminal sequences, history, and manifest
   DIR/charts/YYYY-MM-DD/nasr/  Reusable FAA source ZIP archives
 `);
 }
@@ -144,7 +172,7 @@ export function discoverNasrGroupUrls(
     const anchors = Array.from(dom.window.document.querySelectorAll('a')) as any[];
     for (const anchor of anchors) {
         const href = String(anchor.getAttribute('href') || '');
-        const match = href.match(/_(APT|FIX|NAV|AWY)_CSV\.zip(?:$|[?#])/i);
+        const match = href.match(/_(APT|FIX|NAV|AWY|PFR|DP|STAR)_CSV\.zip(?:$|[?#])/i);
         if (!match) continue;
         const group = match[1].toUpperCase() as NasrGroup;
         found.set(group, new URL(href, baseUrl).href);
@@ -152,10 +180,6 @@ export function discoverNasrGroupUrls(
     const missing = GROUPS.filter(group => !found.has(group));
     if (missing.length > 0) throw new Error(`FAA NASR cycle is missing CSV groups: ${missing.join(', ')}`);
     return Object.fromEntries(GROUPS.map(group => [group, found.get(group)])) as Record<NasrGroup, string>;
-}
-
-async function sha256File(filePath: string): Promise<string> {
-    return createHash('sha256').update(await fs.readFile(filePath)).digest('hex');
 }
 
 export async function downloadNasrFile(url: string, destination: string): Promise<void> {
@@ -234,20 +258,32 @@ async function extractRequiredFiles(
 
 async function readNasrInput(sourceDirectory: string): Promise<NasrInput> {
     const read = (filename: string) => fs.readFile(path.join(sourceDirectory, filename), 'utf8');
-    const [airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments] = await Promise.all([
+    const [airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments,
+        preferredRoutes, preferredRouteSegments] = await Promise.all([
         read('APT_BASE.csv'),
         read('APT_RWY.csv'),
         read('APT_RWY_END.csv'),
         read('FIX_BASE.csv'),
         read('NAV_BASE.csv'),
         read('AWY_BASE.csv'),
-        read('AWY_SEG_ALT.csv')
+        read('AWY_SEG_ALT.csv'),
+        read('PFR_BASE.csv'),
+        read('PFR_SEG.csv')
     ]);
-    return { airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments };
+    return { airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments,
+        preferredRoutes, preferredRouteSegments };
 }
 
 async function writeJson(filePath: string, value: unknown): Promise<void> {
     await fs.writeFile(filePath, `${JSON.stringify(value)}\n`);
+}
+
+async function readTerminalInput(sourceDirectory: string): Promise<TerminalProcedureInput> {
+    const read = (filename: string) => fs.readFile(path.join(sourceDirectory, filename), 'utf8');
+    const [departures, departureAirports, departureRoutes, arrivals, arrivalAirports, arrivalRoutes] = await Promise.all(
+        ['DP_BASE.csv', 'DP_APT.csv', 'DP_RTE.csv', 'STAR_BASE.csv', 'STAR_APT.csv', 'STAR_RTE.csv'].map(read)
+    );
+    return { departures, departureAirports, departureRoutes, arrivals, arrivalAirports, arrivalRoutes };
 }
 
 export async function pruneNasrCycles(
@@ -303,7 +339,7 @@ export async function pruneNasrCycles(
     }
 }
 
-type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle'> & {
+type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle' | 'routeHistorySource'> & {
     retainCycles?: number;
     concurrency?: number;
 };
@@ -311,22 +347,14 @@ type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle'> & {
 export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
     const buildOptions: Options = {
         ...options,
-        output: options.output || 'dist',
+        output: options.output ?? 'dist',
         retainCycles: options.retainCycles ?? DEFAULT_RETAIN_CYCLES,
         concurrency: parseConcurrency(
             options.concurrency ?? DEFAULT_DOWNLOAD_CONCURRENCY
         ),
         help: false
     };
-    if (!Number.isSafeInteger(buildOptions.retainCycles) || buildOptions.retainCycles < 1) {
-        throw new Error('retainCycles must be a positive integer');
-    }
-    if (buildOptions.cycle !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(buildOptions.cycle)) {
-        throw new Error('cycle must use YYYY-MM-DD');
-    }
-    if (buildOptions.sourceDir && !buildOptions.cycle) {
-        throw new Error('cycle is required with sourceDir');
-    }
+    validateOptions(buildOptions);
     const outputRoot = path.resolve(buildOptions.output);
     const chartRoot = path.join(outputRoot, 'charts');
     await fs.mkdir(chartRoot, { recursive: true });
@@ -349,14 +377,25 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
                 `NASR page cycle ${acquired.cycle} does not match CSV effective date ${products.effectiveDate}`
             );
         }
+        const terminal = buildTerminalProcedures(await readTerminalInput(sourceDirectory), products.effectiveDate);
 
         await Promise.all([
             writeJson(path.join(stagingDirectory, 'airports.geojson'), products.airports),
             writeJson(path.join(stagingDirectory, 'fixes.geojson'), products.fixes),
             writeJson(path.join(stagingDirectory, 'vfr-waypoints.geojson'), products.vfrWaypoints),
             writeJson(path.join(stagingDirectory, 'navaids.geojson'), products.navaids),
-            writeJson(path.join(stagingDirectory, 'airways.json'), products.airways)
+            writeJson(path.join(stagingDirectory, 'airways.json'), products.airways),
+            writeJson(path.join(stagingDirectory, 'preferred-routes.json'), products.preferredRoutes),
+            writeJson(path.join(stagingDirectory, 'terminal-procedures.json'), terminal)
         ]);
+
+        const history = await buildRouteHistory({
+            outputRoot,
+            effectiveDate: products.effectiveDate,
+            destination: path.join(stagingDirectory, 'route-history.json.gz'),
+            sourceFile: buildOptions.routeHistorySource,
+            offline: Boolean(buildOptions.sourceDir)
+        });
 
         const sourceArchives = await Promise.all(GROUPS.map(async group => ({
             group,
@@ -380,7 +419,14 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
                     classification: 'FIX_USE_CODE=VFR'
                 },
                 { id: 'navaids', file: 'navaids.geojson', count: products.navaids.features.length },
-                { id: 'airways', file: 'airways.json', count: products.airways.airways.length }
+                { id: 'airways', file: 'airways.json', count: products.airways.airways.length },
+                { id: 'terminal-procedures', file: 'terminal-procedures.json', count: terminal.procedures.length },
+                {
+                    id: 'preferred-routes',
+                    file: 'preferred-routes.json',
+                    count: products.preferredRoutes.routes.length
+                },
+                ...(history ? [{ id: 'route-history', file: 'route-history.json.gz', compression: 'gzip', ...history }] : [])
             ]
         };
         await writeJson(path.join(stagingDirectory, 'manifest.json'), manifest);

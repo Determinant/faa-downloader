@@ -13,13 +13,14 @@ The generated data is intended for personal reference and offline use. It is not
 
 | Command | Product | Output |
 | --- | --- | --- |
-| npm run build | FAR PWA from the current eCFR snapshot | dist/far/ |
+| npm run build:far | FAR PWA from the current eCFR snapshot | dist/far/ |
 | npm run build:aim | Offline-capable AIM mirror | dist/aim/ |
-| npm run build:charts | Charts, MBTiles, navigation, procedures, and Chart Supplement indexes | dist/charts/ |
+| npm run build:charts | Charts, MBTiles, navigation, historical filed routes, procedures, and Chart Supplement indexes | dist/charts/ |
 
 Run only the product you need, or build them into the shared dist/ directory.
-`build` builds FAR only. `build:charts` includes the chart metadata and packaging
+`build:far` builds FAR only. `build:charts` includes the chart metadata and packaging
 stages automatically; no follow-up build commands are needed.
+Historical filed-route frequencies are packaged during the navigation stage.
 
 ## Data sources
 
@@ -29,6 +30,7 @@ stages automatically; no follow-up build commands are needed.
 - Charts: [FAA Aeronautical Information Services](https://aeronav.faa.gov/)
 - Airports/navigation: [FAA 28-day NASR Subscription](https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/)
 - Procedures: [FAA digital TPP](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/)
+- Historical filed-route frequencies: [Aeronautic AQ](https://aq.aeronautic.ai/), from its public [SQLite snapshot](https://aeronautiql.s3.amazonaws.com/databases/routes.sqlite.zst)
 
 The source date and scope are written into the generated FAR interface. Chart downloads are selected from the latest available FAA directory entries. A configured region absent from an FAA listing produces a warning; a listed file that fails to download aborts the build rather than publishing a silently incomplete collection.
 
@@ -50,6 +52,7 @@ Requirements:
 - Node.js 24 or newer (the packager uses built-in SQLite)
 - npm
 - unzip on PATH for safe archive validation and extraction
+- zip on PATH for NASR build test fixtures
 - xsltproc on PATH for FAR generation
 - GDAL CLI tools on PATH for chart tiling: gdalinfo, gdal_translate, gdalwarp, and gdaladdo
   (manifest-only refreshes also use gdalinfo to read archive bounds and zoom limits)
@@ -65,7 +68,7 @@ npm test
 Build a product:
 
 ~~~bash
-npm run build          # FAR PWA
+npm run build:far      # FAR PWA
 npm run build:aim      # AIM mirror
 npm run build:charts   # Charts, MBTiles, navigation, procedures, and CS indexes
 ~~~
@@ -73,21 +76,30 @@ npm run build:charts   # Charts, MBTiles, navigation, procedures, and CS indexes
 On NixOS, the external command-line prerequisites can be provided with:
 
 ~~~bash
-nix-shell -p libxslt gdal unzip
+nix-shell -p libxslt gdal unzip zip
 ~~~
 
 ## Targeted rebuilds and maintenance
 
-Use these when updating one stage of an existing chart build:
+Use these when updating one stage. The standalone commands and `build:charts`
+share the same builders; standalone stages require the inputs described below.
+Paths are relative to `dist/` (or the selected `--output` root).
 
-| Command | Purpose |
-| --- | --- |
-| npm run build:nasr | Refresh navigation data without rebuilding imagery |
-| npm run build:procedures | Refresh the airport/procedure catalog and combined-TPP page index |
-| npm run build:supplements | Refresh airport page indexes in the existing Chart Supplement PDFs |
-| npm run build:chart-packages | Package verified sheet MBTiles or update offline region definitions |
-| npm run build:chart-manifests | Verify sheet receipts, refresh manifests, and migrate older layouts |
-| npm run chart-cutlines | Verify or regenerate checked-in cutlines during development |
+| Command | Inputs | Output and responsibility |
+| --- | --- | --- |
+| npm run build:nav | Downloads current NASR groups and AQ history, or uses explicit local sources | Publishes the complete cycle's `charts/<cycle>/nav/` bundle: map points, airways, preferred routes, SID/STAR sequences, and route history |
+| npm run build:procedures | Downloads d-TPP XML or uses `--source-xml`; indexes any existing TPP PDFs | Publishes `charts/<cycle>/tpp/` with plate URLs and available PDF page targets; does not download the books |
+| npm run build:supplements | Existing regional Chart Supplement PDFs plus cached/downloaded XML or `--source-xml` | Publishes `charts/<cycle>/cs/` airport page indexes; does not download the books |
+| npm run build:chart-packages | Verified sheet MBTiles and their manifests in `mbtiles/<cycle>/` | Publishes delivery archives and offline region indexes in `charts/<cycle>/mbtiles/` |
+| npm run build:chart-manifests | Existing sheet MBTiles, receipts, and source TIFFs | Verifies sheets and refreshes `mbtiles/<cycle>/chart-manifest.json`; also migrates legacy sheet and delivery layouts |
+| npm run chart-cutlines | Reviewed chartmaker source and checked-in cutlines | Verifies or regenerates source coordinates during development |
+
+`build:nav` owns the navigation data; `build:procedures` owns the plate catalog and
+page indexes. Manifest maintenance can move legacy files and should run on local
+build output before upload. See the migration instructions below.
+
+The former `build` and `build:nasr` commands are now `build:far` and `build:nav`,
+respectively. Update existing automation to use the explicit names.
 
 Single-sheet tiling uses `npm run build:charts -- --tile=PATH` (the former
 `tile:chart` alias). Use `build:aim` for AIM updates; the former `download-aim`
@@ -96,7 +108,7 @@ alias's create-only behavior is available through
 
 ## FAR PWA
 
-npm run build fetches the current eCFR XML for Title 14, filters it to the configured volumes and parts, and generates a split FAR site under dist/far/.
+npm run build:far fetches the current eCFR XML for Title 14, filters it to the configured volumes and parts, and generates a split FAR site under dist/far/.
 
 The output includes:
 
@@ -117,9 +129,9 @@ FAR and AIM use separate, product-specific manifest IDs, so browsers can install
 The npm script accepts the same options as build-far.ts through npm argument forwarding:
 
 ~~~bash
-npm run build -- --source=ecfr --vols=1,2,3
-npm run build -- --source=annual --year=2025
-npm run build -- --source-xml=combined-ecfr.xml --date=2026-04-30
+npm run build:far -- --source=ecfr --vols=1,2,3
+npm run build:far -- --source=annual --year=2025
+npm run build:far -- --source-xml=combined-ecfr.xml --date=2026-04-30
 ~~~
 
 Useful options:
@@ -168,7 +180,7 @@ The --clean option used by the npm build replaces an existing mirror only after 
 
 ## FAA charts
 
-npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR, d-TPP, and Chart Supplement metadata.
+npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR, historical filed routes, d-TPP, and Chart Supplement metadata.
 
 The selected PDF coverage includes all 25 TPP volumes: AK, EC1–EC3, NC1–NC3,
 NE1–NE4, NW1, SC1–SC5, SE1–SE4, and SW1–SW4. It also includes all nine
@@ -192,7 +204,7 @@ npm run build:charts -- --concurrency=8 --tile-concurrency=4
 
 This repository is also the build and maintenance source for the chart artifacts
 published at `https://charts.tedyin.com/charts/`. Downstream applications such as
-ZLayers should consume those published artifacts together with explicit FAA edition and
+ZLayer should consume those published artifacts together with explicit FAA edition and
 build provenance rather than treating the site as an unrelated third-party source.
 
 Output is organized by publication date:
@@ -212,6 +224,9 @@ dist/
 │       │   ├── vfr-waypoints.geojson
 │       │   ├── navaids.geojson
 │       │   ├── airways.json
+│       │   ├── terminal-procedures.json
+│       │   ├── preferred-routes.json
+│       │   ├── route-history.json.gz
 │       │   └── manifest.json
 │       ├── nasr/
 │       │   └── *_CSV.zip
@@ -229,6 +244,8 @@ dist/
 ├── supplements/                     # local XML and index-build cache; do not upload
 │   ├── afd_<edition>.xml
 │   └── YYYY-MM-DD.build.json
+├── route-history/                   # local AQ snapshot cache; do not upload
+│   └── <etag-sha256>.sqlite.zst
 └── zips/                            # local source cache; do not upload
     └── YYYY-MM-DD/
         └── *.zip
@@ -369,8 +386,21 @@ npm run chart-cutlines -- --chartmaker=/path/to/chartmaker --write
 
 The chart build also downloads the FAA's current 28-day NASR CSV groups for airports
 and landing facilities (`APT`), fixes/reporting points/waypoints (`FIX`), NAVAIDs
-(`NAV`), and airways (`AWY`). It generates compact GeoJSON for selectable map points
-and JSON for airway route/altitude records.
+(`NAV`), airways (`AWY`), preferred/TEC routes (`PFR`), and departure/arrival
+procedures (`DP`/`STAR`). It generates compact GeoJSON for selectable map points
+and JSON for route records.
+
+`terminal-procedures.json` (`ZLayerTerminalProcedures`, manifest product
+`terminal-procedures`) preserves assigned FAA computer identifiers, served airports,
+body/transition routes, airport/runway associations, ordered typed points, ICAO
+regions and explicit next-point links. Empty BASE tables fail the build before
+replacing `nav/`. `NOT ASSIGNED` procedures are excluded; empty route/airport
+associations remain empty, never inferred. These are **waypoint sequences**, not
+ARINC flight-guidance legs: no vector/turn geometry or altitude/speed constraints
+are synthesized. Cache the national file once per export. Rebuild with
+`npm run build:nav` and upload the complete cycle's `nav/` directory; MBTiles and
+plate books do not need rebuilding. Local `--source-dir` builds now also require
+the `DP` and `STAR` CSV ZIPs.
 
 `airports.geojson` includes the FAA location and ICAO identifiers, facility type,
 public/private use, status, elevation, tower type, chart name, NOTAM identifier, and a
@@ -384,22 +414,58 @@ are additionally written to `vfr-waypoints.geojson`, classified by the FAA's
 waypoint names beginning with `VP`, but the prefix is not a safe converse test because
 some `VP...` identifiers are used for instrument procedures.
 
+`airways.json` has type `ZLayerAirways`. `preferred-routes.json` has type
+`ZLayerPreferredRoutes`, cycle/source `metadata`,
+and a national `routes[]` array built from `PFR_BASE.csv` and `PFR_SEG.csv`. The
+navigation manifest lists it as product `preferred-routes`. Each route's stable
+`id` combines its `originId`, `destinationId`, `routeType`, and `routeNumber`, so
+multiple routes for an airport pair and the reverse direction remain distinct.
+All published PFR types are retained, including TEC, high/low preferred routes,
+preferred-direction routes, and North American Routes (NAR). Endpoints use the FAA
+identifiers as published; NAR endpoints can be fixes or navigation facilities.
+
+Records preserve the FAA `route` string, TEC `designator`, endpoint city/state/country,
+`area`, `altitude`, `aircraft`, `hours`, and `direction` descriptions, plus NAR fields
+(`narType`, `inlandFix`, `coastalFix`, `narDestination`). Restrictions remain text:
+for example `PQ70` and `J110M90` must not be interpreted as numeric altitudes.
+Optional blank fields are omitted. Ordered `segments[]` retain the FAA sequence,
+value, type, state/country/ICAO region, NAVAID type, and next-segment value. Routes
+without segment records are retained with an empty array; route geometry is not
+inferred. Duplicate route identities, duplicate segment sequences, orphan segments,
+missing effective dates, and mixed effective cycles fail the build before replacing
+the navigation export.
+
+The complete national file can be cached once per cycle for offline airport-pair
+lookup. Consumers should map ICAO airport codes to FAA identifiers using the airport
+data and display the published conditions alongside each result. The full PFR source
+ZIP, including its layout documentation and `PFR_RMT_FMT.csv`, is retained in `nasr/`.
+
 `manifest.json` records the effective cycle, source URLs, source ZIP checksums, output
 counts, and classification rule. Existing source ZIPs are reused; the `nav/` output is
 replaced atomically only after all groups parse successfully. The current and previous
 NASR cycles are retained by default.
 
-To rebuild only NASR data:
+Airway `segments[]` preserve FAA `AWY_SEG_GAP_FLAG` as boolean `gap`. Consumers
+must not connect across a segment with `gap: true`, or assume connectivity from
+`AIRWAY_STRING` alone. Rebuild and upload `nav/` when migrating an older export
+without gap flags; this does not require rebuilding any chart imagery.
+
+To rebuild the complete navigation bundle:
 
 ~~~bash
-npm run build:nasr
+npm run build:nav
 ~~~
 
-For an offline/local rebuild using previously downloaded group ZIPs:
+For an offline/local rebuild, provide previously downloaded ZIPs for all seven groups
+(APT, FIX, NAV, AWY, PFR, DP, and STAR):
 
 ~~~bash
-npm run build:nasr -- --source-dir=/path/to/zips --cycle=YYYY-MM-DD
+npm run build:nav -- --source-dir=/path/to/zips --cycle=YYYY-MM-DD
 ~~~
+
+`--cycle` is required for local sources and rejected without `--source-dir`.
+Online builds always select the current effective FAA cycle. Local builds include
+route history only when `--route-history-source` is also supplied.
 
 ### Procedures
 
@@ -432,6 +498,33 @@ indexes; unchanged builds skip directory-page scanning and preserve the catalog.
 New or removed books, changed PDFs or XML, and builder-version changes invalidate
 the cache. Use `--force` to rescan explicitly. See [docs/procedures.md](docs/procedures.md)
 for offline XML input, cycle selection, and the catalog format.
+
+### Historical filed routes
+
+`npm run build:charts` and `npm run build:nav` download Aeronautic AQ's public
+`routes.sqlite.zst` snapshot and package `nav/route-history.json.gz` in the current
+chart cycle. No account, API key, queue, or separate collection process is needed.
+The source download is cached under `dist/route-history/` and refreshed when its
+ETag changes. Only the compact gzip export goes into `charts/`; geometry blobs and
+SQLite indexes stay out of the offline package. Node's built-in zstd support handles
+decompression, so no additional package or command-line tool is required.
+
+This is **historical filed-route frequency**, not verified ATC clearance history.
+The export preserves the source observation dates, use counts, and engine-class
+counts. It includes all available history; aggregated counts cannot be turned into
+a rolling 15- or 30-day sample. A current chart cycle does not imply current route
+observations. The snapshot inspected in September 2026 had observations through
+January 27, 2026. See [docs/route-history.md](docs/route-history.md) for the format.
+
+Local NASR builds stay offline. To include history with `--source-dir`, supply a
+previously downloaded SQLite or zstd-compressed SQLite file:
+
+~~~bash
+npm run build:nav -- --source-dir=/path/to/zips --cycle=YYYY-MM-DD --route-history-source=/path/to/routes.sqlite.zst
+~~~
+
+Without that option, local builds omit history. Normal online builds fail on source
+or data errors before replacing `nav/`, preserving the previously published files.
 
 ## Repository layout
 

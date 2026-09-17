@@ -23,12 +23,14 @@ function parseArgs(argv: string[]): Options {
 }
 
 function printHelp(): void {
-    console.log(`Usage: node --import=tsx build-chart-manifests.ts [options]
+    console.log(`Usage: npm run build:chart-manifests -- [options]
 
 Relocates sheet caches into DIR/mbtiles/YYYY-MM-DD/, verifies build receipts,
 and refreshes their chart-manifest.json. Existing delivery packages are flattened
 into DIR/charts/YYYY-MM-DD/mbtiles/ without rerendering or recompressing tiles.
 Requires gdalinfo to read archive bounds and zoom limits.
+Requires existing source TIFFs and sheet MBTiles with matching receipts.
+This maintenance stage can move legacy files; run on local build output before upload.
 Receipts must match the current tiler configuration. Rebuild stale sheets first,
 including IFR sheets made before the Lambert cutline change (see README.md).
 

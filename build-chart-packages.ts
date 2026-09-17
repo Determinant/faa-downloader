@@ -19,7 +19,7 @@ export async function buildChartPackages(output = 'dist', regionsFile?: string, 
         cycles += 1;
         console.log(`Ready: ${manifest.archives.length} small archives and ${manifest.regions.length} offline regions`);
     }
-    if (cycles === 0) throw new Error(`No verified sheet manifests under ${root}; finish sheet tiling and build:chart-manifests first`);
+    if (cycles === 0) throw new Error(`No verified sheet manifests under ${path.resolve(output, 'mbtiles')}; run build:charts, or finish sheet tiling and run build:chart-manifests first`);
 }
 
 export async function readOfflineRegions(file?: string): Promise<OfflineRegionDefinition[] | undefined> {
@@ -40,6 +40,7 @@ async function main(): Promise<void> {
         else if (arg === '--help' || arg === '-h') {
             console.log('Usage: npm run build:chart-packages -- [--output=dist] [--regions=regions.json] [--force]\n' +
                 'Stitch verified sheet archives into size-bounded spatial/zoom MBTiles and offline region indexes.\n' +
+                'Reads existing DIR/mbtiles/YYYY-MM-DD/chart-manifest.json and sheet archives; does not download or tile charts.\n' +
                 'Unchanged, verified packages are reused; --force recomposes them.\n' +
                 'Region JSON: [{"id":"region","title":"Region","bounds":[[west,south,east,north]]}].');
             return;

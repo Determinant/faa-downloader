@@ -29,6 +29,8 @@ export type NasrInput = {
     navaids: string;
     airways: string;
     airwaySegments: string;
+    preferredRoutes: string;
+    preferredRouteSegments: string;
 };
 
 export type NasrProducts = {
@@ -38,9 +40,14 @@ export type NasrProducts = {
     vfrWaypoints: NasrFeatureCollection;
     navaids: NasrFeatureCollection;
     airways: {
-        type: 'AWCPlusAirways';
+        type: 'ZLayerAirways';
         metadata: NasrFeatureCollection['metadata'];
         airways: Record<string, unknown>[];
+    };
+    preferredRoutes: {
+        type: 'ZLayerPreferredRoutes';
+        metadata: NasrFeatureCollection['metadata'];
+        routes: Record<string, unknown>[];
     };
 };
 
@@ -149,6 +156,7 @@ function normalizeAirways(
                 from: present(segment.FROM_POINT),
                 fromType: present(segment.FROM_PT_TYPE),
                 to: present(segment.TO_POINT),
+                gap: booleanFlag(segment.AWY_SEG_GAP_FLAG),
                 magneticCourse: numberValue(segment.MAG_COURSE),
                 oppositeMagneticCourse: numberValue(segment.OPP_MAG_COURSE),
                 distanceNm: numberValue(segment.MAG_COURSE_DIST),
@@ -178,9 +186,98 @@ function normalizeAirways(
     assertUniqueIds('airways', airways.map(airway => String(airway.id)));
 
     return {
-        type: 'AWCPlusAirways',
+        type: 'ZLayerAirways',
         metadata: { effectiveDate: effective, source: NASR_SOURCE },
         airways
+    };
+}
+
+function preferredRouteKey(row: CsvRecord): string {
+    const fields = ['ORIGIN_ID', 'DSTN_ID', 'PFR_TYPE_CODE', 'ROUTE_NO'];
+    const values = fields.map(field => present(row[field]));
+    if (values.some(value => value === undefined) || !/^[1-9]\d*$/.test(values[3])) {
+        throw new Error(`PFR record has invalid route identity: ${values.join(':')}`);
+    }
+    return values.join(':');
+}
+
+function normalizePreferredRoutes(
+    routeRows: CsvRecord[],
+    segmentRows: CsvRecord[],
+    effective: string
+): NasrProducts['preferredRoutes'] {
+    if (routeRows.length === 0) throw new Error('PFR_BASE.csv contains no preferred routes');
+    const sourceDate = effective.replaceAll('-', '/');
+    for (const rows of [routeRows, segmentRows]) {
+        for (const row of rows) {
+            if (present(row.EFF_DATE) !== sourceDate) {
+                throw new Error('PFR record has a missing or mismatched effective date');
+            }
+        }
+    }
+    const keys = routeRows.map(preferredRouteKey);
+    assertUniqueIds('preferred routes', keys);
+    const routeKeys = new Set(keys);
+    const groupedSegments = new Map<string, CsvRecord[]>();
+    const segmentKeys = new Set<string>();
+    for (const row of segmentRows) {
+        const key = preferredRouteKey(row);
+        if (!routeKeys.has(key)) throw new Error(`PFR segment has no parent route: ${key}`);
+        const sequence = present(row.SEGMENT_SEQ);
+        if (!sequence || !/^[1-9]\d*$/.test(sequence) || !present(row.SEG_VALUE) || !present(row.SEG_TYPE)) {
+            throw new Error(`PFR route ${key} has an invalid segment`);
+        }
+        const segmentKey = `${key}:${Number(sequence)}`;
+        if (segmentKeys.has(segmentKey)) throw new Error(`PFR duplicate segment sequence: ${segmentKey}`);
+        segmentKeys.add(segmentKey);
+        const group = groupedSegments.get(key) || [];
+        group.push(row);
+        groupedSegments.set(key, group);
+    }
+
+    const routes = routeRows.map((row, index) => compactObject({
+        id: `preferred-route:${keys[index]}`,
+        originId: present(row.ORIGIN_ID),
+        originCity: present(row.ORIGIN_CITY),
+        originState: present(row.ORIGIN_STATE_CODE),
+        originCountry: present(row.ORIGIN_COUNTRY_CODE),
+        destinationId: present(row.DSTN_ID),
+        destinationCity: present(row.DSTN_CITY),
+        destinationState: present(row.DSTN_STATE_CODE),
+        destinationCountry: present(row.DSTN_COUNTRY_CODE),
+        routeType: present(row.PFR_TYPE_CODE),
+        routeNumber: numberValue(row.ROUTE_NO),
+        area: present(row.SPECIAL_AREA_DESCRIP),
+        // These are FAA descriptions, including combined aircraft/altitude codes.
+        altitude: present(row.ALT_DESCRIP),
+        aircraft: present(row.AIRCRAFT),
+        hours: present(row.HOURS),
+        direction: present(row.ROUTE_DIR_DESCRIP),
+        designator: present(row.DESIGNATOR),
+        narType: present(row.NAR_TYPE),
+        inlandFix: present(row.INLAND_FAC_FIX),
+        coastalFix: present(row.COASTAL_FIX),
+        narDestination: present(row.DESTINATION),
+        route: present(row.ROUTE_STRING),
+        // Some published routes have no segment rows; retain their descriptions.
+        segments: (groupedSegments.get(keys[index]) || [])
+            .sort((left, right) => Number(left.SEGMENT_SEQ) - Number(right.SEGMENT_SEQ))
+            .map(segment => compactObject({
+                sequence: numberValue(segment.SEGMENT_SEQ),
+                value: present(segment.SEG_VALUE),
+                type: present(segment.SEG_TYPE),
+                state: present(segment.STATE_CODE),
+                country: present(segment.COUNTRY_CODE),
+                icaoRegion: present(segment.ICAO_REGION_CODE),
+                navaidType: present(segment.NAV_TYPE),
+                next: present(segment.NEXT_SEG)
+            }))
+    }));
+
+    return {
+        type: 'ZLayerPreferredRoutes',
+        metadata: { effectiveDate: effective, source: NASR_SOURCE },
+        routes
     };
 }
 
@@ -192,6 +289,8 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
     const navaidRows = parseCsvRecords(input.navaids, 'NAV_BASE.csv');
     const airwayRows = parseCsvRecords(input.airways, 'AWY_BASE.csv');
     const segmentRows = parseCsvRecords(input.airwaySegments, 'AWY_SEG_ALT.csv');
+    const preferredRouteRows = parseCsvRecords(input.preferredRoutes, 'PFR_BASE.csv');
+    const preferredSegmentRows = parseCsvRecords(input.preferredRouteSegments, 'PFR_SEG.csv');
     const effective = effectiveDate([
         airportRows,
         runwayRows,
@@ -199,7 +298,9 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
         fixRows,
         navaidRows,
         airwayRows,
-        segmentRows
+        segmentRows,
+        preferredRouteRows,
+        preferredSegmentRows
     ]);
 
     const runwayEnds = new Map<string, Record<string, unknown>[]>();
@@ -355,6 +456,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
             'VFR waypoints'
         ),
         navaids: collection(effective, navaids, 'NAVAIDs'),
-        airways: normalizeAirways(airwayRows, segmentRows, effective)
+        airways: normalizeAirways(airwayRows, segmentRows, effective),
+        preferredRoutes: normalizePreferredRoutes(preferredRouteRows, preferredSegmentRows, effective)
     };
 }

@@ -111,7 +111,7 @@ Output layout:
   DIR/zips/        Downloaded source ZIP archives grouped by publication date
   DIR/mbtiles/YYYY-MM-DD/        Intermediate sheet MBTiles, receipts, and chart-manifest.json
   DIR/charts/YYYY-MM-DD/mbtiles/ Spatial/zoom delivery archives and manifest.json
-  DIR/charts/YYYY-MM-DD/nav/   Normalized NASR map data
+  DIR/charts/YYYY-MM-DD/nav/   NASR map data, preferred/TEC routes, and historical filed routes
   DIR/charts/YYYY-MM-DD/nasr/  Downloaded NASR CSV ZIP archives
   DIR/charts/YYYY-MM-DD/tpp/   Airport/procedure catalog and PDF page index
 
