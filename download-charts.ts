@@ -7,6 +7,7 @@ import { buildProcedureCatalog } from './build-procedures.ts';
 import { buildChartSupplements } from './build-chart-supplements.ts';
 import { buildChartPackages, readOfflineRegions } from './build-chart-packages.ts';
 import { buildNasrData } from './download-nasr.ts';
+import { buildChartCycles } from './build-chart-cycles.ts';
 import {
     discoverCharts,
     type ChartCandidate,
@@ -227,6 +228,7 @@ async function buildCharts(options: Options): Promise<void> {
     await buildNasrData({ output: options.output, concurrency: options.concurrency });
     const procedures = await buildProcedureCatalog({ output: options.output });
     await buildChartSupplements({ output: options.output, effectiveDate: procedures.effectiveDate, force: options.force });
+    await buildChartCycles(options.output);
     console.log(`Charts are ready under ${chartRoot}`);
 }
 

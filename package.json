@@ -12,6 +12,7 @@
     "build:aim": "node --import=tsx download-aim.ts --output=dist/aim --clean",
     "build:chart-manifests": "node --import=tsx build-chart-manifests.ts --output=dist",
     "build:chart-packages": "node --import=tsx build-chart-packages.ts --output=dist",
+    "build:chart-cycles": "node --import=tsx build-chart-cycles.ts --output=dist",
     "build:charts": "node --import=tsx download-charts.ts --output=dist",
     "build:nav": "node --import=tsx download-nasr.ts --output=dist",
     "build:procedures": "node --import=tsx build-procedures.ts --output=dist",

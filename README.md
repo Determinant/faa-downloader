@@ -20,6 +20,10 @@ The generated data is intended for personal reference and offline use. It is not
 Run only the product you need, or build them into the shared dist/ directory.
 `build:far` builds FAR only. `build:charts` includes the chart metadata and packaging
 stages automatically; no follow-up build commands are needed.
+It also writes `dist/charts/cycles.json` beside the dated directories, containing
+`schemaVersion`, `generatedAt`, and a `cycles` array of ISO dates, newest first.
+Run `npm run build:chart-cycles` to refresh just this index from existing output
+without downloading or rendering charts. Publish it after the dated files.
 Historical filed-route frequencies are packaged during the navigation stage.
 
 ## Data sources

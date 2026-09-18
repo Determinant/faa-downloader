@@ -19,6 +19,7 @@
     "build-far.ts",
     "build-chart-manifests.ts",
     "build-chart-packages.ts",
+    "build-chart-cycles.ts",
     "build-procedures.ts",
     "build-chart-supplements.ts",
     "download-aim.ts",
