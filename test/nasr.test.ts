@@ -304,6 +304,23 @@ test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway
     assert.equal((products.airways.airways[1].segments as any[])[0].gap, true);
 });
 
+test('VOR station declination retains published east/west alignment and never treats missing variation as zero', () => {
+    const cases: Array<[string | number, string, string, number | undefined]> = [
+        [15, 'E', 'VOR/DME', 15], [10, 'W', 'VORTAC', -10], [0, '', 'VOR', 0],
+        [0, 'INVALID', 'VOR', undefined], [15, 'INVALID', 'VOR', undefined],
+        ['', 'E', 'VOR', undefined], [15, '', 'VOR', undefined],
+        [181, 'E', 'VOR', undefined], [-15, 'E', 'VOR', undefined],
+        [15, 'E', 'NDB', undefined], [15, 'E', 'VOT', undefined],
+    ];
+    for (const [degrees, hemisphere, type, expected] of cases) {
+        const products = buildNasrProducts(preferredRouteInput({ navaids: recordCsv([
+            'EFF_DATE', 'NAV_ID', 'NAV_TYPE', 'LAT_DECIMAL', 'LONG_DECIMAL', 'MAG_VARN', 'MAG_VARN_HEMIS'
+        ], [{ EFF_DATE: '2026/09/03', NAV_ID: 'TEST', NAV_TYPE: type, LAT_DECIMAL: 37, LONG_DECIMAL: -122,
+            MAG_VARN: degrees, MAG_VARN_HEMIS: hemisphere }]) }));
+        assert.equal(products.navaids.features[0].properties.stationDeclinationDeg, expected);
+    }
+});
+
 const preferredHeaders = [
     'EFF_DATE', 'ORIGIN_ID', 'ORIGIN_CITY', 'ORIGIN_STATE_CODE', 'ORIGIN_COUNTRY_CODE',
     'DSTN_ID', 'DSTN_CITY', 'DSTN_STATE_CODE', 'DSTN_COUNTRY_CODE', 'PFR_TYPE_CODE', 'ROUTE_NO',
@@ -432,7 +449,7 @@ test('preferred routes reject ambiguous joins and mismatched cycles', () => {
     }
 });
 
-test('NASR cycle build packages preferred routes and filed history atomically', async t => {
+test('NASR cycle build packages station alignment, preferred routes and filed history atomically', async t => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-pfr-'));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
     const sourceDir = path.join(root, 'sources');
@@ -443,6 +460,15 @@ test('NASR cycle build packages preferred routes and filed history atomically', 
             [
                 ['2026/09/03', '00001.', 'A', 'SBA', 'KSBA', 34.4278, -119.84],
                 ['2026/09/03', '00002.', 'A', 'SMO', 'KSMO', 34.015, -118.4511]
+            ]
+        ),
+        navaids: csv(
+            ['EFF_DATE', 'NAV_ID', 'NAV_TYPE', 'LAT_DECIMAL', 'LONG_DECIMAL', 'MAG_VARN', 'MAG_VARN_HEMIS'],
+            [
+                ['2026/09/03', 'EAST', 'VOR/DME', 34.2, -119.1, 15, 'E'],
+                ['2026/09/03', 'WEST', 'VORTAC', 37.5, -77.3, 10, 'W'],
+                ['2026/09/03', 'ZERO', 'VOR', 40, -90, 0, ''],
+                ['2026/09/03', 'MISSING', 'VOR', 39, -89, '', '']
             ]
         )
     });
@@ -470,6 +496,11 @@ test('NASR cycle build packages preferred routes and filed history atomically', 
     const nav = path.join(cycleDir, 'nav');
     const originalManifest = await fs.readFile(path.join(nav, 'manifest.json'), 'utf8');
     const manifest = JSON.parse(originalManifest);
+    const navaidProduct = manifest.products.find(product => product.id === 'navaids');
+    assert.deepEqual(navaidProduct, { id: 'navaids', file: 'navaids.geojson', count: 4 });
+    const navaidData = JSON.parse(await fs.readFile(path.join(nav, navaidProduct.file), 'utf8'));
+    assert.deepEqual(navaidData.features.map(feature => feature.properties.stationDeclinationDeg), [15, -10, 0, undefined]);
+    assert.equal(Object.hasOwn(navaidData.features[3].properties, 'stationDeclinationDeg'), false);
     assert.deepEqual(manifest.products.find(product => product.id === 'terminal-procedures'), {
         id: 'terminal-procedures', file: 'terminal-procedures.json', count: 2
     });

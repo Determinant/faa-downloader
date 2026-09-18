@@ -454,6 +454,17 @@ must not connect across a segment with `gap: true`, or assume connectivity from
 `AIRWAY_STRING` alone. Rebuild and upload `nav/` when migrating an older export
 without gap flags; this does not require rebuilding any chart imagery.
 
+VOR-family navaids preserve the station's published magnetic alignment as
+`stationDeclinationDeg`, from `NAV_BASE.csv` fields `MAG_VARN` and `MAG_VARN_HEMIS`
+(east positive, west negative). Missing or invalid values stay absent; a missing
+field never means zero variation. Consumers can calculate magnetic radials from
+this existing navigation export while offline, without a magnetic-model service.
+This field is included automatically by `npm run build:charts` through its normal
+NASR stage, and by `npm run build:nav`; it requires no separate build or data product.
+Rebuild and publish the complete cycle's `nav/` bundle, including its refreshed
+`manifest.json`, when upgrading an older export. The manifest's new `generatedAt`
+value versions client URLs; already saved snapshots retain their original data until refreshed.
+
 To rebuild the complete navigation bundle:
 
 ~~~bash

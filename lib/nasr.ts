@@ -72,6 +72,16 @@ function booleanFlag(value: string | undefined): boolean | undefined {
     return undefined;
 }
 
+function stationDeclination(row: CsvRecord): number | undefined {
+    if (!['VOR', 'VOR/DME', 'VORTAC'].includes(present(row.NAV_TYPE) || '')) return undefined;
+    const degrees = numberValue(row.MAG_VARN);
+    const hemisphere = present(row.MAG_VARN_HEMIS)?.toUpperCase();
+    if (degrees === undefined || degrees < 0 || degrees > 180) return undefined;
+    if (hemisphere === 'E') return degrees;
+    if (hemisphere === 'W') return -degrees;
+    return degrees === 0 && hemisphere === undefined ? 0 : undefined;
+}
+
 function compactObject(value: Record<string, unknown>): Record<string, unknown> {
     return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
 }
@@ -438,6 +448,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
                 lowArtcc: present(row.LOW_ALT_ARTCC_ID),
                 elevationFt: numberValue(row.ELEV),
                 frequency: present(row.FREQ),
+                stationDeclinationDeg: stationDeclination(row),
                 channel: present(row.CHAN),
                 publicUse: booleanFlag(row.PUBLIC_USE_FLAG),
                 notamId: present(row.NOTAM_ID)
