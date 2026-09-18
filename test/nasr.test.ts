@@ -449,7 +449,8 @@ test('preferred routes reject ambiguous joins and mismatched cycles', () => {
     }
 });
 
-test('NASR cycle build packages station alignment, preferred routes and filed history atomically', async t => {
+test('NASR cycle build packages navigation, magnetic model and filed history offline and atomically', async t => {
+    t.mock.method(globalThis, 'fetch', () => { throw new Error('Local navigation builds must stay offline'); });
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-pfr-'));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
     const sourceDir = path.join(root, 'sources');
@@ -496,6 +497,24 @@ test('NASR cycle build packages station alignment, preferred routes and filed hi
     const nav = path.join(cycleDir, 'nav');
     const originalManifest = await fs.readFile(path.join(nav, 'manifest.json'), 'utf8');
     const manifest = JSON.parse(originalManifest);
+    const magneticProduct = manifest.products.find(product => product.id === 'magnetic-model');
+    assert.equal(magneticProduct.file, 'magnetic-model.json');
+    assert.equal(magneticProduct.count, 90);
+    assert.equal(magneticProduct.model, 'WMM-2025');
+    const modelBytes = await fs.readFile(path.join(nav, magneticProduct.file));
+    assert.equal(magneticProduct.bytes, modelBytes.length);
+    assert.equal(magneticProduct.sha256, createHash('sha256').update(modelBytes).digest('hex'));
+    const magneticModel = JSON.parse(modelBytes.toString());
+    assert.equal(magneticModel.type, 'ZLayerMagneticModel');
+    assert.equal(magneticModel.effectiveDate, options.cycle);
+    assert.equal(magneticModel.coverage, 'global');
+    assert.equal(magneticModel.coefficients.length, magneticProduct.count);
+    assert.equal(magneticProduct.validFrom, '2025-01-01');
+    assert.equal(magneticProduct.validUntil, '2030-01-01');
+    assert.equal(magneticModel.validUntil, magneticProduct.validUntil);
+    assert.deepEqual(magneticProduct.source, magneticModel.source);
+    assert.equal(magneticModel.source.sha256,
+        'dfa8597825af4e0b87ff4198a5b4fb661b3c49f4cd090cd0164e0259b075582f');
     const navaidProduct = manifest.products.find(product => product.id === 'navaids');
     assert.deepEqual(navaidProduct, { id: 'navaids', file: 'navaids.geojson', count: 4 });
     const navaidData = JSON.parse(await fs.readFile(path.join(nav, navaidProduct.file), 'utf8'));

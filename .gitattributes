@@ -1,1 +1,3 @@
 *.pdf binary
+# Preserve the official coefficient bytes used by the source checksum.
+data/*.COF -text

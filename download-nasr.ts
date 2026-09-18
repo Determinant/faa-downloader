@@ -13,6 +13,7 @@ import { replaceDirectoryAtomically, sha256File, writeFileAtomic } from './lib/f
 import { downloadFile } from './lib/http-download.ts';
 import { buildNasrProducts, type NasrInput } from './lib/nasr.ts';
 import { buildRouteHistory } from './lib/route-history.ts';
+import { buildMagneticModel } from './lib/magnetic-model.ts';
 import { buildTerminalProcedures, type TerminalProcedureInput } from './lib/terminal-procedures.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 
@@ -109,7 +110,8 @@ function printHelp(): void {
     console.log(`Usage: npm run build:nav -- [options]
 
 Builds the navigation bundle: FAA NASR map points, airways, preferred routes,
-terminal procedure sequences, and Aeronautic AQ historical filed routes.
+terminal procedure sequences, NOAA WMM geographic magnetic variation model,
+and Aeronautic AQ historical filed routes.
 Online builds download the current FAA cycle and AQ snapshot. Local builds use
 all seven CSV ZIP groups and include history only with --route-history-source.
 Replaces the cycle's complete nav/ directory after all products succeed.
@@ -124,7 +126,7 @@ Options:
   --help, -h          Show this help
 
 Output layout:
-  DIR/charts/YYYY-MM-DD/nav/   Map points, routes, terminal sequences, history, and manifest
+  DIR/charts/YYYY-MM-DD/nav/   Map points, routes, magnetic model, history, and manifest
   DIR/charts/YYYY-MM-DD/nasr/  Reusable FAA source ZIP archives
 `);
 }
@@ -378,6 +380,8 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
             );
         }
         const terminal = buildTerminalProcedures(await readTerminalInput(sourceDirectory), products.effectiveDate);
+        const magneticModel = await buildMagneticModel(products.effectiveDate);
+        const magneticModelFile = 'magnetic-model.json';
 
         await Promise.all([
             writeJson(path.join(stagingDirectory, 'airports.geojson'), products.airports),
@@ -386,7 +390,8 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
             writeJson(path.join(stagingDirectory, 'navaids.geojson'), products.navaids),
             writeJson(path.join(stagingDirectory, 'airways.json'), products.airways),
             writeJson(path.join(stagingDirectory, 'preferred-routes.json'), products.preferredRoutes),
-            writeJson(path.join(stagingDirectory, 'terminal-procedures.json'), terminal)
+            writeJson(path.join(stagingDirectory, 'terminal-procedures.json'), terminal),
+            writeJson(path.join(stagingDirectory, magneticModelFile), magneticModel)
         ]);
 
         const history = await buildRouteHistory({
@@ -421,6 +426,13 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
                 { id: 'navaids', file: 'navaids.geojson', count: products.navaids.features.length },
                 { id: 'airways', file: 'airways.json', count: products.airways.airways.length },
                 { id: 'terminal-procedures', file: 'terminal-procedures.json', count: terminal.procedures.length },
+                {
+                    id: 'magnetic-model', file: magneticModelFile, count: magneticModel.coefficients.length,
+                    model: magneticModel.model, validFrom: magneticModel.validFrom, validUntil: magneticModel.validUntil,
+                    bytes: (await fs.stat(path.join(stagingDirectory, magneticModelFile))).size,
+                    sha256: await sha256File(path.join(stagingDirectory, magneticModelFile)),
+                    source: magneticModel.source
+                },
                 {
                     id: 'preferred-routes',
                     file: 'preferred-routes.json',

@@ -96,7 +96,8 @@ function parseArgs(argv: string[]): Options {
 function printHelp(): void {
     console.log(`Usage: node --import=tsx download-charts.ts [options]
 
-Downloads current FAA charts, produces spatial/zoom WebP MBTiles, and builds navigation metadata.
+Downloads current FAA charts, produces spatial/zoom WebP MBTiles, and builds navigation metadata
+including the NOAA WMM geographic magnetic variation model.
 
 Options:
   --output=DIR          Build root (default: dist)
@@ -112,7 +113,7 @@ Output layout:
   DIR/zips/        Downloaded source ZIP archives grouped by publication date
   DIR/mbtiles/YYYY-MM-DD/        Intermediate sheet MBTiles, receipts, and chart-manifest.json
   DIR/charts/YYYY-MM-DD/mbtiles/ Spatial/zoom delivery archives and manifest.json
-  DIR/charts/YYYY-MM-DD/nav/   NASR map data, preferred/TEC routes, and historical filed routes
+  DIR/charts/YYYY-MM-DD/nav/   NASR map data, routes, and geographic magnetic model
   DIR/charts/YYYY-MM-DD/nasr/  Downloaded NASR CSV ZIP archives
   DIR/charts/YYYY-MM-DD/tpp/   Airport/procedure catalog and PDF page index
 

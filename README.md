@@ -184,7 +184,7 @@ The --clean option used by the npm build replaces an existing mirror only after 
 
 ## FAA charts
 
-npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR, historical filed routes, d-TPP, and Chart Supplement metadata.
+npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR, geographic magnetic model, historical filed routes, d-TPP, and Chart Supplement metadata.
 
 The selected PDF coverage includes all 25 TPP volumes: AK, EC1–EC3, NC1–NC3,
 NE1–NE4, NW1, SC1–SC5, SE1–SE4, and SW1–SW4. It also includes all nine
@@ -229,6 +229,7 @@ dist/
 │       │   ├── navaids.geojson
 │       │   ├── airways.json
 │       │   ├── terminal-procedures.json
+│       │   ├── magnetic-model.json
 │       │   ├── preferred-routes.json
 │       │   ├── route-history.json.gz
 │       │   └── manifest.json
@@ -464,6 +465,48 @@ NASR stage, and by `npm run build:nav`; it requires no separate build or data pr
 Rebuild and publish the complete cycle's `nav/` bundle, including its refreshed
 `manifest.json`, when upgrading an older export. The manifest's new `generatedAt`
 value versions client URLs; already saved snapshots retain their original data until refreshed.
+
+### Geographic magnetic variation
+
+`npm run build:charts` and `npm run build:nav` also publish
+`charts/YYYY-MM-DD/nav/magnetic-model.json`, listed as product `magnetic-model`
+in the existing navigation manifest. It contains the global **WMM2025** model
+from [NOAA NCEI and the British Geological Survey](https://www.ncei.noaa.gov/products/world-magnetic-model).
+Consumers can calculate local magnetic variation from geographic position and date,
+including offline. VOR station alignment remains in the navaid records.
+
+The authoritative 4.6 KB `data/WMM2025.COF` is pinned in the repository and
+checksum-validated before export. Local `--source-dir` builds include the same
+model without network access. It participates in the navigation bundle's existing
+staging, atomic replacement, cycle retention, and upload process. No additional
+build command, dependency, tile rebuild, or live lookup service is needed.
+
+The JSON contract is `type: "ZLayerMagneticModel"`, `schemaVersion: 1`:
+
+- `effectiveDate` identifies the enclosing FAA cycle. Model validity is separately
+  `[validFrom, validUntil)`: **2025-01-01 through 2029-12-31**, with `epoch: 2025`.
+  A newer chart edition or rebuild does not extend this interval. Consumers must
+  check the evaluation date and avoid presenting an expired model as current.
+- `coefficients` contains 90 tuples through degree/order 12. `coefficientFields`
+  defines their order: `[n, m, g, h, gDot, hDot]`. Main-field terms are in nT;
+  annual changes are in nT/year. Coefficients use Schmidt semi-normalization.
+- Evaluate with WGS84 geodetic latitude/longitude, height above the ellipsoid, and
+  decimal year. `referenceRadiusKm` is the model's 6371.2 km spherical reference
+  radius. This is the complete coefficient model, requiring a WMM evaluator in
+  the consumer; the JSON is not a grid of precomputed degree values.
+- Resulting declination is east-positive: `magnetic = wrap360(true - declination)`.
+  Apply the same local variation to displayed heading, track, and desired course;
+  keep route geometry in true coordinates. Consumers should respect WMM's polar
+  blackout/caution zones when presenting magnetic bearings.
+- `source` records the provider, official download URL, original filename, and
+  original coefficient SHA-256. The manifest entry also records the exported JSON
+  `bytes` and `sha256`; `count` is the number of coefficient tuples.
+
+To update the model, replace the official coefficient file, its identity/checksum
+and validity constants in `lib/magnetic-model.ts`, the published-value tests, and
+the third-party notice. Verify against NOAA's release before publishing. Then rebuild
+navigation and upload the complete cycle's `nav/` directory; client URLs use the
+manifest's refreshed `generatedAt`. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 To rebuild the complete navigation bundle:
 
