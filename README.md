@@ -5,7 +5,7 @@ FAA Downloader is a collection of build tools for creating local, offline-friend
 - FAR: a responsive, searchable PWA generated from Title 14 CFR data.
 - AIM: a local mirror of the FAA Aeronautical Information Manual HTML site.
 - Charts: a downloader and GDAL-based tiler for current FAA aeronautical charts,
-  plus NASR navigation data, a d-TPP procedure catalog, and Chart Supplement page indexes.
+  plus NASR navigation data, daily obstacles, a d-TPP procedure catalog, and Chart Supplement page indexes.
 
 The generated data is intended for personal reference and offline use. It is not an official FAA publication and should not replace current FAA source material, notices, or operational requirements.
 
@@ -15,7 +15,7 @@ The generated data is intended for personal reference and offline use. It is not
 | --- | --- | --- |
 | npm run build:far | FAR PWA from the current eCFR snapshot | dist/far/ |
 | npm run build:aim | Offline-capable AIM mirror | dist/aim/ |
-| npm run build:charts | Charts, MBTiles, navigation, historical filed routes, procedures, and Chart Supplement indexes | dist/charts/ |
+| npm run build:charts | Charts, MBTiles, navigation, daily obstacles, historical filed routes, procedures, and Chart Supplement indexes | dist/charts/ |
 
 Run only the product you need, or build them into the shared dist/ directory.
 `build:far` builds FAR only. `build:charts` includes the chart metadata and packaging
@@ -25,6 +25,8 @@ It also writes `dist/charts/cycles.json` beside the dated directories, containin
 Run `npm run build:chart-cycles` to refresh just this index from existing output
 without downloading or rendering charts. Publish it after the dated files.
 Historical filed-route frequencies are packaged during the navigation stage.
+Daily obstacles are published separately at `charts/obstacles/manifest.json`, with
+their own source timestamp independent of the chart/NASR cycle.
 
 ## Data sources
 
@@ -33,6 +35,7 @@ Historical filed-route frequencies are packaged during the navigation stage.
 - AIM: [FAA AIM HTML publication](https://www.faa.gov/air_traffic/publications/atpubs/aim_html/)
 - Charts: [FAA Aeronautical Information Services](https://aeronav.faa.gov/)
 - Airports/navigation: [FAA 28-day NASR Subscription](https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/)
+- Obstacles: [FAA Daily Digital Obstacle File](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dailydof/)
 - Procedures: [FAA digital TPP](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/)
 - Historical filed-route frequencies: [Aeronautic AQ](https://aq.aeronautic.ai/), from its public [SQLite snapshot](https://aeronautiql.s3.amazonaws.com/databases/routes.sqlite.zst)
 
@@ -57,7 +60,7 @@ Requirements:
 - Node.js 24 or newer (the packager uses built-in SQLite)
 - npm
 - unzip on PATH for safe archive validation and extraction
-- zip on PATH for NASR build test fixtures
+- zip on PATH for NASR and obstacle build test fixtures
 - xsltproc on PATH for FAR generation
 - GDAL CLI tools on PATH for chart tiling: gdalinfo, gdal_translate, gdalwarp, and gdaladdo
   (manifest-only refreshes also use gdalinfo to read archive bounds and zoom limits)
@@ -75,7 +78,7 @@ Build a product:
 ~~~bash
 npm run build:far      # FAR PWA
 npm run build:aim      # AIM mirror
-npm run build:charts   # Charts, MBTiles, navigation, procedures, and CS indexes
+npm run build:charts   # Charts, MBTiles, navigation, daily obstacles, procedures, and CS indexes
 ~~~
 
 On NixOS, the external command-line prerequisites can be provided with:
@@ -93,6 +96,7 @@ Paths are relative to `dist/` (or the selected `--output` root).
 | Command | Inputs | Output and responsibility |
 | --- | --- | --- |
 | npm run build:nav | Downloads current NASR groups and AQ history, or uses explicit local sources | Publishes the complete cycle's `charts/<cycle>/nav/` bundle: map points, airways, preferred routes, SID/STAR sequences, and route history |
+| npm run build:obstacles | Downloads the full FAA Daily DOF CSV ZIP, or uses `--source=FILE` | Publishes `charts/obstacles/manifest.json` and a compressed GeoJSON snapshot, independent of chart cycles |
 | npm run build:procedures | Downloads d-TPP XML or uses `--source-xml`; indexes any existing TPP PDFs | Publishes `charts/<cycle>/tpp/` with plate URLs and available PDF page targets; does not download the books |
 | npm run build:supplements | Existing regional Chart Supplement PDFs plus cached/downloaded XML or `--source-xml` | Publishes `charts/<cycle>/cs/` airport page indexes; does not download the books |
 | npm run build:chart-packages | Verified sheet MBTiles and their manifests in `mbtiles/<cycle>/` | Publishes delivery archives and offline region indexes in `charts/<cycle>/mbtiles/` |
@@ -185,7 +189,14 @@ The --clean option used by the npm build replaces an existing mirror only after 
 
 ## FAA charts
 
-npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR, geographic magnetic model, historical filed routes, d-TPP, and Chart Supplement metadata.
+npm run build:charts discovers the latest available FAA editions, downloads PDFs and ZIP archives, extracts the required GeoTIFFs, creates trimmed per-sheet WebP MBTiles, stitches spatial/zoom delivery packages, and builds the current NASR, geographic magnetic model, historical filed routes, d-TPP, Chart Supplement metadata, and daily obstacles.
+
+The obstacle stage checks the FAA's daily snapshot on every normal chart build,
+reusing the downloaded ZIP only when its source ETag is unchanged. A daily run of
+`build:charts` therefore refreshes obstacles without waiting for a chart cycle.
+Use `npm run build:obstacles` to refresh only that dataset, or append
+`-- --source=/path/to/DAILY_DOF_CSV.ZIP` for a fully local build.
+See [Daily obstacles](docs/obstacles.md) for the schema and publication contract.
 
 The selected PDF coverage includes all 25 TPP volumes: AK, EC1–EC3, NC1–NC3,
 NE1–NE4, NW1, SC1–SC5, SE1–SE4, and SW1–SW4. It also includes all nine
@@ -217,11 +228,15 @@ published at `https://charts.tedyin.com/charts/`. Downstream applications such a
 ZLayer should consume those published artifacts together with explicit FAA edition and
 build provenance rather than treating the site as an unrelated third-party source.
 
-Output is organized by publication date:
+Chart output is organized by publication date; daily obstacles have a rolling snapshot:
 
 ~~~text
 dist/
 ├── charts/
+│   ├── cycles.json
+│   ├── obstacles/
+│   │   ├── obstacles-<sha256>.geojson.gz
+│   │   └── manifest.json
 │   └── YYYY-MM-DD/
 │       ├── *.pdf
 │       ├── *.tif
@@ -257,12 +272,14 @@ dist/
 │   └── YYYY-MM-DD.build.json
 ├── route-history/                   # local AQ snapshot cache; do not upload
 │   └── <etag-sha256>.sqlite.zst
+├── obstacles/                       # local daily FAA ZIP cache; do not upload
+│   └── <etag-sha256>.zip
 └── zips/                            # local source cache; do not upload
     └── YYYY-MM-DD/
         └── *.zip
 ~~~
 
-Downloaded PDFs and ZIP files are reused on subsequent runs. Each MBTiles file has a build receipt containing source, output, and tiler-configuration hashes; cached tiles are reused only while that receipt still matches. Generated chart data is ignored by Git because a complete collection is several gigabytes. The chart builder currently produces the download and tile data; it does not provide a chart-viewer PWA.
+Downloaded cycle PDFs and ZIP files are reused on subsequent runs; rolling obstacle and route-history sources are checked for updates. Each MBTiles file has a build receipt containing source, output, and tiler-configuration hashes; cached tiles are reused only while that receipt still matches. Generated chart data is ignored by Git because a complete collection is several gigabytes. The chart builder currently produces the download and tile data; it does not provide a chart-viewer PWA.
 
 Large per-sheet archives, receipts, build manifests, and GDAL/packaging work files live
 under `dist/mbtiles/YYYY-MM-DD/`, alongside the `dist/zips/` source cache. Only the small

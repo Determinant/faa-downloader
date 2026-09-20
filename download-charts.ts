@@ -7,6 +7,7 @@ import { buildProcedureCatalog } from './build-procedures.ts';
 import { buildChartSupplements } from './build-chart-supplements.ts';
 import { buildChartPackages, readOfflineRegions } from './build-chart-packages.ts';
 import { buildNasrData } from './download-nasr.ts';
+import { buildObstacles } from './build-obstacles.ts';
 import { buildChartCycles } from './build-chart-cycles.ts';
 import {
     discoverCharts,
@@ -97,7 +98,7 @@ function printHelp(): void {
     console.log(`Usage: node --import=tsx download-charts.ts [options]
 
 Downloads current FAA charts, produces spatial/zoom WebP MBTiles, and builds navigation metadata
-including the NOAA WMM geographic magnetic variation model.
+including the NOAA WMM geographic magnetic variation model and FAA daily obstacles.
 
 Options:
   --output=DIR          Build root (default: dist)
@@ -116,6 +117,7 @@ Output layout:
   DIR/charts/YYYY-MM-DD/nav/   NASR map data, routes, and geographic magnetic model
   DIR/charts/YYYY-MM-DD/nasr/  Downloaded NASR CSV ZIP archives
   DIR/charts/YYYY-MM-DD/tpp/   Airport/procedure catalog and PDF page index
+  DIR/charts/obstacles/       Daily obstacle GeoJSON and source metadata
 
 Example:
   npm run build:charts
@@ -229,6 +231,7 @@ async function buildCharts(options: Options): Promise<void> {
     await buildNasrData({ output: options.output, concurrency: options.concurrency });
     const procedures = await buildProcedureCatalog({ output: options.output });
     await buildChartSupplements({ output: options.output, effectiveDate: procedures.effectiveDate, force: options.force });
+    await buildObstacles({ output: options.output });
     await buildChartCycles(options.output);
     console.log(`Charts are ready under ${chartRoot}`);
 }

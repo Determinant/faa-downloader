@@ -15,6 +15,7 @@
     "build:chart-cycles": "node --import=tsx build-chart-cycles.ts --output=dist",
     "build:charts": "node --import=tsx download-charts.ts --output=dist",
     "build:nav": "node --import=tsx download-nasr.ts --output=dist",
+    "build:obstacles": "node --import=tsx build-obstacles.ts --output=dist",
     "build:procedures": "node --import=tsx build-procedures.ts --output=dist",
     "build:supplements": "node --import=tsx build-chart-supplements.ts --output=dist",
     "chart-cutlines": "node --import=tsx generate-chart-cutlines.ts",

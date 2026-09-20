@@ -9,7 +9,7 @@ test('cycles.json lists only dated directories, newest first, and refreshes remo
     const output = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-chart-cycles-'));
     t.after(() => fs.rm(output, { recursive: true, force: true }));
     const root = path.join(output, 'charts');
-    for (const date of ['2026-09-03', '2026-10-01', '2026-09-31', 'route-history']) {
+    for (const date of ['2026-09-03', '2026-10-01', '2026-09-31', 'route-history', 'obstacles']) {
         await fs.mkdir(path.join(root, date), { recursive: true });
     }
     await fs.writeFile(path.join(root, '2026-11-26'), 'not a directory');
