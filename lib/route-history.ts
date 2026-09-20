@@ -25,9 +25,10 @@ type RoutePair = { origin: string; destination: string; totalCount: number; rout
 export function readRouteHistory(file: string) {
     const db = new DatabaseSync(file, { readOnly: true });
     try {
-        // Reject malformed filed records instead of silently publishing partial counts.
+        // AQ changed the filed-route label from 'f' to 'filed' in September 2026.
+        // Validate both formats before publishing any counts.
         const invalid = db.prepare(`SELECT COUNT(*) AS count FROM sfdps_routes_by_type
-            WHERE route_type = 'f' AND (
+            WHERE route_type IN ('f', 'filed') AND (
                 typeof(use_count) != 'integer' OR use_count < 0
                 OR (use_count > 0 AND (
                     origin IS NULL OR trim(origin) = ''
@@ -50,7 +51,7 @@ export function readRouteHistory(file: string) {
                 COALESCE(NULLIF(engine_class, ''), 'Unknown') AS engine,
                 SUM(use_count) AS count, MIN(date(first_seen)) AS first_seen,
                 MAX(date(last_seen)) AS last_seen
-            FROM sfdps_routes_by_type WHERE route_type = 'f' AND use_count > 0
+            FROM sfdps_routes_by_type WHERE route_type IN ('f', 'filed') AND use_count > 0
             GROUP BY origin, destination, route_string, engine
             ORDER BY origin, destination, route_string, engine`).iterate();
         for (const row of rows) {
@@ -127,7 +128,7 @@ export async function buildRouteHistory(options: BuildOptions) {
                 history = readRouteHistory(database);
             }
         } else {
-            // Hold the shared cache lock through download, validation and pruning.
+            // Hold the shared cache lock through download, validation and partial cleanup.
             releaseCache = await acquireChartBuildLock(path.join(options.outputRoot, 'route-history'));
             const fetcher = options.fetch ?? globalThis.fetch;
             const response = await fetcher(ROUTE_HISTORY_URL, { method: 'HEAD',
@@ -166,11 +167,12 @@ export async function buildRouteHistory(options: BuildOptions) {
         await fs.mkdir(path.dirname(options.destination), { recursive: true });
         await pipeline(Readable.from([json]), createGzip({ level: 9 }), createWriteStream(options.destination));
         const bytes = (await fs.stat(options.destination)).size;
-        // Only the compressed source is retained outside the public charts tree.
+        // Preserve completed source snapshots: newer AQ exports can contain less
+        // history. Only obsolete partial downloads are disposable after success.
         if (cachedDownload) {
             const cache = path.dirname(cachedDownload);
             for (const name of await fs.readdir(cache)) {
-                const match = name.match(/^([a-f0-9]{64}\.sqlite\.zst)(?:\.part)?$/);
+                const match = name.match(/^([a-f0-9]{64}\.sqlite\.zst)\.part$/);
                 if (match && match[1] !== path.basename(cachedDownload)) {
                     await fs.rm(path.join(cache, name));
                 }

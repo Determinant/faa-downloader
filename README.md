@@ -605,16 +605,21 @@ for offline XML input, cycle selection, and the catalog format.
 `routes.sqlite.zst` snapshot and package `nav/route-history.json.gz` in the current
 chart cycle. No account, API key, queue, or separate collection process is needed.
 The source download is cached under `dist/route-history/` and refreshed when its
-ETag changes. Only the compact gzip export goes into `charts/`; geometry blobs and
+ETag changes. Completed source snapshots are retained because newer versions can
+contain less history. Only the compact gzip export goes into `charts/`; geometry blobs and
 SQLite indexes stay out of the offline package. Node's built-in zstd support handles
 decompression, so no additional package or command-line tool is required.
 
 This is **historical filed-route frequency**, not verified ATC clearance history.
 The export preserves the source observation dates, use counts, and engine-class
-counts. It includes all available history; aggregated counts cannot be turned into
-a rolling 15- or 30-day sample. A current chart cycle does not imply current route
-observations. The snapshot inspected in September 2026 had observations through
-January 27, 2026. See [docs/route-history.md](docs/route-history.md) for the format.
+counts. It includes all filed history available in the selected snapshot; aggregated
+counts cannot be turned into a rolling 15- or 30-day sample. A current chart cycle
+does not imply current route observations. The snapshot inspected September 16,
+2026 had observations through January 27. On September 19, the provider changed
+the filed-route label from `f` to `filed` and published a smaller snapshot selected
+by recent `last_seen` dates. Both labels are supported; older snapshots remain
+available locally and are not merged into the current export. See
+[docs/route-history.md](docs/route-history.md) for the format and source changes.
 
 Local NASR builds stay offline. To include history with `--source-dir`, supply a
 previously downloaded SQLite or zstd-compressed SQLite file:

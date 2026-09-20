@@ -7,9 +7,11 @@ The provider's database listing is <https://aq.aeronautic.ai/api/databases/versi
 
 The downloaded zstd file is cached in `dist/route-history/`, keyed by the upstream
 ETag. Every online build checks for a new version. Downloads use `If-Match`, including
-resumed transfers, to avoid combining versions. A successful export removes older
-source versions and their abandoned partial downloads; failed downloads remain
-resumable. The existing build lock protects the cache through download and cleanup;
+resumed transfers, to avoid combining versions. Completed source snapshots are
+retained: a newer upstream version can contain less history than its predecessor.
+A successful export removes only obsolete partial downloads; interrupted downloads
+remain resumable, while fully downloaded files that fail validation are removed.
+The existing build lock protects the cache through download and cleanup;
 concurrent online history builds sharing an output root fail fast and can be retried.
 Decompressed SQLite files are temporary. Custom `--output` roots move the cache
 along with the chart output.
@@ -63,8 +65,9 @@ The decompressed document has this shape (example abbreviated):
 }
 ```
 
-- Only positive `use_count` records with `route_type = 'f'` from
-  `sfdps_routes_by_type` are included. Preferred records (`p`) are excluded; current
+- Only positive `use_count` records with `route_type = 'f'`
+  or `route_type = 'filed'` from `sfdps_routes_by_type` are included. Preferred
+  records (`p` / `preferred`) are excluded; current
   FAA preferred/TEC routes remain in `preferred-routes.json`.
 - Identical route strings within a directional pair are grouped across engine
   classes. `count` sums source use counts; `engineCounts` retains the breakdown.
@@ -88,3 +91,17 @@ The decompressed document has this shape (example abbreviated):
 
 Source/download/schema failures stop an online build before the existing `nav/`
 directory is replaced. There is no background collector or credential file.
+
+On September 19, 2026, AQ replaced the legacy snapshot with a new export using
+`route_type = 'filed'` instead of `'f'`. The snapshot inspected at 23:25 UTC was
+35,383,766 bytes compressed and contained 125,612 filed rows, compared with
+434,314 filed rows in the preserved February 13 snapshot (93,023,126 bytes
+compressed). Both label formats are supported.
+
+The new `_routes_publish_meta` table declares `window_days = 30` and selects
+source summaries whose `last_seen` falls within that window. Its available rows
+had last-seen dates September 15–19, despite some first-seen dates reaching back
+to February 2025. This is a change in upstream selection, not a complete
+replacement for the old history; use counts are still source aggregates, not
+verified 30-day flight counts. Each public export reflects one source snapshot.
+Retaining older sources does not merge their counts into the current export.

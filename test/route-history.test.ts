@@ -44,26 +44,41 @@ test('filed history combines engine counts, preserves both directions and dates,
     assert.ok(!JSON.stringify(history).includes('route_json'));
 });
 
-test('malformed counts, dates, empty data, and incompatible source schemas fail the export', async t => {
+test('spelled-out and mixed filed labels preserve legacy counts and exclude preferred/unused rows', async t => {
     const options = await setup(t);
-    for (const [sql, expected] of [
-        ["UPDATE sfdps_routes_by_type SET use_count=-1 WHERE route_type='f'", /invalid filed records/],
-        ["UPDATE sfdps_routes_by_type SET first_seen='bad-date' WHERE route_type='f'", /invalid filed records/],
-        ["UPDATE sfdps_routes_by_type SET first_seen='2026-02-01' WHERE route_type='f'", /invalid filed records/],
-        ["UPDATE sfdps_routes_by_type SET destination='' WHERE route_type='f'", /invalid filed records/],
-        ["DELETE FROM sfdps_routes_by_type WHERE route_type='f'", /no filed routes/],
-        ["ALTER TABLE sfdps_routes_by_type RENAME TO changed_schema", /no such table/]
-    ] as const) {
+    const expected = readRouteHistory(options.sourceFile);
+    for (const condition of ["engine_class = 'Piston'", '1']) {
         const db = new DatabaseSync(options.sourceFile);
-        db.exec(sql);
+        db.exec(`UPDATE sfdps_routes_by_type SET route_type='filed' WHERE route_type='f' AND ${condition};
+            UPDATE sfdps_routes_by_type SET route_type='preferred' WHERE route_type='p'`);
         db.close();
-        assert.throws(() => readRouteHistory(options.sourceFile), expected);
-        await fs.rm(options.sourceFile);
-        const reset = new DatabaseSync(options.sourceFile);
-        reset.exec(fixture);
-        reset.close();
+        assert.deepEqual(readRouteHistory(options.sourceFile), expected);
     }
 });
+
+for (const filedLabel of ['f', 'filed']) {
+    test(`malformed counts, dates, empty data, and incompatible schemas fail for '${filedLabel}' routes`, async t => {
+        const options = await setup(t);
+        for (const [sql, expected] of [
+            ["UPDATE sfdps_routes_by_type SET use_count=-1 WHERE route_type IN ('f', 'filed')", /invalid filed records/],
+            ["UPDATE sfdps_routes_by_type SET first_seen='bad-date' WHERE route_type IN ('f', 'filed')", /invalid filed records/],
+            ["UPDATE sfdps_routes_by_type SET first_seen='2026-02-01' WHERE route_type IN ('f', 'filed')", /invalid filed records/],
+            ["UPDATE sfdps_routes_by_type SET destination='' WHERE route_type IN ('f', 'filed')", /invalid filed records/],
+            ["DELETE FROM sfdps_routes_by_type WHERE route_type IN ('f', 'filed')", /no filed routes/],
+            ["ALTER TABLE sfdps_routes_by_type RENAME TO changed_schema", /no such table/]
+        ] as const) {
+            const db = new DatabaseSync(options.sourceFile);
+            db.prepare("UPDATE sfdps_routes_by_type SET route_type=? WHERE route_type='f'").run(filedLabel);
+            db.exec(sql);
+            db.close();
+            assert.throws(() => readRouteHistory(options.sourceFile), expected);
+            await fs.rm(options.sourceFile);
+            const reset = new DatabaseSync(options.sourceFile);
+            reset.exec(fixture);
+            reset.close();
+        }
+    });
+}
 
 test('local SQLite and zstd inputs produce gzip exports with provenance, actual observation dates, and matching byte counts', async t => {
     const options = await setup(t);
@@ -90,7 +105,7 @@ test('local SQLite and zstd inputs produce gzip exports with provenance, actual 
     }
 });
 
-test('source ETag caches the download, refreshes changed versions, and rejects failures without overwriting the export', async t => {
+test('source refresh accepts new filed labels, retains previous snapshots, and preserves the export on failure', async t => {
     const options = await setup(t);
     let body = zstdCompressSync(await fs.readFile(options.sourceFile));
     let etag = '"first-version"';
@@ -116,15 +131,18 @@ test('source ETag caches the download, refreshes changed versions, and rejects f
     await build();
     assert.equal(gets, 2, 'invalid cached databases are replaced in the same build');
     assert.equal((await readExport(options.destination)).pairs[0].totalCount, 144);
+    const previousSnapshot = await fs.readFile(path.join(cache, cachedFile));
 
     const updated = new DatabaseSync(options.sourceFile);
-    updated.exec("UPDATE sfdps_routes_by_type SET use_count=76 WHERE use_count=75");
+    updated.exec(`UPDATE sfdps_routes_by_type SET use_count=76 WHERE use_count=75;
+        UPDATE sfdps_routes_by_type SET route_type='filed' WHERE route_type='f'`);
     updated.close();
     body = zstdCompressSync(await fs.readFile(options.sourceFile));
     etag = '"second-version"';
     await build();
     assert.equal(gets, 3);
-    assert.equal((await fs.readdir(path.join(options.outputRoot, 'route-history'))).length, 1);
+    assert.equal((await fs.readdir(cache)).length, 2);
+    assert.deepEqual(await fs.readFile(path.join(cache, cachedFile)), previousSnapshot);
     const document = await readExport(options.destination);
     assert.equal(document.pairs[0].totalCount, 145);
     assert.equal(document.pairs[0].routes[0].engineCounts.Piston, 76);
@@ -139,7 +157,8 @@ test('source ETag caches the download, refreshes changed versions, and rejects f
     invalidBody = true;
     await assert.rejects(build(), /not a database/);
     assert.deepEqual(await fs.readFile(options.destination), previous);
-    assert.equal((await fs.readdir(path.join(options.outputRoot, 'route-history'))).length, 1);
+    assert.equal((await fs.readdir(cache)).length, 2);
+    assert.deepEqual(await fs.readFile(path.join(cache, cachedFile)), previousSnapshot);
     assert.ok(!(await fs.readdir(options.outputRoot)).some(name => name.startsWith('.route-history-')));
 });
 
