@@ -48,13 +48,14 @@ test('NASR discovery selects the latest effective cycle and all required groups'
         }
     );
 
-    const cycle = ['APT', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR']
+    const cycle = ['APT', 'FRQ', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR']
         .map(group => `<a href="https://nfdc.faa.gov/data_2026_${group}_CSV.zip">${group}</a>`)
         .join('');
     assert.deepEqual(
         discoverNasrGroupUrls(cycle, 'https://www.faa.gov/cycle/'),
         {
             APT: 'https://nfdc.faa.gov/data_2026_APT_CSV.zip',
+            FRQ: 'https://nfdc.faa.gov/data_2026_FRQ_CSV.zip',
             FIX: 'https://nfdc.faa.gov/data_2026_FIX_CSV.zip',
             NAV: 'https://nfdc.faa.gov/data_2026_NAV_CSV.zip',
             AWY: 'https://nfdc.faa.gov/data_2026_AWY_CSV.zip',
@@ -343,6 +344,15 @@ const segmentRow = {
     SEGMENT_SEQ: 5, SEG_VALUE: 'KWANG', SEG_TYPE: 'FIX', STATE_CODE: 'CA', COUNTRY_CODE: 'US',
     ICAO_REGION_CODE: 'K2', NEXT_SEG: 'CMA'
 };
+const frequencyHeaders = [
+    'EFF_DATE', 'FACILITY_TYPE', 'SERVICED_FACILITY', 'SERVICED_SITE_TYPE',
+    'SERVICED_STATE', 'SERVICED_COUNTRY', 'FREQ', 'FREQ_USE'
+];
+const frequencyRow = {
+    EFF_DATE: '2026/09/03', FACILITY_TYPE: 'ATCT', SERVICED_FACILITY: 'SBA',
+    SERVICED_SITE_TYPE: 'AIRPORT', SERVICED_STATE: 'CA', SERVICED_COUNTRY: 'US',
+    FREQ: '119.7', FREQ_USE: 'LCL/P'
+};
 function recordCsv(headers: string[], rows: Record<string, string | number>[]): string {
     return csv(headers, rows.map(row => headers.map(header => row[header] ?? '')));
 }
@@ -350,12 +360,25 @@ function preferredRouteInput(overrides: Partial<NasrInput> = {}): NasrInput {
     const empty = csv(['EFF_DATE'], []);
     return {
         airports: empty, runways: empty, runwayEnds: empty, fixes: empty,
+        frequencies: recordCsv(frequencyHeaders, [frequencyRow]),
         navaids: empty, airways: empty, airwaySegments: empty,
         preferredRoutes: recordCsv(preferredHeaders, [routeRow]),
         preferredRouteSegments: recordCsv(preferredSegmentHeaders, [segmentRow]),
         ...overrides
     };
 }
+
+test('NASR frequency input rejects empty records, missing columns, and invalid effective dates', () => {
+    for (const [frequencies, expected] of [
+        [recordCsv(frequencyHeaders, []), /FRQ.csv contains no frequency records/],
+        [recordCsv(frequencyHeaders.filter(field => field !== 'FREQ_USE'), [frequencyRow]), /FRQ.csv is missing FREQ_USE/],
+        [recordCsv(frequencyHeaders.filter(field => field !== 'EFF_DATE'), [frequencyRow]), /missing or mismatched effective date/],
+        [recordCsv(frequencyHeaders, [{ ...frequencyRow, EFF_DATE: ' ' }]), /missing or mismatched effective date/],
+        [recordCsv(frequencyHeaders, [{ ...frequencyRow, EFF_DATE: '2026/08/06' }]), /one effective date/]
+    ] as const) {
+        assert.throws(() => buildNasrProducts(preferredRouteInput({ frequencies })), expected);
+    }
+});
 
 test('preferred routes retain directional variants, coded restrictions, NAR fields, and ordered segments', () => {
     const products = buildNasrProducts(preferredRouteInput({
@@ -457,10 +480,11 @@ test('NASR cycle build packages navigation, magnetic model and filed history off
     await fs.mkdir(sourceDir);
     const input = preferredRouteInput({
         airports: csv(
-            ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'ICAO_ID', 'LAT_DECIMAL', 'LONG_DECIMAL'],
+            ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'ICAO_ID', 'STATE_CODE', 'COUNTRY_CODE',
+                'LAT_DECIMAL', 'LONG_DECIMAL'],
             [
-                ['2026/09/03', '00001.', 'A', 'SBA', 'KSBA', 34.4278, -119.84],
-                ['2026/09/03', '00002.', 'A', 'SMO', 'KSMO', 34.015, -118.4511]
+                ['2026/09/03', '00001.', 'A', 'SBA', 'KSBA', 'CA', 'US', 34.4278, -119.84],
+                ['2026/09/03', '00002.', 'A', 'SMO', 'KSMO', 'CA', 'US', 34.015, -118.4511]
             ]
         ),
         navaids: csv(
@@ -476,7 +500,7 @@ test('NASR cycle build packages navigation, magnetic model and filed history off
     const terminal = JSON.parse(await fs.readFile(new URL('./fixtures/terminal-procedures.json', import.meta.url), 'utf8'));
     const files: Record<string, string> = {
         'APT_BASE.csv': input.airports, 'APT_RWY.csv': input.runways, 'APT_RWY_END.csv': input.runwayEnds,
-        'FIX_BASE.csv': input.fixes, 'NAV_BASE.csv': input.navaids,
+        'FRQ.csv': input.frequencies, 'FIX_BASE.csv': input.fixes, 'NAV_BASE.csv': input.navaids,
         'AWY_BASE.csv': input.airways, 'AWY_SEG_ALT.csv': input.airwaySegments,
         'PFR_BASE.csv': input.preferredRoutes, 'PFR_SEG.csv': input.preferredRouteSegments,
         'DP_BASE.csv': terminal.departures, 'DP_APT.csv': terminal.departureAirports, 'DP_RTE.csv': terminal.departureRoutes,
@@ -484,9 +508,9 @@ test('NASR cycle build packages navigation, magnetic model and filed history off
     };
     for (const [name, contents] of Object.entries(files)) await fs.writeFile(path.join(sourceDir, name), contents);
     const archive = async (group: string) => promisify(execFile)('zip', [
-        '-q', `${group}_CSV.zip`, ...Object.keys(files).filter(name => name.startsWith(`${group}_`))
+        '-q', `${group}_CSV.zip`, ...Object.keys(files).filter(name => name.startsWith(`${group}_`) || name === `${group}.csv`)
     ], { cwd: sourceDir });
-    for (const group of ['APT', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR']) await archive(group);
+    for (const group of ['APT', 'FRQ', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR']) await archive(group);
     const routeHistorySource = path.join(root, 'routes.sqlite');
     const database = new DatabaseSync(routeHistorySource);
     database.exec(await fs.readFile(new URL('./fixtures/route-history.sql', import.meta.url), 'utf8'));
@@ -497,6 +521,11 @@ test('NASR cycle build packages navigation, magnetic model and filed history off
     const nav = path.join(cycleDir, 'nav');
     const originalManifest = await fs.readFile(path.join(nav, 'manifest.json'), 'utf8');
     const manifest = JSON.parse(originalManifest);
+    const airportData = JSON.parse(await fs.readFile(path.join(nav, 'airports.geojson'), 'utf8'));
+    assert.deepEqual(airportData.features.map(feature => feature.properties.frequencies), [
+        [{ type: 'TOWER', frequencyMHz: 119.7, use: 'LCL/P' }], []
+    ]);
+    assert.equal(manifest.sourceArchives.find(source => source.group === 'FRQ').filename, 'FRQ_CSV.zip');
     const magneticProduct = manifest.products.find(product => product.id === 'magnetic-model');
     assert.equal(magneticProduct.file, 'magnetic-model.json');
     assert.equal(magneticProduct.count, 90);
@@ -555,11 +584,15 @@ test('NASR cycle build packages navigation, magnetic model and filed history off
         assert.deepEqual((await fs.readdir(cycleDir)).sort(), ['nasr', 'nav']);
     };
 
-    for (const group of ['DP', 'STAR']) {
-        const names = Object.keys(files).filter(name => name.startsWith(`${group}_`));
+    for (const [group, expected] of [
+        ['FRQ', /FRQ.csv contains no frequency records/],
+        ['DP', /BASE\.csv contains no procedures/],
+        ['STAR', /BASE\.csv contains no procedures/]
+    ] as const) {
+        const names = Object.keys(files).filter(name => name.startsWith(`${group}_`) || name === `${group}.csv`);
         for (const name of names) await fs.writeFile(path.join(sourceDir, name), files[name].split('\n')[0] + '\n');
         await archive(group);
-        await assert.rejects(buildNasrData(options), /BASE\.csv contains no procedures/);
+        await assert.rejects(buildNasrData(options), expected);
         await assertUnchanged();
         for (const name of names) await fs.writeFile(path.join(sourceDir, name), files[name]);
         await archive(group);

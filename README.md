@@ -407,7 +407,7 @@ TIFF members for extraction coverage checks.
 
 The chart build also downloads the FAA's current 28-day NASR CSV groups for airports
 and landing facilities (`APT`), fixes/reporting points/waypoints (`FIX`), NAVAIDs
-(`NAV`), airways (`AWY`), preferred/TEC routes (`PFR`), and departure/arrival
+(`NAV`), airport frequencies (`FRQ`), airways (`AWY`), preferred/TEC routes (`PFR`), and departure/arrival
 procedures (`DP`/`STAR`). It generates compact GeoJSON for selectable map points
 and JSON for route records.
 
@@ -429,6 +429,15 @@ runway summary. Runways include dimensions/surface plus `ends[]` joined from
 `APT_RWY_END.csv` by site number, facility type, and runway ID. Each end preserves its
 identifier, published `trueHeadingDeg`, and `trafficPattern` (`left`/`right`). Blank
 headings and pattern flags remain absent; runway numbers are not used as true headings.
+Airport `frequencies[]` come from `FRQ.csv`: ATIS/D-ATIS, AWOS/ASOS, Tower, CTAF,
+and Ground, with `frequencyMHz`, published `use`, `sector`, `hours`, and `remarks`.
+`hours` is the source `TOWER_HRS` text: it describes the tower even when repeated
+on an ATIS or Ground record. It is not a service-specific operating schedule.
+The join uses the **serviced** FAA identifier, state, country, and facility type,
+including AWOS/ASOS records associated with that airport. Ambiguous matches are
+omitted. Exact duplicates are removed; distinct sectors and restrictions remain.
+UNICOM and approach channels are not substituted for CTAF. Rebuild and upload the
+cycle's `nav/` directory to expose frequencies; no chart or plate rebuild is needed.
 `fixes.geojson` contains the complete FIX group. VFR waypoints
 are additionally written to `vfr-waypoints.geojson`, classified by the FAA's
 `FIX_USE_CODE=VFR` field instead of by identifier prefix alone. The FAA specifies VFR
@@ -530,8 +539,8 @@ To rebuild the complete navigation bundle:
 npm run build:nav
 ~~~
 
-For an offline/local rebuild, provide previously downloaded ZIPs for all seven groups
-(APT, FIX, NAV, AWY, PFR, DP, and STAR):
+For an offline/local rebuild, provide previously downloaded ZIPs for all eight groups
+(APT, FRQ, FIX, NAV, AWY, PFR, DP, and STAR):
 
 ~~~bash
 npm run build:nav -- --source-dir=/path/to/zips --cycle=YYYY-MM-DD

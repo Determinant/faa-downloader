@@ -1,4 +1,5 @@
 import { parseCsvRecords, type CsvRecord } from './csv.ts';
+import { airportFrequencyIndex } from './airport-frequencies.ts';
 
 type Geometry = {
     type: 'Point';
@@ -25,6 +26,7 @@ export type NasrInput = {
     airports: string;
     runways: string;
     runwayEnds: string;
+    frequencies: string;
     fixes: string;
     navaids: string;
     airways: string;
@@ -295,6 +297,12 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
     const airportRows = parseCsvRecords(input.airports, 'APT_BASE.csv');
     const runwayRows = parseCsvRecords(input.runways, 'APT_RWY.csv');
     const runwayEndRows = parseCsvRecords(input.runwayEnds, 'APT_RWY_END.csv');
+    const frequencyRows = parseCsvRecords(input.frequencies, 'FRQ.csv');
+    if (frequencyRows.length === 0) throw new Error('FRQ.csv contains no frequency records');
+    for (const field of ['SERVICED_FACILITY', 'SERVICED_SITE_TYPE', 'SERVICED_STATE',
+        'SERVICED_COUNTRY', 'FACILITY_TYPE', 'FREQ', 'FREQ_USE']) {
+        if (!Object.hasOwn(frequencyRows[0], field)) throw new Error(`FRQ.csv is missing ${field}`);
+    }
     const fixRows = parseCsvRecords(input.fixes, 'FIX_BASE.csv');
     const navaidRows = parseCsvRecords(input.navaids, 'NAV_BASE.csv');
     const airwayRows = parseCsvRecords(input.airways, 'AWY_BASE.csv');
@@ -305,6 +313,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
         airportRows,
         runwayRows,
         runwayEndRows,
+        frequencyRows,
         fixRows,
         navaidRows,
         airwayRows,
@@ -312,6 +321,12 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
         preferredRouteRows,
         preferredSegmentRows
     ]);
+    const sourceDate = effective.replaceAll('-', '/');
+    for (const row of frequencyRows) {
+        if (present(row.EFF_DATE) !== sourceDate) {
+            throw new Error('FRQ record has a missing or mismatched effective date');
+        }
+    }
 
     const runwayEnds = new Map<string, Record<string, unknown>[]>();
     for (const row of runwayEndRows) {
@@ -352,6 +367,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
         runways.set(facilityKey, values);
     }
 
+    const frequencies = airportFrequencyIndex(airportRows, frequencyRows);
     const airports = airportRows.flatMap(row => {
         const siteNumber = present(row.SITE_NO);
         const facilityType = present(row.SITE_TYPE_CODE);
@@ -383,6 +399,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
             towered: towerType ? towerType !== 'NON-ATCT' : undefined,
             fuelTypes: present(row.FUEL_TYPES),
             longestRunwayFt,
+            frequencies: frequencies.get(`${siteNumber}:${facilityType}`) || [],
             runways: airportRunways
         });
         return feature ? [feature] : [];

@@ -19,10 +19,11 @@ import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.t
 
 const NASR_INDEX_URL =
     'https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/';
-const GROUPS = ['APT', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR'] as const;
+const GROUPS = ['APT', 'FRQ', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR'] as const;
 const DEFAULT_RETAIN_CYCLES = 2;
 const REQUIRED_FILES: Record<(typeof GROUPS)[number], string[]> = {
     APT: ['APT_BASE.csv', 'APT_RWY.csv', 'APT_RWY_END.csv'],
+    FRQ: ['FRQ.csv'],
     FIX: ['FIX_BASE.csv'],
     NAV: ['NAV_BASE.csv'],
     AWY: ['AWY_BASE.csv', 'AWY_SEG_ALT.csv'],
@@ -113,14 +114,14 @@ Builds the navigation bundle: FAA NASR map points, airways, preferred routes,
 terminal procedure sequences, NOAA WMM geographic magnetic variation model,
 and Aeronautic AQ historical filed routes.
 Online builds download the current FAA cycle and AQ snapshot. Local builds use
-all seven CSV ZIP groups and include history only with --route-history-source.
+all eight CSV ZIP groups and include history only with --route-history-source.
 Replaces the cycle's complete nav/ directory after all products succeed.
 
 Options:
   --output=DIR        Build root (default: dist)
   --retain-cycles=N   Keep N NASR cycles (default: 2)
   --concurrency=N     Parallel downloads, 1-16 (default: ${DEFAULT_DOWNLOAD_CONCURRENCY})
-  --source-dir=DIR    Use local APT/FIX/NAV/AWY/PFR/DP/STAR ZIP archives instead of downloading
+  --source-dir=DIR    Use local APT/FRQ/FIX/NAV/AWY/PFR/DP/STAR ZIP archives instead of downloading
   --route-history-source=FILE  Use a local Aeronautic AQ .sqlite or .sqlite.zst
   --cycle=YYYY-MM-DD  Local effective date; required with and only valid with --source-dir
   --help, -h          Show this help
@@ -174,7 +175,7 @@ export function discoverNasrGroupUrls(
     const anchors = Array.from(dom.window.document.querySelectorAll('a')) as any[];
     for (const anchor of anchors) {
         const href = String(anchor.getAttribute('href') || '');
-        const match = href.match(/_(APT|FIX|NAV|AWY|PFR|DP|STAR)_CSV\.zip(?:$|[?#])/i);
+        const match = href.match(/_(APT|FRQ|FIX|NAV|AWY|PFR|DP|STAR)_CSV\.zip(?:$|[?#])/i);
         if (!match) continue;
         const group = match[1].toUpperCase() as NasrGroup;
         found.set(group, new URL(href, baseUrl).href);
@@ -260,11 +261,12 @@ async function extractRequiredFiles(
 
 async function readNasrInput(sourceDirectory: string): Promise<NasrInput> {
     const read = (filename: string) => fs.readFile(path.join(sourceDirectory, filename), 'utf8');
-    const [airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments,
+    const [airports, runways, runwayEnds, frequencies, fixes, navaids, airways, airwaySegments,
         preferredRoutes, preferredRouteSegments] = await Promise.all([
         read('APT_BASE.csv'),
         read('APT_RWY.csv'),
         read('APT_RWY_END.csv'),
+        read('FRQ.csv'),
         read('FIX_BASE.csv'),
         read('NAV_BASE.csv'),
         read('AWY_BASE.csv'),
@@ -272,7 +274,7 @@ async function readNasrInput(sourceDirectory: string): Promise<NasrInput> {
         read('PFR_BASE.csv'),
         read('PFR_SEG.csv')
     ]);
-    return { airports, runways, runwayEnds, fixes, navaids, airways, airwaySegments,
+    return { airports, runways, runwayEnds, frequencies, fixes, navaids, airways, airwaySegments,
         preferredRoutes, preferredRouteSegments };
 }
 
