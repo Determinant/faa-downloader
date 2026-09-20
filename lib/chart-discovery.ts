@@ -78,14 +78,53 @@ const VFR_SECTIONAL_REGIONS = [
     'Western_Aleutian_Islands',
     'Wichita'
 ] as const;
-// San Diego is a TAC covered by the Los Angeles Sectional; the FAA does not
-// publish a separate San_Diego.zip in the sectional-files directory.
+// The 30 FAA TAC archives contain 34 georeferenced terminal sheets. Anchorage /
+// Fairbanks, Denver / Colorado Springs, Seattle / Portland, and Tampa / Orlando
+// each share an archive. Only 21 sheets have an associated georeferenced Flyway.
 const VFR_TERMINAL_REGIONS = [
-    'San_Francisco',
+    'Anchorage-Fairbanks',
+    'Atlanta',
+    'Baltimore-Washington',
+    'Boston',
+    'Charlotte',
+    'Chicago',
+    'Cincinnati',
+    'Cleveland',
+    'Dallas-Ft_Worth',
+    'Denver',
+    'Detroit',
+    'Houston',
+    'Kansas_City',
+    'Las_Vegas',
     'Los_Angeles',
+    'Memphis',
+    'Miami',
+    'Minneapolis-St_Paul',
+    'New_Orleans',
+    'New_York',
+    'Philadelphia',
+    'Phoenix',
+    'Pittsburgh',
+    'Puerto_Rico-VI',
+    'Salt_Lake_City',
     'San_Diego',
-    'Las_Vegas'
+    'San_Francisco',
+    'Seattle',
+    'St_Louis',
+    'Tampa-Orlando'
 ] as const;
+const VFR_TERMINAL_SHEETS: Readonly<Record<string, readonly string[]>> = {
+    'Anchorage-Fairbanks': ['Anchorage', 'Fairbanks'],
+    Denver: ['Denver', 'Colorado_Springs'],
+    Seattle: ['Seattle', 'Portland'],
+    'Tampa-Orlando': ['Tampa', 'Orlando']
+};
+const VFR_FLYWAY_SHEETS = new Set([
+    'Atlanta', 'Baltimore-Washington', 'Charlotte', 'Chicago', 'Cincinnati',
+    'Dallas-Ft_Worth', 'Denver', 'Detroit', 'Houston', 'Las_Vegas', 'Los_Angeles',
+    'Miami', 'New_Orleans', 'Orlando', 'Phoenix', 'Salt_Lake_City', 'San_Diego',
+    'San_Francisco', 'Seattle', 'St_Louis', 'Tampa'
+]);
 
 export type ChartExtraction = {
     sourceName: string;
@@ -157,11 +196,14 @@ function sectionalExtractions(region: string): ChartExtraction[] {
 }
 
 function terminalExtractions(region: string): ChartExtraction[] {
-    const prefix = `vfr-terminal-${region.toLowerCase()}`;
-    return [
-        { sourceName: `${region}_TAC.tif`, filename: `${prefix}.tif` },
-        { sourceName: `${region}_FLY.tif`, filename: `${prefix}-flyway.tif` }
-    ];
+    return (VFR_TERMINAL_SHEETS[region] ?? [region]).flatMap(sheet => {
+        const prefix = `vfr-terminal-${sheet.toLowerCase()}`;
+        const extractions = [{ sourceName: `${sheet}_TAC.tif`, filename: `${prefix}.tif` }];
+        if (VFR_FLYWAY_SHEETS.has(sheet)) {
+            extractions.push({ sourceName: `${sheet}_FLY.tif`, filename: `${prefix}-flyway.tif` });
+        }
+        return extractions;
+    });
 }
 
 export function configuredRasterFilenames(): string[] {

@@ -36,14 +36,15 @@ Historical filed-route frequencies are packaged during the navigation stage.
 - Procedures: [FAA digital TPP](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/)
 - Historical filed-route frequencies: [Aeronautic AQ](https://aq.aeronautic.ai/), from its public [SQLite snapshot](https://aeronautiql.s3.amazonaws.com/databases/routes.sqlite.zst)
 
-The source date and scope are written into the generated FAR interface. Chart downloads are selected from the latest available FAA directory entries. A configured region absent from an FAA listing produces a warning; a listed file that fails to download aborts the build rather than publishing a silently incomplete collection.
+The source date and scope are written into the generated FAR interface. Chart downloads are selected from the latest available FAA directory entries. A missing configured raster aborts discovery; a missing PDF volume produces a warning. A listed file that fails to download aborts the build.
 
 FAA chart GeoTIFFs contain the entire printed sheet, including collars, legends, and
 insets that are not part of the accurately georeferenced main chart. The chart builder
 clips every configured VFR and IFR raster to a reviewed neatline before reprojection
 and MBTiles generation. The sectional, TAC, and IFR cutlines are adapted
 from the MIT-licensed [N129BZ/chartmaker](https://github.com/N129BZ/chartmaker)
-project. IFR corners are joined in the FAA raster's Lambert projection so wide edges
+project, with local inset corrections for the Miami and Puerto Rico TACs.
+IFR corners are joined in the FAA raster's Lambert projection so wide edges
 follow the printed neatline without retaining coordinate rulers; flyway neatlines were
 measured against the FAA 2026-09-03 rasters. A new VFR or IFR raster intentionally
 fails tiling until its cutline is reviewed and added.
@@ -192,10 +193,15 @@ Chart Supplements: AK, EC, NC, NE, NW, PAC, SC, SE, and SW. Pacific terminal
 procedures are included in Chart Supplement Pacific. PDFs retain the existing
 `tpp-<volume>.pdf` and `cs-<region>.pdf` filenames under their publication dates.
 
-The configured raster footprint includes every FAA Sectional and the main L01-L36
-conterminous U.S. IFR Low Enroute sheets, plus the San Francisco, Los Angeles, San
-Diego, and Las Vegas TAC/Flyway charts. Multi-raster products and
-antimeridian-crossing panels are split into independently trimmed MBTiles where required.
+The configured raster footprint includes every FAA Sectional, all 34 Terminal Area
+(TAC) sheets and 21 Flyway (FLY) sheets, and the main L01-L36 conterminous U.S. IFR
+Low Enroute sheets: 150 independently trimmed rasters in total. The 30 TAC archives
+include paired terminal sheets for Anchorage/Fairbanks, Denver/Colorado Springs,
+Seattle/Portland, and Tampa/Orlando. Flyways are extracted only where the FAA provides
+a georeferenced FLY sheet. The unreferenced Anchorage Graphic and New York VFR
+Planning Charts images are excluded, as are displaced insets within chart sheets.
+Multi-raster products and antimeridian-crossing panels are split into independently
+trimmed MBTiles where required.
 
 The downloader and MBTiles renderer each use four concurrent workers by default.
 Downloads stream to `.part` files, report progress, and resume after interruption when
@@ -377,7 +383,7 @@ only read and cache these static artifacts; the hosting server performs no chart
 rendering. Overview levels extend through factor 128 so high-density clients can retain
 2× chart sampling at the widest supported map view.
 
-Community cutlines are generated from the pinned N129BZ/chartmaker shapefiles. Verify
+The 129 community cutlines are generated from the pinned N129BZ/chartmaker shapefiles. Verify
 or refresh them from a clean checkout at the pinned commit. The generated coordinates
 are checked in, so ordinary download and tile builds do not use chartmaker or require
 its checkout:
@@ -386,6 +392,16 @@ its checkout:
 npm run chart-cutlines -- --chartmaker=/path/to/chartmaker
 npm run chart-cutlines -- --chartmaker=/path/to/chartmaker --write
 ~~~
+
+Flyway cutlines are measured from the FAA source images in `lib/chart-definitions.ts`.
+The sampled Flyway boundaries record their source pixel vertices there. Sample each
+edge at quarter intervals and transform those pixel/line positions with
+`gdaltransform -t_srs EPSG:4326 <source-FLY.tif>` to reproduce their WGS84 coordinates.
+Miami's TAC and Flyway boundaries follow the main map around the displaced Florida
+Keys inset. Puerto Rico's TAC also overrides the community outline to remove insets;
+Detroit and Seattle exclude their inset and legend columns. The archive-content
+fixture in `test/fixtures/vfr-terminal-2026-09-03.json` records every TAC archive's
+TIFF members for extraction coverage checks.
 
 ### NASR airports and navigation data
 

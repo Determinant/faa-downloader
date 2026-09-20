@@ -11,7 +11,7 @@ import { mapWithConcurrency } from './lib/concurrency.ts';
 import { writeFileAtomic } from './lib/fs-utils.ts';
 
 const CHARTMAKER_COMMIT = '1d71db443916b8052dde41d612c3311bac25a5ae';
-const EXPECTED_CUTLINE_COUNT = 99;
+const EXPECTED_CUTLINE_COUNT = 129;
 const OUTPUT_PATH = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     'lib/chartmaker-cutlines.ts'
@@ -97,7 +97,7 @@ function sourceForFilename(filename: string): CutlineSource {
         return { relativePath: `enroute_low/enr_${name}.shp` };
     }
     if (withoutExtension.startsWith('vfr-terminal-')) {
-        const name = withoutExtension.slice('vfr-terminal-'.length);
+        const name = withoutExtension.slice('vfr-terminal-'.length).replaceAll('-', '_');
         return { relativePath: `terminal/${name}.shp` };
     }
     if (!withoutExtension.startsWith('vfr-sectional-')) {

@@ -31,9 +31,16 @@ const SECTIONAL_REGIONS = [
     'Salt_Lake_City', 'San_Antonio', 'San_Francisco', 'Seattle', 'Seward', 'St_Louis',
     'Twin_Cities', 'Washington', 'Western_Aleutian_Islands', 'Wichita'
 ] as const;
-const TERMINAL_REGIONS = [
-    'San_Francisco', 'Los_Angeles', 'San_Diego', 'Las_Vegas'
-] as const;
+// Observed TIFF members of all FAA TAC ZIPs, including ancillary graphics that
+// are not georeferenced chart sheets. Keep this independent of discovery config.
+const TERMINAL_CATALOG: {
+    effectiveDate: string;
+    source: string;
+    archives: Array<{ region: string; tiffs: string[] }>;
+} = JSON.parse(await fs.readFile(
+    new URL('./fixtures/vfr-terminal-2026-09-03.json', import.meta.url), 'utf8'
+));
+const TERMINAL_REGIONS = TERMINAL_CATALOG.archives.map(archive => archive.region);
 const SUPPLEMENT_REGIONS = ['AK', 'EC', 'NC', 'NE', 'NW', 'PAC', 'SC', 'SE', 'SW'] as const;
 const PROCEDURE_REGIONS = [
     'AK',
@@ -55,7 +62,9 @@ const readFixtureMetadata = async (): Promise<ChartMetadata> => ({
 
 test('every current VFR and IFR raster has a closed cutline', () => {
     const filenames = configuredRasterFilenames();
-    assert.equal(filenames.length, 103);
+    assert.equal(filenames.length, 150);
+    assert.equal(Object.values(CHART_DEFINITIONS).filter(chart => chart.kind === 'vfr-terminal').length, 34);
+    assert.equal(Object.values(CHART_DEFINITIONS).filter(chart => chart.kind === 'vfr-flyway').length, 21);
     assert.equal(new Set(filenames).size, filenames.length);
     assert.deepEqual(Object.keys(CHART_DEFINITIONS).sort(), filenames);
     assert.equal(
@@ -79,6 +88,32 @@ test('every current VFR and IFR raster has a closed cutline', () => {
         const coordinates = cutline?.wkt.slice('POLYGON (('.length, -2).split(', ');
         assert.equal(coordinates?.[0], coordinates?.at(-1), filename);
     }
+});
+
+test('terminal and Flyway cutlines retain main airports and exclude displaced insets', () => {
+    function contains(filename: string, [x, y]: [number, number]): boolean {
+        const ring = CHART_DEFINITIONS[filename].coordinates;
+        let inside = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+            const [xi, yi] = ring[i];
+            const [xj, yj] = ring[j];
+            if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+                inside = !inside;
+            }
+        }
+        return inside;
+    }
+    for (const filename of ['vfr-terminal-miami.tif', 'vfr-terminal-miami-flyway.tif']) {
+        assert.equal(contains(filename, [-80.2906, 25.7932]), true, `${filename}: Miami Intl`);
+        // Where the displaced Florida Keys inset would be drawn on the main map.
+        assert.equal(contains(filename, [-79.6774, 25.2514]), false, `${filename}: Keys inset`);
+    }
+    const puertoRico = 'vfr-terminal-puerto_rico-vi.tif';
+    assert.equal(contains(puertoRico, [-66.0018, 18.4394]), true, 'San Juan');
+    assert.equal(contains(puertoRico, [-64.9734, 18.3373]), true, 'St Thomas');
+    assert.equal(contains(puertoRico, [-64.7986, 17.7019]), true, 'St Croix');
+    assert.equal(contains(puertoRico, [-65.5411, 18.6111]), false, 'upper inset strip');
+    assert.equal(contains(puertoRico, [-67.4081, 18.0998]), false, 'Mona inset');
 });
 
 test('cutline lookup accepts an absolute path and rejects unreviewed charts', () => {
@@ -434,6 +469,30 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
             filename: 'vfr-terminal-san_diego-flyway.tif'
         }
     ]);
+    for (const { region, tiffs } of TERMINAL_CATALOG.archives) {
+        const candidate = terminal.files[region].current;
+        assert.equal(candidate.date, TERMINAL_CATALOG.effectiveDate);
+        assert.equal(candidate.url, `${TERMINAL_CATALOG.source}${region}_TAC.zip`);
+        const expected = tiffs.filter(name => / (TAC|FLY)\.tif$/.test(name)).map(name => {
+            const [, sheet, kind] = name.match(/^(.+) (TAC|FLY)\.tif$/)!;
+            const slug = sheet.replaceAll(' ', '_').toLowerCase();
+            return {
+                sourceName: name.replaceAll(' ', '_'),
+                filename: `vfr-terminal-${slug}${kind === 'FLY' ? '-flyway' : ''}.tif`
+            };
+        });
+        assert.deepEqual(
+            [...candidate.extractions].sort((a, b) => a.filename.localeCompare(b.filename)),
+            [...expected].sort((a, b) => a.filename.localeCompare(b.filename)),
+            region
+        );
+        for (const extraction of expected) {
+            const definition = CHART_DEFINITIONS[extraction.filename];
+            const flyway = extraction.filename.endsWith('-flyway.tif');
+            assert.equal(definition.kind, flyway ? 'vfr-flyway' : 'vfr-terminal');
+            assert.ok(definition.title.startsWith(flyway ? 'Flyway · ' : 'Terminal · '));
+        }
+    }
     assert.ok(!requested.some(url => url.includes('2026-08-06/')));
     assert.ok(!requested.some(url => url.includes('2026-10-01/')));
 
@@ -443,8 +502,11 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
     pages['https://aeronav.faa.gov/visual/09-03-2026/sectional-files/'] = SECTIONAL_REGIONS
         .filter(region => region !== 'Seattle')
         .map(region => `<a href="${region}.zip">${region}.zip</a>`).join('');
+    pages['https://aeronav.faa.gov/visual/09-03-2026/tac-files/'] = TERMINAL_REGIONS
+        .filter(region => region !== 'Tampa-Orlando')
+        .map(region => `<a href="${region}_TAC.zip">${region}_TAC.zip</a>`).join('');
     await assert.rejects(
         discoverCharts({ fetch, today: '2026-09-14' }),
-        /ifr-enroute-low\/L36.*vfr-sectional\/Seattle/
+        /ifr-enroute-low\/L36.*vfr-sectional\/Seattle.*vfr-terminal\/Tampa-Orlando/
     );
 });

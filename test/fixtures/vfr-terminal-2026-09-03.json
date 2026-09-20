@@ -1,0 +1,213 @@
+{
+  "effectiveDate": "2026-09-03",
+  "source": "https://aeronav.faa.gov/visual/09-03-2026/tac-files/",
+  "archives": [
+    {
+      "region": "Anchorage-Fairbanks",
+      "tiffs": [
+        "Anchorage TAC.tif",
+        "Fairbanks TAC.tif",
+        "Anchorage Graphic.tif"
+      ]
+    },
+    {
+      "region": "Atlanta",
+      "tiffs": [
+        "Atlanta FLY.tif",
+        "Atlanta TAC.tif"
+      ]
+    },
+    {
+      "region": "Baltimore-Washington",
+      "tiffs": [
+        "Baltimore-Washington FLY.tif",
+        "Baltimore-Washington TAC.tif"
+      ]
+    },
+    {
+      "region": "Boston",
+      "tiffs": [
+        "Boston TAC.tif"
+      ]
+    },
+    {
+      "region": "Charlotte",
+      "tiffs": [
+        "Charlotte FLY.tif",
+        "Charlotte TAC.tif"
+      ]
+    },
+    {
+      "region": "Chicago",
+      "tiffs": [
+        "Chicago FLY.tif",
+        "Chicago TAC.tif"
+      ]
+    },
+    {
+      "region": "Cincinnati",
+      "tiffs": [
+        "Cincinnati FLY.tif",
+        "Cincinnati TAC.tif"
+      ]
+    },
+    {
+      "region": "Cleveland",
+      "tiffs": [
+        "Cleveland TAC.tif"
+      ]
+    },
+    {
+      "region": "Dallas-Ft_Worth",
+      "tiffs": [
+        "Dallas-Ft Worth FLY.tif",
+        "Dallas-Ft Worth TAC.tif"
+      ]
+    },
+    {
+      "region": "Denver",
+      "tiffs": [
+        "Denver FLY.tif",
+        "Denver TAC.tif",
+        "Colorado Springs TAC.tif"
+      ]
+    },
+    {
+      "region": "Detroit",
+      "tiffs": [
+        "Detroit FLY.tif",
+        "Detroit TAC.tif"
+      ]
+    },
+    {
+      "region": "Houston",
+      "tiffs": [
+        "Houston FLY.tif",
+        "Houston TAC.tif"
+      ]
+    },
+    {
+      "region": "Kansas_City",
+      "tiffs": [
+        "Kansas City TAC.tif"
+      ]
+    },
+    {
+      "region": "Las_Vegas",
+      "tiffs": [
+        "Las Vegas FLY.tif",
+        "Las Vegas TAC.tif"
+      ]
+    },
+    {
+      "region": "Los_Angeles",
+      "tiffs": [
+        "Los Angeles FLY.tif",
+        "Los Angeles TAC.tif"
+      ]
+    },
+    {
+      "region": "Memphis",
+      "tiffs": [
+        "Memphis TAC.tif"
+      ]
+    },
+    {
+      "region": "Miami",
+      "tiffs": [
+        "Miami FLY.tif",
+        "Miami TAC.tif"
+      ]
+    },
+    {
+      "region": "Minneapolis-St_Paul",
+      "tiffs": [
+        "Minneapolis-St Paul TAC.tif"
+      ]
+    },
+    {
+      "region": "New_Orleans",
+      "tiffs": [
+        "New Orleans FLY.tif",
+        "New Orleans TAC.tif"
+      ]
+    },
+    {
+      "region": "New_York",
+      "tiffs": [
+        "New York TAC.tif",
+        "New York TAC VFR Planning Charts.tif"
+      ]
+    },
+    {
+      "region": "Philadelphia",
+      "tiffs": [
+        "Philadelphia TAC.tif"
+      ]
+    },
+    {
+      "region": "Phoenix",
+      "tiffs": [
+        "Phoenix FLY.tif",
+        "Phoenix TAC.tif"
+      ]
+    },
+    {
+      "region": "Pittsburgh",
+      "tiffs": [
+        "Pittsburgh TAC.tif"
+      ]
+    },
+    {
+      "region": "Puerto_Rico-VI",
+      "tiffs": [
+        "Puerto Rico-VI TAC.tif"
+      ]
+    },
+    {
+      "region": "Salt_Lake_City",
+      "tiffs": [
+        "Salt Lake City FLY.tif",
+        "Salt Lake City TAC.tif"
+      ]
+    },
+    {
+      "region": "San_Diego",
+      "tiffs": [
+        "San Diego FLY.tif",
+        "San Diego TAC.tif"
+      ]
+    },
+    {
+      "region": "San_Francisco",
+      "tiffs": [
+        "San Francisco FLY.tif",
+        "San Francisco TAC.tif"
+      ]
+    },
+    {
+      "region": "Seattle",
+      "tiffs": [
+        "Portland TAC.tif",
+        "Seattle FLY.tif",
+        "Seattle TAC.tif"
+      ]
+    },
+    {
+      "region": "St_Louis",
+      "tiffs": [
+        "St Louis FLY.tif",
+        "St Louis TAC.tif"
+      ]
+    },
+    {
+      "region": "Tampa-Orlando",
+      "tiffs": [
+        "Tampa FLY.tif",
+        "Tampa TAC.tif",
+        "Orlando FLY.tif",
+        "Orlando TAC.tif"
+      ]
+    }
+  ]
+}
