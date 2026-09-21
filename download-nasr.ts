@@ -15,6 +15,7 @@ import { buildNasrProducts, type NasrInput } from './lib/nasr.ts';
 import { buildRouteHistory } from './lib/route-history.ts';
 import { buildMagneticModel } from './lib/magnetic-model.ts';
 import { buildTerminalProcedures, type TerminalProcedureInput } from './lib/terminal-procedures.ts';
+import { loadApproachRoutes } from './lib/approach-routes.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 
 const NASR_INDEX_URL =
@@ -111,10 +112,11 @@ function printHelp(): void {
     console.log(`Usage: npm run build:nav -- [options]
 
 Builds the navigation bundle: FAA NASR map points, airways, preferred routes,
-terminal procedure sequences, NOAA WMM geographic magnetic variation model,
+terminal procedure sequences and CIFP approaches, NOAA WMM geographic magnetic variation model,
 and Aeronautic AQ historical filed routes.
 Online builds download the current FAA cycle and AQ snapshot. Local builds use
 all eight CSV ZIP groups and include history only with --route-history-source.
+Include an extracted FAACIFP18 in --source-dir for local approach route data.
 Replaces the cycle's complete nav/ directory after all products succeed.
 
 Options:
@@ -382,6 +384,7 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
             );
         }
         const terminal = buildTerminalProcedures(await readTerminalInput(sourceDirectory), products.effectiveDate);
+        const approaches = await loadApproachRoutes(products.effectiveDate, path.join(cycleDirectory, 'nasr'), buildOptions.sourceDir);
         const magneticModel = await buildMagneticModel(products.effectiveDate);
         const magneticModelFile = 'magnetic-model.json';
 
@@ -392,7 +395,7 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
             writeJson(path.join(stagingDirectory, 'navaids.geojson'), products.navaids),
             writeJson(path.join(stagingDirectory, 'airways.json'), products.airways),
             writeJson(path.join(stagingDirectory, 'preferred-routes.json'), products.preferredRoutes),
-            writeJson(path.join(stagingDirectory, 'terminal-procedures.json'), terminal),
+            writeJson(path.join(stagingDirectory, 'terminal-procedures.json'), { ...terminal, ...(approaches ? { approaches } : {}) }),
             writeJson(path.join(stagingDirectory, magneticModelFile), magneticModel)
         ]);
 

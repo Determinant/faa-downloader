@@ -442,6 +442,23 @@ are synthesized. Cache the national file once per export. Rebuild with
 plate books do not need rebuilding. Local `--source-dir` builds now also require
 the `DP` and `STAR` CSV ZIPs.
 
+Online navigation builds also fetch the matching [FAA CIFP](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/)
+edition and add `approaches: ZLayerApproachRoutes` to `terminal-procedures.json`.
+The ARINC 424-18 parser checks the file header cycle, record lengths and coordinate
+ranges before publication, and retains airport-scoped
+published entry transitions, common/final and missed legs, fix/runway coordinates,
+fix roles, RF centers, AF DME antenna centers and radii (`radiusNm`), and hold direction.
+Airport magnetic variation and explicitly true courses retain their reference.
+Holding inbound courses, distance legs and timed legs (`holdMinutes`) are retained;
+time is never treated as distance. Missed segments keep their path terminators,
+including altitude-terminated climbs without fixed endpoints.
+AF radii come from the coded rho field, separately from leg distance; the center
+uses the DME antenna coordinates even when offset from the VOR. Missing fixes and variable-termination
+legs have no invented coordinates. Ambiguous main branches are omitted. For a
+local build, put the matching extracted `FAACIFP18` in `--source-dir`; omission
+keeps an older-style SID/STAR-only export. Republish `nav/` to enable approach
+entry selection in clients. Chart/PDF builds need no change.
+
 `airports.geojson` includes the FAA location and ICAO identifiers, facility type,
 public/private use, status, elevation, tower type, chart name, NOTAM identifier, and a
 runway summary. Runways include dimensions/surface plus `ends[]` joined from

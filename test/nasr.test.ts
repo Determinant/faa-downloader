@@ -472,12 +472,13 @@ test('preferred routes reject ambiguous joins and mismatched cycles', () => {
     }
 });
 
-test('NASR cycle build packages navigation, magnetic model and filed history offline and atomically', async t => {
+test('NASR cycle build packages navigation, CIFP approaches, magnetic model and filed history offline and atomically', async t => {
     t.mock.method(globalThis, 'fetch', () => { throw new Error('Local navigation builds must stay offline'); });
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-pfr-'));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
     const sourceDir = path.join(root, 'sources');
     await fs.mkdir(sourceDir);
+    await fs.copyFile(new URL('./fixtures/approach-cifp.txt', import.meta.url), path.join(sourceDir, 'FAACIFP18'));
     const input = preferredRouteInput({
         airports: csv(
             ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'ICAO_ID', 'STATE_CODE', 'COUNTRY_CODE',
@@ -554,6 +555,14 @@ test('NASR cycle build packages navigation, magnetic model and filed history off
     });
     const procedureData = JSON.parse(await fs.readFile(path.join(nav, 'terminal-procedures.json'), 'utf8'));
     assert.deepEqual(procedureData.procedures.map(procedure => procedure.ident), ['SPTNS1', 'OHSEA3']);
+    assert.equal(procedureData.approaches.type, 'ZLayerApproachRoutes');
+    assert.equal(procedureData.approaches.metadata.effectiveDate, '2026-09-03');
+    assert.equal(procedureData.approaches.procedures.length, 4);
+    assert.equal(procedureData.approaches.procedures.find(procedure => procedure.id === 'KSFO:I28R').final.at(-1).fix.ident, 'VIKYU');
+    const arc = procedureData.approaches.procedures.find(procedure => procedure.id === 'KSNS:I31')
+        .transitions.find(transition => transition.id === 'SNS2').legs.find(leg => leg.path === 'AF');
+    assert.equal(arc.radiusNm, 22);
+    assert.deepEqual(arc.center, [-121.60318333333333, 36.66383888888889]);
     const historyProduct = manifest.products.find(product => product.id === 'route-history');
     assert.equal(historyProduct.file, 'route-history.json.gz');
     assert.equal(historyProduct.compression, 'gzip');
@@ -583,6 +592,15 @@ test('NASR cycle build packages navigation, magnetic model and filed history off
         for (const [name, bytes] of snapshot) assert.deepEqual(await fs.readFile(path.join(nav, name)), bytes, name);
         assert.deepEqual((await fs.readdir(cycleDir)).sort(), ['nasr', 'nav']);
     };
+
+    const cifpFile = path.join(sourceDir, 'FAACIFP18'), cifp = await fs.readFile(cifpFile, 'utf8');
+    const truncatedCifp = cifp.split('\n').map(line => line.slice(6, 10) === 'KSFO' &&
+        line.slice(13, 19).trim() === 'I28R' && line.slice(29, 34) === 'AXMUL' && line.slice(47, 49) === 'CF'
+        ? line.slice(0, -1) : line).join('\n');
+    await fs.writeFile(cifpFile, truncatedCifp);
+    await assert.rejects(buildNasrData(options), /CIFP record.*132/);
+    await assertUnchanged();
+    await fs.writeFile(cifpFile, cifp);
 
     for (const [group, expected] of [
         ['FRQ', /FRQ.csv contains no frequency records/],

@@ -1,0 +1,90 @@
+HDR01FAACIFP18      001P013203968112609  12-AUG-202618:29:21  U.S.A. DOT FAA                                                FBB95AD8
+SUSAD        ELO   K3011345 DLW                    ELO N47491884W091494851W0015014891     NARELY                           252062308
+SUSAD        EPH   K1011260VTHW N47224051W119252641    N47224051W119252641E0210012502     NAREPHRATA                       252231605
+SUSAD        HIB   K3011655VDLW N47180551W092421456    N47180551W092421456E0020013121     NARHIBBING                       253602308
+SUSAD        HML   K3011240 THW                    HML N48520907W097070445E0090007972     NARHUMBOLDT                      253682112
+SUSAD        MWH   K1011500VDHW N47123911W119190054    N47123911W119190054E0180011932     NARMOSES LAKE                    256011605
+SUSADB       MW    K1004080HOMW N47065656W119162823                       E0180           NARPELLY                         270641703
+SUSADB       MW    K5003820HOLW N37502070W088581495                       E0010           NARJONNY                         270651710
+SUSAEAENRT   BATUM K10    C   L N47153843W119051468                       E0142     NAR           BATUM                    286112605
+SUSAEAENRT   INKER K30    C   L N47534256W093014391                       W0005     NAR           INKER                    388842304
+SUSAEAENRT   NALCO K30    W   L N48333712W097082555                       E0027     NAR           NALCO                    450892605
+SUSAEAENRT   PLUSS K10    C   L N47102555W119330093                       E0143     NAR           PLUSS                    472232605
+SUSAEAENRT   QUINT K10    C   L N47125029W119543159                       E0143     NAR           QUINT                    477722605
+SUSAEAENRT   RUBEL K10    C   L N47015248W119381596                       E0142     NAR           RUBEL                    486802605
+SUSAEAENRT   UDORY K30    W   B N47211987W091110170                       W0020     NAR           UDORY                    516152409
+SUSAEAENRT   WIPES K10    C   L N47244655W119062942                       E0142     NAR           WIPES                    537752605
+SUSAP 12D K3A12D     0     034YHN47490536W092170984W001001370         1800018000C    MNAR    TOWER MUNI                    824411612
+SUSAP 12D K3CAZARA K30    W     N47482899W092345047                       W0009     NAR           AZARA                    824422403
+SUSAP 12D K3CFLOGG K30    W     N47484768W092255565                       W0010     NAR           FLOGG                    824432304
+SUSAP 12D K3CMACLE K30    W     N47411780W092341800                       W0009     NAR           MACLE                    824452403
+SUSAP 12D K3FR08   AHIB   010HIB  K3D 0V       IF                                             18000                 B PS   824471913
+SUSAP 12D K3FR08   AHIB   020MACLEK3PC0E  A 010TF                     01400238    + 04000                           B PS   824481913
+SUSAP 12D K3FR08   AHIB   030AZARAK3PC0EE B 010TF                     35810072    + 04000                           B PS   824491913
+SUSAP 12D K3FR08   AINKER 010INKERK3EA0E  A    IF                                             18000                 B PS   824501913
+SUSAP 12D K3FR08   AINKER 020AZARAK3PC0EE B 010TF                     10690189    + 04000                           B PS   824511913
+SUSAP 12D K3FR08   AUDORY 010UDORYK3EA0E       IF                                             18000                 B PS   824521913
+SUSAP 12D K3FR08   AUDORY 020MACLEK3PC0E  A 010TF                     29100599    + 04000                           B PS   824531913
+SUSAP 12D K3FR08   AUDORY 030AZARAK3PC0EE B 010TF                     35810072    + 04000                           B PS   824541913
+SUSAP 12D K3FR08   R      010AZARAK3PC0E  I    IF                                 + 04000     18000                 B PS   824551913
+SUSAP 12D K3FR08   R      020FLOGGK3PC1E  F 010TF                     08800060    + 03200                 RW08  K3PGB PS   824561913
+SUSAP 12D K3FR08   R      020FLOGGK3PC2WN          N          ALNAV                                                   PS   824571913
+SUSAP 12D K3FR08   R      030RW08 K3PG0GY M 031TF                     08810056      01406             -300          B PS   824581913
+SUSAP 12D K3FR08   R      040         0  M     CA                     0881        + 01770                           B PS   824591913
+SUSAP 12D K3FR08   R      050ELO  K3D 0VY   010DF                                 + 04000                           B PS   824601913
+SUSAP 12D K3FR08   R      060ELO  K3D 0VE  L   HM                     29110040    + 04000                           B PS   824611913
+SUSAP 12D K3GRW08    0034000880 N47490454W092173472         +0385501366000040075R                                          824771913
+SUSAP 2C8 K3A2C8     0     032YHN48470140W097375510E006000892         1800018000C    MNAR    CAVALIER MUNI                 869740911
+SUSAP 2C8 K3CATODE K30    W     N48380143W097212885                       E0029     NAR           ATODE                    869752605
+SUSAP 2C8 K3CRINAE K30    W     N48415851W097360422                       E0031     NAR           RINAE                    869762605
+SUSAP 2C8 K3CWOLVA K30    W     N48360281W097335450                       E0031     NAR           WOLVA                    869772504
+SUSAP 2C8 K3FR34   AHML   010HML  K3D 0V       IF                                             18000                 A JS   869781210
+SUSAP 2C8 K3FR34   AHML   020ATODEK3PC0E  A 010TF                                 + 02500                           A JS   869792112
+SUSAP 2C8 K3FR34   AHML   030WOLVAK3PC0EE B 010TF                                 + 02500                           A JS   869801310
+SUSAP 2C8 K3FR34   ANALCO 010NALCOK3EA0E       IF                                             18000                 A JS   869811210
+SUSAP 2C8 K3FR34   ANALCO 020ATODEK3PC0E  A 010TF                                 + 02500                           A JS   869822112
+SUSAP 2C8 K3FR34   ANALCO 030WOLVAK3PC0EE B 010TF                                 + 02500                           A JS   869831310
+SUSAP 2C8 K3FR34   AWOLVA 010WOLVAK3PC0EE AR   HF                     34040040    + 02500     18000                 A JS   869841310
+SUSAP 2C8 K3FR34   R      010WOLVAK3PC0E  I    IF                                 + 02500     18000                 A JS   869851310
+SUSAP 2C8 K3FR34   R      020RINAEK3PC1E  F 010TF                                 + 02500                 RW34  K3PGA JS   869862112
+SUSAP 2C8 K3FR34   R      020RINAEK3PC2WALPV       N          ALNAV                                                   JS   869871310
+SUSAP 2C8 K3FR34   R      030RW34 K3PG0GY M 031TF                                   00931             -300          A JS   869881210
+SUSAP 2C8 K3FR34   R      040         0  M     CA                     3404        + 01500                           A JS   869891210
+SUSAP 2C8 K3FR34   R      050HML  K3D 0VY  R010DF                                 + 03500                           A JS   869902112
+SUSAP 2C8 K3FR34   R      060HML  K3D 0VE  R   HM                     20810040    + 03500                           A JS   869912112
+SUSAP 2C8 K3GRW34    0032993400 N48464558W097374929         +0245600891000040060R                                          869932112
+SUSAP KMWHK1AMWH     0     135YHN47123090W119190890E018001189         1800018000C    MNAR    GRANT COUNTY INTL             688542014
+SUSAP KMWHK1FN32R  ABATUM 010BATUMK1EA0E       IF                                             18000                 0  S   690342212
+SUSAP KMWHK1FN32R  ABATUM 020MW   K1PN0N       TF                                 + 03900                           0  S   690352603
+SUSAP KMWHK1FN32R  ABATUM 030MW   K1PN0N  AR   PI MW  K1      0000000009940100PN  + 02800                           0  S   690362212
+SUSAP KMWHK1FN32R  ABATUM 040MW   K1PN0NE      CF MW  K1              32440060PN  + 02600                           0  S   690372212
+SUSAP KMWHK1FN32R  AEPH   010EPH  K1D 0V       IF                                             18000                 0  S   690382212
+SUSAP KMWHK1FN32R  AEPH   020MW   K1PN0N       TF                                 + 03700                           0  S   690392603
+SUSAP KMWHK1FN32R  AEPH   030MW   K1PN0N  AR   PI MW  K1      0000000009940100PN  + 02800                           0  S   690402212
+SUSAP KMWHK1FN32R  AEPH   040MW   K1PN0NE      CF MW  K1              32440060PN  + 02600                           0  S   690412212
+SUSAP KMWHK1FN32R  AMWH   010MWH  K1D 0V       IF                                             18000                 0  S   690422212
+SUSAP KMWHK1FN32R  AMWH   020MW   K1PN0N       TF                                 + 03500                           0  S   690432603
+SUSAP KMWHK1FN32R  AMWH   030MW   K1PN0N  AR   PI MW  K1      0000000009940100PN  + 02800                           0  S   690442212
+SUSAP KMWHK1FN32R  AMWH   040MW   K1PN0NE      CF MW  K1              32440060PN  + 02600                           0  S   690452212
+SUSAP KMWHK1FN32R  APLUSS 010PLUSSK1EA0E       IF                                             18000                 0  S   690462212
+SUSAP KMWHK1FN32R  APLUSS 020MW   K1PN0N       TF                                 + 03600                           0  S   690472603
+SUSAP KMWHK1FN32R  APLUSS 030MW   K1PN0N  AR   PI MW  K1      0000000009940100PN  + 02800                           0  S   690482212
+SUSAP KMWHK1FN32R  APLUSS 040MW   K1PN0NE      CF MW  K1              32440060PN  + 02600                           0  S   690492212
+SUSAP KMWHK1FN32R  AQUINT 010QUINTK1EA0E       IF                                             18000                 0  S   690502212
+SUSAP KMWHK1FN32R  AQUINT 020MW   K1PN0N       TF                                 + 04400                           0  S   690512603
+SUSAP KMWHK1FN32R  AQUINT 030MW   K1PN0N  AR   PI MW  K1      0000000009940100PN  + 02800                           0  S   690522212
+SUSAP KMWHK1FN32R  AQUINT 040MW   K1PN0NE      CF MW  K1              32440060PN  + 02600                           0  S   690532212
+SUSAP KMWHK1FN32R  ARUBEL 010RUBELK1EA0E       IF                                             18000                 0  S   690542212
+SUSAP KMWHK1FN32R  ARUBEL 020MW   K1PN0N       TF                                 + 04000                           0  S   690552603
+SUSAP KMWHK1FN32R  ARUBEL 030MW   K1PN0N  AR   PI MW  K1      0000000009940100PN  + 02800                           0  S   690562212
+SUSAP KMWHK1FN32R  ARUBEL 040MW   K1PN0NE      CF MW  K1              32440060PN  + 02600                           0  S   690572212
+SUSAP KMWHK1FN32R  AWIPES 010WIPESK1EA0E       IF                                             18000                 0  S   690582212
+SUSAP KMWHK1FN32R  AWIPES 020MW   K1PN0N       TF                                 + 04000                           0  S   690592603
+SUSAP KMWHK1FN32R  AWIPES 030MW   K1PN0N  AR   PI MW  K1      0000000009940100PN  + 02800                           0  S   690602212
+SUSAP KMWHK1FN32R  AWIPES 040MW   K1PN0NE      CF MW  K1              32440060PN  + 02600                           0  S   690612212
+SUSAP KMWHK1FN32R  N      020MW   K1PN0N  F    IF MW  K1                      PN  + 02600     18000       MW    K1PN0  S   690622402
+SUSAP KMWHK1FN32R  N      030RW32RK1PG0GY M    CF MW  K1              32440047PN    01222             -276          0  S   690632603
+SUSAP KMWHK1FN32R  N      040         0  M     CA                     3244        + 01589                           0  S   690642212
+SUSAP KMWHK1FN32R  N      050BATUMK1EA0EY      CF MWH K1      0542009805420100D   + 04000                           0  S   690652212
+SUSAP KMWHK1FN32R  N      060BATUMK1EA0EE  L   HM                     2340T010    + 04000                           0  S   690662212
+SUSAP KMWHK1GRW32R   0135033240 N47112554W119183542         +0334901167000055200IIMWH1                                     691462203
