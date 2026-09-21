@@ -93,6 +93,9 @@ async function readArchives(root: string, manifest: TerrainManifest) {
         archives.push(...JSON.parse(bytes.toString()).archives);
     }
     for (const archive of archives) {
+        assert.ok(archive.surface, 'new archives publish a separate interpolated surface');
+        const surface = await fs.readFile(path.join(root, 'charts/terrain', archive.surface.file));
+        assert.equal(surface.length, archive.surface.byteLength); assert.equal(hash(surface), archive.surface.sha256);
         const bytes = await fs.readFile(path.join(root, 'charts/terrain', archive.file));
         assert.equal(bytes.length, archive.byteLength); assert.equal(hash(bytes), archive.sha256);
         assert.equal(bytes.subarray(0, 8).toString(), 'ZDEM0002');
@@ -383,6 +386,7 @@ test('unchanged USGS files require only catalog requests; revisions rebuild affe
     assert.notEqual(revisedMetadata.provenance.sha256, updated.provenance.sha256);
     await fs.writeFile(manifestFile, '{broken');
     await fs.writeFile(path.join(root, 'charts/terrain', newArchives[0].file), 'broken');
+    await fs.writeFile(path.join(root, 'charts/terrain', newArchives.at(-1).surface.file), 'broken surface');
     source.clear();
     const repaired = await buildTerrain(root, regions, options);
     assert.equal(source.downloads().length, 0);
@@ -481,4 +485,38 @@ for (const zoom of [10, 11]) test(`level ${zoom} eastern edge tiles retain valid
     assert.equal(sample(1), 21);
     assert.equal(sample(columns - 2), 21);
     for (let column = columns; column < 512; column++) assert.equal(sample(column), TERRAIN_NODATA);
+});
+
+test('interpolated surface preserves a slope at cell centers while maximum heights stay conservative', gdalTest, async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'terrain-surface-test-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const zoom = 11, x = 344, y = 298, step = terrainSpacing(zoom), bounds = terrainGridBounds(zoom, x, y);
+    const height = (lon: number, lat: number) => (lon - bounds[0]) / step * 3 + (bounds[3] - lat) / step * 2 - 200;
+    await raster(root, 'slope', bounds, height, 1024);
+    const batch = { zoom, x, y, span: 2, blocks: [{ zoom, x, y }] }, files = [path.join(root, 'slope.tif')];
+    const maxima = await renderTerrainBatch(batch, files, root);
+    const surfaces = await renderTerrainBatch(batch, files, root, 'bilinear');
+    for (const column of [20, 128, 254, 255, 256, 257, 300, 490]) for (const row of [20, 128, 255, 256, 490]) {
+        const q = Math.floor(row / 256) * 2 + Math.floor(column / 256), offset = ((row % 256) * 256 + column % 256) * 2;
+        const expected = height(bounds[0] + (column + 0.5) * step, bounds[3] - (row + 0.5) * step);
+        assert.ok(Math.abs(surfaces[q].readInt16LE(offset) - expected) <= 0.51, 'surface stays on the original slope, including tile seams');
+        assert.ok(maxima[q].readInt16LE(offset) > expected, 'the independent maximum retains the high side of each footprint');
+    }
+});
+
+test('surface overviews average the four children and preserve missing contributors', () => {
+    const grids = Array.from({ length: 4 }, () => {
+        const grid = missingTerrainGrid();
+        grid.writeInt16LE(100, 0); grid.writeInt16LE(200, 2);
+        grid.writeInt16LE(300, 512); grid.writeInt16LE(400, 514);
+        grid.writeInt16LE(100, 4); grid.writeInt16LE(200, 6); grid.writeInt16LE(300, 516);
+        return grid;
+    });
+    const bytes = encodeTerrainArchive(11, 344, 298, grids);
+    const surface = reduceTerrainArchive(bytes, 'average'), maximum = reduceTerrainArchive(bytes);
+    for (const [x, y] of [[0, 0], [128, 0], [0, 128], [128, 128]]) {
+        assert.equal(surface.readInt16LE((y * 256 + x) * 2), 250);
+        assert.equal(maximum.readInt16LE((y * 256 + x) * 2), 400);
+        assert.equal(surface.readInt16LE((y * 256 + x + 1) * 2), TERRAIN_NODATA);
+    }
 });

@@ -34,8 +34,8 @@ two sides of the date line. Custom region files use:
 [{"id":"sample","title":"Sample","bounds":[[-122.01,37.01,-122.009,37.011]]}]
 ```
 
-The default envelopes produce **25,956 archives**, containing about **12.7 GiB** of
-uncompressed delivery grids before gzip (including all overviews). The full national
+The default envelopes produce **25,956 archive pairs**, containing about **25.3 GiB** of
+uncompressed maximum and surface grids before gzip (including all overviews). The earlier maximum-only national
 build verified on 2026-09-21 used **2.91 GB compressed**, including spatial indexes,
 provenance, and the manifest. Compression depends on the source data; retained older
 versions add to the deployment's disk usage. `--estimate` reports uncompressed grid
@@ -105,6 +105,20 @@ Source NoData and uncovered areas use the reserved int16 value -32768. Padded ce
 past the date line or poles remain missing. Unknown ocean/cross-border cells are
 not invented as zero elevation. Coverage envelopes describe packaged grids, not a
 promise that every sample inside them has USGS data.
+
+Each archive also has an optional `surface` descriptor (`file`, `sha256`, `byteLength`)
+pointing to a second `ZDEM0002` archive with identical zoom/x/y geometry. These heights
+use GDAL bilinear resampling and nearest-metre quantization at the native level;
+coarser surface levels average four children, retaining NoData if any contributor is
+unknown. Contour geometry should interpolate between these cell centers. Clearance
+and peak detection continue to use the original maximum archive. Both files are
+verified during checkpoint reuse; damaged surface files are rebuilt too.
+
+The schema and original maximum files remain compatible with existing readers.
+Readers without surface support ignore the optional descriptor; updated offline
+downloaders must include the companion in their saved file plans. Rebuild terrain
+and publish all new immutable files before replacing the manifest to enable the
+surface data. Existing saved maximum-only terrain continues to work.
 
 Source vertical datums are recorded from each USGS metadata XML. Heights retain
 those native orthometric references, in metres; the consumer converts them to feet after decoding. Horizontal

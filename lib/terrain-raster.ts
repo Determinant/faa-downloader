@@ -69,7 +69,8 @@ export async function inspectTerrainRaster(file: string): Promise<TerrainBounds>
 }
 
 /** Render up to 8×8 native tiles per GDAL invocation, then extract the requested 2×2 archives. */
-export async function renderTerrainBatch(batch: TerrainBatch, files: string[], work: string): Promise<Buffer[]> {
+export async function renderTerrainBatch(batch: TerrainBatch, files: string[], work: string,
+    sampling: 'max' | 'bilinear' = 'max'): Promise<Buffer[]> {
     const width = batch.span * 256;
     let data: Buffer, bigEndian = false;
     let rasterWidth = width;
@@ -89,7 +90,7 @@ export async function renderTerrainBatch(batch: TerrainBatch, files: string[], w
         const rasterHeight = Math.min(width, Math.ceil(180 / step) - batch.y * 256);
         const west = -180 + batch.x * 256 * step, north = 90 - batch.y * 256 * step;
         await terrainCommand('gdalwarp', ['-q', '-overwrite', '-of', 'ENVI', '-co', 'SUFFIX=ADD',
-            '-t_srs', 'EPSG:4326', '-novshift', '-r', 'max', '-ovr', 'NONE', '-wm', '64', '-ot', 'Float32', '-dstnodata', 'nan',
+            '-t_srs', 'EPSG:4326', '-novshift', '-r', sampling, '-ovr', 'NONE', '-wm', '64', '-ot', 'Float32', '-dstnodata', 'nan',
             '-te', String(west), String(north - rasterHeight * step),
             String(west + rasterWidth * step), String(north),
             '-ts', String(rasterWidth), String(rasterHeight), vrt, raw]);
@@ -107,7 +108,8 @@ export async function renderTerrainBatch(batch: TerrainBatch, files: string[], w
             const offset = ((top + y) * rasterWidth + left + x) * 4;
             const metres = left + x >= rasterWidth || offset >= data.length ? NaN :
                 bigEndian ? data.readFloatBE(offset) : data.readFloatLE(offset);
-            grid.writeInt16LE(!Number.isFinite(metres) || metres < -12000 || metres > 10000 ? TERRAIN_NODATA : Math.ceil(metres),
+            grid.writeInt16LE(!Number.isFinite(metres) || metres < -12000 || metres > 10000 ? TERRAIN_NODATA :
+                sampling === 'max' ? Math.ceil(metres) : Math.round(metres),
                 (y * 256 + x) * 2);
         }
         return grid;

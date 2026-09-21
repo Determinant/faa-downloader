@@ -12,10 +12,10 @@ import { missingTerrainGrid, reduceTerrainArchive } from './terrain-overviews.ts
 import { validateRegions, type OfflineRegionDefinition } from './chart-packager.ts';
 
 // Bump when raster processing or packaging semantics change, independently of the delivery format.
-const TERRAIN_BUILD_VERSION = 6;
-// The grid at each existing level and the GDAL processing are unchanged.
-const TERRAIN_RASTER_BUILD_VERSION = 4;
-export type TerrainArchive = { zoom: number; x: number; y: number; file: string; sha256: string; byteLength: number };
+const TERRAIN_BUILD_VERSION = 7;
+const TERRAIN_RASTER_BUILD_VERSION = 5;
+type TerrainFile = { file: string; sha256: string; byteLength: number };
+export type TerrainArchive = TerrainFile & { zoom: number; x: number; y: number; surface?: TerrainFile };
 export type TerrainManifest = {
     schemaVersion: 2; encoding: 'int16-metres-gzip'; grid: 'EPSG:4326';
     resolutionArcSeconds: typeof TERRAIN_RESOLUTION_ARC_SECONDS; minZoom: 1; maxZoom: typeof TERRAIN_MAX_ZOOM; generatedAt: string;
@@ -48,15 +48,18 @@ export function encodeTerrainArchive(zoom: number, x: number, y: number, grids: 
     return Buffer.concat([header, ...parts]);
 }
 
+function validFile(value: any): value is TerrainFile {
+    return value && /^[a-f0-9]{64}$/.test(value.sha256) && value.file === `${value.sha256}.dem` &&
+        Number.isSafeInteger(value.byteLength) && value.byteLength > 56 && value.byteLength <= 2 * 1024 * 1024;
+}
 function validArchive(value: any): value is TerrainArchive {
     return value && Number.isInteger(value.zoom) && value.zoom >= 1 && value.zoom <= TERRAIN_MAX_ZOOM &&
         Number.isInteger(value.x) && value.x >= 0 && value.x % 2 === 0 && value.x < terrainGridSize(value.zoom).columns &&
         Number.isInteger(value.y) && value.y >= 0 && value.y % 2 === 0 && value.y < terrainGridSize(value.zoom).rows &&
-        /^[a-f0-9]{64}$/.test(value.sha256) && value.file === `${value.sha256}.dem` &&
-        Number.isSafeInteger(value.byteLength) && value.byteLength > 56 && value.byteLength <= 2 * 1024 * 1024;
+        validFile(value.surface) && validFile(value);
 }
 
-async function verifyArchive(directory: string, archive: TerrainArchive): Promise<boolean> {
+async function verifyArchive(directory: string, archive: TerrainFile): Promise<boolean> {
     try {
         const file = path.join(directory, archive.file);
         return (await fs.stat(file)).size === archive.byteLength && await sha256File(file) === archive.sha256;
@@ -93,14 +96,15 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
                     y: block.y * 2 + Math.floor(i / 2) * 2 }))));
             const inputSha256 = native ? buildFingerprint({ version: TERRAIN_RASTER_BUILD_VERSION, gdal, batch,
                 sources: sources.map(source => ({ id: source.id, sha256: source.sha256, bounds: source.bounds })) }) :
-                buildFingerprint({ version: TERRAIN_BUILD_VERSION, batch, children: children.map(child => child?.sha256 ?? null) });
+                buildFingerprint({ version: TERRAIN_BUILD_VERSION, batch,
+                    children: children.map(child => child ? [child.sha256, child.surface?.sha256] : null) });
             const record = path.join(cache, 'batches', `${batch.zoom}/${batch.x}/${batch.y}.json`);
             const receipt = `${record}.build.json`;
             const previous = options.rebuild ? undefined : await readCachedJson<TerrainArchive[]>(record, receipt, inputSha256);
             let reusable = Array.isArray(previous) && previous.length === batch.blocks.length && previous.every((a, i) =>
                 validArchive(a) && a.zoom === batch.blocks[i].zoom && a.x === batch.blocks[i].x && a.y === batch.blocks[i].y);
             if (reusable) for (const archive of previous!) {
-                if (!await verifyArchive(directory, archive)) { reusable = false; break; }
+                if (!await verifyArchive(directory, archive) || !await verifyArchive(directory, archive.surface!)) { reusable = false; break; }
             }
             let completed: TerrainArchive[];
             if (reusable) completed = previous!;
@@ -110,13 +114,18 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
                 const started = Date.now();
                 const progress = setInterval(() => logger.log(`${label}: still processing (${Math.round((Date.now() - started) / 1000)}s)`), 30_000);
                 progress.unref();
-                let grids: Buffer[];
+                let grids: Buffer[], surfaces: Buffer[];
                 try {
-                    if (native) grids = await renderTerrainBatch(batch, sources.map(source => source.file), work);
+                    if (native) {
+                        grids = await renderTerrainBatch(batch, sources.map(source => source.file), work);
+                        surfaces = await renderTerrainBatch(batch, sources.map(source => source.file), work, 'bilinear');
+                    }
                     else {
-                        grids = [];
-                        for (const child of children) grids.push(child ?
-                            reduceTerrainArchive(await fs.readFile(path.join(directory, child.file))) : missingTerrainGrid());
+                        grids = []; surfaces = [];
+                        for (const child of children) {
+                            grids.push(child ? reduceTerrainArchive(await fs.readFile(path.join(directory, child.file))) : missingTerrainGrid());
+                            surfaces.push(child ? reduceTerrainArchive(await fs.readFile(path.join(directory, child.surface!.file)), 'average') : missingTerrainGrid());
+                        }
                     }
                 } finally { clearInterval(progress); }
                 const generated: TerrainArchive[] = [];
@@ -124,7 +133,11 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
                     const bytes = encodeTerrainArchive(block.zoom, block.x, block.y, grids.slice(i * 4, i * 4 + 4));
                     const sha256 = digest(bytes), file = `${sha256}.dem`;
                     await writeFileAtomic(path.join(directory, file), bytes);
-                    generated.push({ ...block, file, sha256, byteLength: bytes.length });
+                    const surfaceBytes = encodeTerrainArchive(block.zoom, block.x, block.y, surfaces.slice(i * 4, i * 4 + 4));
+                    const surfaceSha = digest(surfaceBytes), surfaceFile = `${surfaceSha}.dem`;
+                    await writeFileAtomic(path.join(directory, surfaceFile), surfaceBytes);
+                    generated.push({ ...block, file, sha256, byteLength: bytes.length,
+                        surface: { file: surfaceFile, sha256: surfaceSha, byteLength: surfaceBytes.length } });
                 }
                 // Checkpoint completed batches before starting the next one; publication is separate.
                 await writeCachedJson(record, receipt, inputSha256, generated);
@@ -157,6 +170,7 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
         // Large source inventories stay outside the small discovery manifest.
         const provenanceBytes = Buffer.from(JSON.stringify({ schemaVersion: 1, product: 'USGS 3DEP 1 arc-second DEM',
             buildVersion: TERRAIN_BUILD_VERSION, gdal, resampling: 'max', quantization: 'ceil to whole metres',
+            surface: { resampling: 'bilinear', quantization: 'nearest whole metre', overviews: '2x2 average; missing children remain NoData' },
             overviews: '2x2 maximum of child cells; missing children remain NoData',
             grid: 'EPSG:4326', resolutionArcSeconds: TERRAIN_RESOLUTION_ARC_SECONDS,
             sources: inputs.map(({ file, ...source }) => source) }));

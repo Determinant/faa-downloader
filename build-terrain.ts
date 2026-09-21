@@ -28,7 +28,7 @@ async function main() {
     const definitions = JSON.parse(await fs.readFile(regions, 'utf8'));
     if (estimate) {
         const blocks = terrainBlocks(definitions);
-        console.log(`${blocks.length.toLocaleString()} archives; ${(blocks.length / 2048).toFixed(1)} GiB of int16 delivery grids before gzip (${TERRAIN_RESOLUTION_ARC_SECONDS} arc-seconds plus overviews).\n` +
+        console.log(`${blocks.length.toLocaleString()} archive pairs; ${(blocks.length / 1024).toFixed(1)} GiB of int16 maximum and surface grids before gzip (${TERRAIN_RESOLUTION_ARC_SECONDS} arc-seconds plus overviews).\n` +
             'USGS GeoTIFF download/cache size is additional and depends on coverage. No files downloaded.');
         return;
     }
