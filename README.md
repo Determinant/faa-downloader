@@ -64,6 +64,7 @@ Requirements:
 - xsltproc on PATH for FAR generation
 - GDAL CLI tools on PATH for chart tiling: gdalinfo, gdal_translate, gdalwarp, and gdaladdo
   (manifest-only refreshes also use gdalinfo to read archive bounds and zoom limits)
+- Standalone terrain builds also use gdalbuildvrt and GDAL's GeoTIFF/ENVI drivers
 
 Install dependencies and run the checks:
 
@@ -97,6 +98,7 @@ Paths are relative to `dist/` (or the selected `--output` root).
 | --- | --- | --- |
 | npm run build:nav | Downloads current NASR groups and AQ history, or uses explicit local sources | Publishes the complete cycle's `charts/<cycle>/nav/` bundle: map points, airways, preferred routes, SID/STAR sequences, and route history |
 | npm run build:obstacles | Downloads the full FAA Daily DOF CSV ZIP, or uses `--source=FILE` | Publishes `charts/obstacles/manifest.json` and a compressed GeoJSON snapshot, independent of chart cycles |
+| npm run build:terrain | Checks current USGS 3DEP GeoTIFF revisions and downloads changed files, or imports local GeoTIFFs | Publishes 4.9-arc-second integer-metre elevation packages and source provenance at `charts/terrain/` (about 3.3 GiB before gzip for default coverage); independent of chart cycles; run `--estimate` first ([details](docs/terrain.md)) |
 | npm run build:procedures | Downloads d-TPP XML or uses `--source-xml`; indexes any existing TPP PDFs | Publishes `charts/<cycle>/tpp/` with plate URLs and available PDF page targets; does not download the books |
 | npm run build:supplements | Existing regional Chart Supplement PDFs plus cached/downloaded XML or `--source-xml` | Publishes `charts/<cycle>/cs/` airport page indexes; does not download the books |
 | npm run build:chart-packages | Verified sheet MBTiles and their manifests in `mbtiles/<cycle>/` | Publishes delivery archives and offline region indexes in `charts/<cycle>/mbtiles/` |

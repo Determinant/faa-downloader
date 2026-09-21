@@ -22,6 +22,7 @@
     "build-chart-cycles.ts",
     "build-procedures.ts",
     "build-obstacles.ts",
+    "build-terrain.ts",
     "build-chart-supplements.ts",
     "download-aim.ts",
     "download-charts.ts",
