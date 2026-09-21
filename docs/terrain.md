@@ -110,8 +110,8 @@ Each archive also has an optional `surface` descriptor (`file`, `sha256`, `byteL
 pointing to a second `ZDEM0002` archive with identical zoom/x/y geometry. These heights
 use GDAL bilinear resampling and nearest-metre quantization at the native level;
 coarser surface levels average four children, retaining NoData if any contributor is
-unknown. Contour geometry should interpolate between these cell centers. Clearance
-and peak detection continue to use the original maximum archive. Both files are
+unknown. Contour geometry and its band fills should use the same interpolated surface.
+Sampled highs and viewport shading use the original maximum archive. Both files are
 verified during checkpoint reuse; damaged surface files are rebuilt too.
 
 The schema and original maximum files remain compatible with existing readers.
