@@ -7,7 +7,9 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { replaceDirectoryAtomically, toPosixPath, writeFileAtomic } from './lib/fs-utils.ts';
+import { toPosixPath } from './lib/fs-utils.ts';
+import { jsonArtifact, publishGeneration, stageJson } from './lib/publication.ts';
+import { publishedApproachAssociations } from './lib/approach-associations.ts';
 import {
     discoverDtppEditions,
     pageIndexEntry,
@@ -84,15 +86,21 @@ export async function buildProcedureCatalog(options: BuildOptions): Promise<Proc
         catalogDirectory,
         new Set(catalog.airports.map(airport => airport.volumeId))
     );
-    const existing = await readExistingCatalog(path.join(catalogDirectory, 'catalog.json'));
-    if (existing &&
-        isSameBuild(existing, catalog, volumeCandidates) &&
+    const existingManifest = await readJson(path.join(catalogDirectory, 'manifest.json'));
+    const existingFile = isObject(existingManifest) && typeof existingManifest.file === 'string' &&
+        /^catalog\.[a-f0-9]{64}\.json$/.test(existingManifest.file) ? existingManifest.file : 'catalog.json';
+    const existing = await readExistingCatalog(path.join(catalogDirectory, existingFile));
+    const associations = await publishedApproachAssociations(catalog, path.join(path.dirname(catalogDirectory), 'nav'));
+    if (associations) catalog.associations = associations;
+    const reuse = existing && isSameBuild(existing, catalog, volumeCandidates);
+    if (reuse && isDeepStrictEqual(existing.associations, catalog.associations) &&
         await manifestMatches(path.join(catalogDirectory, 'manifest.json'), existing)) {
         console.log(`d-TPP catalog for ${catalog.effectiveDate} is already current`);
         return existing;
     }
 
-    for (const volume of volumeCandidates) {
+    if (reuse) { catalog.airports = existing.airports; catalog.volumes = existing.volumes; }
+    for (const volume of reuse ? [] : volumeCandidates) {
         console.log(`indexing procedure pages in "${volume.filePath}"`);
         const pages = await readPdfPages(volume.filePath);
         assertVolumeCoversDate(pages, catalog.effectiveDate, volume.filePath);
@@ -126,13 +134,10 @@ export async function buildProcedureCatalog(options: BuildOptions): Promise<Proc
     await fs.mkdir(cycleDirectory, { recursive: true });
     const stagedDirectory = await fs.mkdtemp(path.join(cycleDirectory, '.tpp-'));
     try {
-        await writeJson(path.join(stagedDirectory, 'catalog.json'), catalog);
-        await writeJson(path.join(stagedDirectory, 'manifest.json'), manifest);
-        await fs.chmod(stagedDirectory, 0o755);
-        await replaceDirectoryAtomically(stagedDirectory, catalogDirectory);
-    } catch (error) {
+        await stageJson(stagedDirectory, 'catalog.json', catalog);
+        await publishGeneration(stagedDirectory, catalogDirectory, manifest);
+    } finally {
         await fs.rm(stagedDirectory, { recursive: true, force: true });
-        throw error;
     }
 
     console.log(
@@ -188,7 +193,8 @@ async function loadXml(options: BuildOptions): Promise<XmlInput> {
     if (options.sourceXml) {
         const filePath = path.resolve(options.sourceXml);
         return {
-            contents: await fs.readFile(filePath, 'utf8'),
+            // Response.text() strips the UTF-8 BOM; local input has the same identity.
+            contents: (await fs.readFile(filePath, 'utf8')).replace(/^\uFEFF/, ''),
             url: pathToFileURL(filePath).href
         };
     }
@@ -341,13 +347,15 @@ function createManifest(catalog: ProcedureCatalog) {
         0
     );
     return {
-        schemaVersion: 1,
+        schemaVersion: 2,
+        ...jsonArtifact('catalog.json', catalog),
         builderVersion: PROCEDURE_BUILDER_VERSION,
         cycle: catalog.cycle,
         effectiveDate: catalog.effectiveDate,
         expirationDate: catalog.expirationDate,
         generatedAt: catalog.generatedAt,
         sourceXml: catalog.sourceXml,
+        associationStatus: catalog.associations ? 'available' : 'unavailable',
         airportCount: catalog.airports.length,
         procedureCount,
         volumeTargetCount,
@@ -381,7 +389,6 @@ function isSameBuild(
     volumes: VolumeCandidate[]
 ): boolean {
     if (existing.sourceXml.sha256 !== next.sourceXml.sha256) return false;
-    if (existing.sourceXml.url !== next.sourceXml.url) return false;
     if (existing.builderVersion !== PROCEDURE_BUILDER_VERSION) return false;
     if (existing.effectiveDate !== next.effectiveDate) return false;
     if (existing.volumes.length !== volumes.length) return false;
@@ -402,10 +409,6 @@ async function sha256File(filePath: string): Promise<string> {
         stream.on('end', resolve);
     });
     return hash.digest('hex');
-}
-
-async function writeJson(filePath: string, value: unknown): Promise<void> {
-    await writeFileAtomic(filePath, `${JSON.stringify(value)}\n`);
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

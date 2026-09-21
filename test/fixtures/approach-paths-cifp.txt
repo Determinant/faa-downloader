@@ -1,0 +1,416 @@
+HDR01FAACIFP18      001P013203968112609  12-AUG-202618:29:21  U.S.A. DOT FAA                                                FBB95AD8
+HDR02                                 FEDERAL AVIATION ADMINISTRATION                                                               
+HDR03                                 AERONAUTICAL INFORMATION SERVICES                                                             
+HDR04                                 CODED INSTRUMENT FLIGHT PROCEDURES VOLUME 2609  EFFECTIVE 03 SEP 2026                         
+HDR05                                 REPORT DATA ERRORS TO FAA                 TEL 800 638 8972                                    
+SUSAD        CEC   K2010900VTLW N41464648W124142705    N41464863W124142625E0140000551     NARCRESCENT CITY                 250631711
+SUSAD        CMA   K2011685VDLW N34124508W119053968    N34124508W119053968E0150000631     NARCAMARILLO                     250812601
+SUSAD        FIM   K2011250VTLW N34212410W118525265    N34212410W118525265E0150022001     NARFILLMORE                      252572609
+SUSAD        FRA   K2011560VTLW N37061592W119354360    N37061592W119354360E0170023801     NARFRIANT                        252772002
+SUSAD        ILA   K2011440VTLW N39041623W122013817    N39041623W122013817E0180000491     NARWILLIAMS                      254211711
+SUSAD        LAX   K2011360VTHW N33555934W118255525    N33560033W118255677E0150001852     NARLOS ANGELES                   254642510
+SUSAD        MOD   K2011460VDHW N37373855W120572833    N37373855W120572833E0170000932     NARMODESTO                       255732609
+SUSAD        OAK   K2011680VDHW N37433333W122132493    N37433333W122132493E0170000132     NAROAKLAND                       256452213
+SUSAD        PDZ   K2011220VTHW N33550601W117314799    N33550685W117314642E0150014322     NARPARADISE                      256972012
+SUSAD        POM   K2011040VTLW N34044220W117471346    N34044220W117471346E0150012651     NARPOMONA                        257222309
+SUSAD        PXN   K2011260VTLW N36425565W120464326    N36425565W120464326E0160020601     NARPANOCHE                       257442609
+SUSAD        PYE   K2011370VDHW N38044712W122520418    N38044712W122520418E0170013402     NARPOINT REYES                   257472306
+SUSAD        RBL   K2011570VTHW N40055608W122141086    N40055608W122141086E0180003212     NARRED BLUFF                     257541912
+SUSAD        RDD   K2011435VDLW N40301643W122173012    N40301643W122173012E0180004951     NARREDDING                       257582609
+SUSAD        SAU   K2011620VDLW N37511920W122312191    N37511920W122312191E0170010401     NARSAUSALITO                     257971610
+SUSAD        SGD   K2011210VTLW N38104570W122222335    N38104570W122222335E0170000051     NARSCAGGS ISLAND                 258141713
+SUSAD        SJC   K2011410VDLW N37222896W121564081    N37222896W121564081E0160000351     NARSAN JOSE                      258221811
+SUSAD        SLI   K2011570VTLW N33465988W118031713    N33465988W118031713E0150000221     NARSEAL BEACH                    258282002
+SUSAD        SMO   K2011080VDLW N34003688W118272418    N34003753W118272297E0150001141     NARSANTA MONICA                  258332110
+SUSAD        SXC   K2011415VTLW N33223020W118251168    N33223020W118251168E0150020901     NARSANTA CATALINA                258642207
+SUSAD        VNY   K2011310VDLW N34132445W118293003    N34132648W118293021E0150008121     NARVAN NUYS                      259402406
+SUSAD        VTU   K2011655VDLW N34065423W119025820    N34065372W119025700E0150015591     NARVENTURA                       259422308
+SUSAEAENRT   ALBAS K20    C   L N33355868W118044016                       E0113     NAR           ALBAS                    275572504
+SUSAEAENRT   BURDE K20    C     N38061944W122353503                       E0130     NAR           BURDE                    298232605
+SUSAEAENRT   CHIDE K20    C   L N41354831W124142324                       E0139     NAR           CHIDE                    312402605
+SUSAEAENRT   CRCUS K20    W     N34042353W117295438                       E0112     NAR           CRCUS                    321262605
+SUSAEAENRT   DIBLE K20    C   L N40132213W122174351                       E0134     NAR           DIBLE                    329782605
+SUSAEAENRT   FFIST K20    W     N37365640W121411238                       E0127     NAR           FFIST                    350822605
+SUSAEAENRT   INISH K20    C   L N33451408W118322876                       E0114     NAR           INISH                    388812605
+SUSAEAENRT   ITMOR K20    C   L N40355235W122033929                       E0134     NAR           ITMOR                    390522605
+SUSAEAENRT   LAHAB K20    C   L N33553235W117553322                       E0113     NAR           LAHAB                    425962605
+SUSAEAENRT   POPES K20    C   L N38290941W122204516                       E0130     NAR           POPES                    473912605
+SUSAEAENRT   PRADO K20    C   L N33552341W117470170                       E0112     NAR           PRADO                    474562605
+SUSAEAENRT   REBAS K20    C   L N37562646W122230120                       E0129     NAR           REBAS                    480242605
+SUSAEAENRT   TAYTO K20    R   L N40362680W122265313                       E0135     NAR           TAYTO                    506332605
+SUSAEAENRT   UMBER K20    C   L N34284923W118305769                       E0115     NAR           UMBER                    517042605
+SUSAEAENRT   WIPOG K10    C   L N42041639W124134153                       E0140     NAR           WIPOG                    537822605
+SUSAEAENRT   WRAPS K20    C   L N37512860W120470148                       E0126     NAR           WRAPS                    541472605
+SUSAEAENRT   YOBUN K20    R   L N41361075W124181399                       E0139     NAR           YOBUN                    546372605
+SUSAP KAPCK2AAPC     0     059YHN38124748W122165047E015000036         1800018000C    MNAR    NAPA COUNTY                   220461911
+SUSAP KAPCK2CCIKPI K20    C     N38072256W122193371                       E0129     NAR           CIKPI                    220512605
+SUSAP KAPCK2CFESAV K20    C     N38014485W122221516                       E0129     NAR           FESAV                    220542605
+SUSAP KAPCK2CJATPO K20    R     N38091173W122270339                       E0130     NAR           JATPO                    220572504
+SUSAP KAPCK2CJUNUV K20    R     N38121369W122180060                       E0129     NAR           JUNUV                    220582605
+SUSAP KAPCK2FI01LZ AREBAS 010REBASK2EA0E  A    IF                                             18000                 0 NS   221982605
+SUSAP KAPCK2FI01LZ AREBAS 020         0        VI                     3207        + 02600                           0 NS   221992605
+SUSAP KAPCK2FI01LZ AREBAS 030FESAVK2PC0EE B    CF IAPCK2      1857012500570039PI  + 02600                           0 NS   222002605
+SUSAP KAPCK2FI01LZ ASGD   010SGD  K2D 0V       IF                                             18000                 0 NS   222012605
+SUSAP KAPCK2FI01LZ ASGD   020FESAVK2PC0EY      TF                                 + 02600                           0 NS   222022605
+SUSAP KAPCK2FI01LZ ASGD   030FESAVK2PC0EE AR   HF IAPCK2      185701250057T010PI  + 02600                           0 NS   222032605
+SUSAP KAPCK2FI01LZ I      010FESAVK2PC0E  I    IF IAPCK2      18570125        PI  J 026000180018000                 0 NS   222042605
+SUSAP KAPCK2FI01LZ I      020CIKPIK2PC0E  F    CF IAPCK2      1857006500600060PI  H 0180001800            SGD   K2D 0 NS   222052605
+SUSAP KAPCK2FI01LZ I      030RW01LK2PG0GY M    CF IAPCK2      1857001100600055PI    00065             -300          0 NS   222062605
+SUSAP KAPCK2FI01LZ I      040         0  M     CA                     0057        + 00500                           0 NS   222072605
+SUSAP KAPCK2FI01LZ I      050SGD  K2D 0V   L   DF                                                                   0 NS   222082605
+SUSAP KAPCK2FI01LZ I      060BURDEK2EA0EY      CF SGD K2      2300011323000113D   + 03200                           0 NS   222092605
+SUSAP KAPCK2FI01LZ I      070BURDEK2EA0EE  R   HM                     2300T010    + 03200                           0 NS   222102605
+SUSAP KAPCK2FS06   APYE   010PYE  K2D 0V  A    IF                                             18000                 0 NS   223132203
+SUSAP KAPCK2FS06   APYE   020BURDEK2EA0EE B    TF                                 + 04000                           0 NS   223142203
+SUSAP KAPCK2FS06   ASAU   010SAU  K2D 0V  A    IF                                             18000                 0 NS   223152203
+SUSAP KAPCK2FS06   ASAU   020BURDEK2EA0EE B    TF                                 + 04000                           0 NS   223162203
+SUSAP KAPCK2FS06   ASGD   010SGD  K2D 0VE AR   PI SGD K2      0000000018500100D   + 03500     18000                 0 NS   223172203
+SUSAP KAPCK2FS06   S      010BURDEK2EA0E  I    IF SGD K2      23000113        D   + 04000     18000                 0 NS   223182203
+SUSAP KAPCK2FS06   S      011JATPOK2PC0E       CF SGD K2      2300004005000073D   + 02600                           0 NS   223192203
+SUSAP KAPCK2FS06   S      020SGD  K2D 0V  F    CF SGD K2      0000000005000040D   + 01600                 SGD   K2D 0 NS   223202203
+SUSAP KAPCK2FS06   S      030JUNUVK2PC0EY M    CF SGD K2      0500003805000038D     00280             -331          0 NS   223212203
+SUSAP KAPCK2FS06   S      040         0  M     CA                     0500        + 00436                           0 NS   223222203
+SUSAP KAPCK2FS06   S      050         0    L   VIY                    3050                                          0 NS   223232203
+SUSAP KAPCK2FS06   S      060POPESK2EA0EY      CF SGD K2      3470018434700109D   + 07000                           0 NS   223242203
+SUSAP KAPCK2FS06   S      070POPESK2EA0EE  R   HM                     1670T010    + 07000          230              0-NS   223252203
+SUSAP KAPCK2GRW01L   0059300060 N38122872W122170698         -0027400015000050150IIAPC1                                     223261911
+SUSAP KAPCK2IIAPC1   011130RW01LN38132816W1221638440057N38123834W1221704370500 09830600300E01505000012                     223321911
+SUSAP KAVXK2AAVX     0     030YHN33241799W118245677E014001602         1800018000C    MNAR    CATALINA                      283960911
+SUSAP KAVXK2CMAFPI K20    W     N33251726W118244721                       E0113     NAR           MAFPI(CNF)               283972605
+SUSAP KAVXK2CRIGLI K20    R     N33272849W118242797                       E0113     NAR           RIGLI                    283992605
+SUSAP KAVXK2FVDM-B ASXC   010SXC  K2D 0V       IF                                             18000                 3  C   284000907
+SUSAP KAVXK2FVDM-B ASXC   020RIGLIK2PC0E       TF                     35200050    + 03400                           3  C   284011310
+SUSAP KAVXK2FVDM-B ASXC   030RIGLIK2PC0E  AR   PI SXC K2      3520005030700100D   + 03400                           3  C   284021310
+SUSAP KAVXK2FVDM-B ASXC   040RIGLIK2PC0EE      CF SXC K2      3520005017200060D   + 02300                           3  C   284031310
+SUSAP KAVXK2FVDM-B D      020RIGLIK2PC0E  F    IF SXC K2      35200050        D   + 02300     18000       SXC   K2D 3  C   284041310
+SUSAP KAVXK2FVDM-B D      030MAFPIK2PC0EY M    CF SXC K2      3520002817200022D     01602              000          3  C   284052204
+SUSAP KAVXK2FVDM-B D      040SXC  K2D 0VYM     DF                                 + 03400                           3  C   284060907
+SUSAP KAVXK2FVDM-B D      050SXC  K2D 0VE  L   HM                     0150T010    + 03400                           3  C   284070910
+SUSAP KCECK2ACEC     0     050YHN41464860W124141150E014000061         1800018000C    MNAR    JACK MC NAMARA FLD            465592014
+SUSAP KCECK2CFEPDU K20    R     N41470043W124144010                       E0140     NAR           FEPDU                    465612605
+SUSAP KCECK2CGUKTE K20    R     N41574859W124135844                       E0140     NAR           GUKTE                    465622605
+SUSAP KCECK2CROZEY K20    R     N41505220W124181734                       E0140     NAR           ROZEY                    465672605
+SUSAP KCECK2CTAPUE K20    R     N41570446W124194487                       E0140     NAR           TAPUE                    465692605
+SUSAP KCECK2CWEROB K20    R     N41554808W124225554                       E0140     NAR           WEROB                    465702605
+SUSAP KCECK2FD12   ACEC   010CEC  K2D 0V       IF                                             18000                 0  S   465731611
+SUSAP KCECK2FD12   ACEC   020ROZEYK2PC0E       TF                                 + 02300                           0  S   465741611
+SUSAP KCECK2FD12   ACEC   030ROZEYK2PC0EE AR   PI CEC K2      3110005026600100D   + 01600                           0  S   465751611
+SUSAP KCECK2FD12   ACHIDE 010CHIDEK2EA0E  A    IF                                             18000                 0  S   465762412
+SUSAP KCECK2FD12   ACHIDE 020WEROBK2PC0EE BR   AF CEC K2      311001101658    D   + 01600                           0  S   465772412
+SUSAP KCECK2FD12   AWIPOG 010WIPOGK1EA0E  A    IF                                             18000                 0  S   465782412
+SUSAP KCECK2FD12   AWIPOG 020GUKTEK2PC0E       TF CEC K2      34780110        D   + 04500                           0  S   465791611
+SUSAP KCECK2FD12   AWIPOG 030TAPUEK2PC0E   L   AF CEC K2      325001103479    D   + 02800                           0  S   465801611
+SUSAP KCECK2FD12   AWIPOG 040WEROBK2PC0EE BL   AF CEC K2      311001103250    D   + 01600                           0  S   465811611
+SUSAP KCECK2FD12   AYOBUN 010YOBUNK2EA0E  A    IF                                             18000                 0  S   465822412
+SUSAP KCECK2FD12   AYOBUN 020WEROBK2PC0EE BR   AF CEC K2      311001101810    D   + 01600                           0  S   465831611
+SUSAP KCECK2FD12   D      010WEROBK2PC0E  I    IF CEC K2      31100110        D   + 01600     18000                 0  S   465841611
+SUSAP KCECK2FD12   D      020ROZEYK2PC0E  F    CF CEC K2      3110005013100060D   + 01600                 CEC   K2D 0  S   465851611
+SUSAP KCECK2FD12   D      030FEPDUK2PC0EY M    CF CEC K2      3110000313100047D     00107             -298          0  S   465862412
+SUSAP KCECK2FD12   D      040         0  M     CA                     1310        + 00461                           0  S   465871611
+SUSAP KCECK2FD12   D      050CEC  K2D 0V       FA CEC K2      000000001660    D   + 03000                           0  S   465881611
+SUSAP KCECK2FD12   D      060CEC  K2D 0VY  R   DF                                 + 03000                           0  S   465891611
+SUSAP KCECK2FD12   D      070CEC  K2D 0VE  L   HM                     3458T010    + 03000                           0  S   465901611
+SUSAP KCMAK2ACMA     0     060YHN34124953W119053968E014000077         1800018000C    MNAR    CAMARILLO                     527992209
+SUSAP KCMAK2CBAINE K20    R     N34141633W118523136                       E0115     NAR           BAINE                    528012605
+SUSAP KCMAK2CCECEE K20    R     N34133002W118591274                       E0116     NAR           CECEE                    528022504
+SUSAP KCMAK2CCOOGA K20    R     N34144919W118474458                       E0115     NAR           COOGA                    528032605
+SUSAP KCMAK2FS26   ACMA   010CMA  K2D 0V       IF                                             18000                 0 NS   529391611
+SUSAP KCMAK2FS26   ACMA   020COOGAK2PC0EY      TF                                 + 04400                           0 NS   529401611
+SUSAP KCMAK2FS26   ACMA   030COOGAK2PC0E  AL   HF                     2470T010    + 04400                           0 NS   529411611
+SUSAP KCMAK2FS26   ACMA   040BAINEK2PC0EE      TF                                 + 03400                           0 NS   529421611
+SUSAP KCMAK2FS26   AFIM   010FIM  K2D 0V       IF                                             18000                 0 NS   529431611
+SUSAP KCMAK2FS26   AFIM   020COOGAK2PC0EY      TF                                 + 04600                           0 NS   529441611
+SUSAP KCMAK2FS26   AFIM   030COOGAK2PC0E  AL   HF                     2470T010    + 04400                           0 NS   529451611
+SUSAP KCMAK2FS26   AFIM   040BAINEK2PC0EE      TF                                 + 03400                           0 NS   529461611
+SUSAP KCMAK2FS26   AVNY   010VNY  K2D 0V  A    IF                                             18000                 0 NS   529471611
+SUSAP KCMAK2FS26   AVNY   020COOGAK2PC0E       TF                                 + 04400                           0 NS   529481611
+SUSAP KCMAK2FS26   AVNY   030BAINEK2PC0EE      TF                                 + 03400                           0 NS   529491611
+SUSAP KCMAK2FS26   AVTU   010VTU  K2D 0V       IF                                             18000                 0 NS   529501611
+SUSAP KCMAK2FS26   AVTU   020COOGAK2PC0EY      TF                                 + 05200                           0 NS   529511611
+SUSAP KCMAK2FS26   AVTU   030COOGAK2PC0E  AL   HF                     2470T010    + 04400                           0 NS   529521611
+SUSAP KCMAK2FS26   AVTU   040BAINEK2PC0EE      TF                                 + 03400                           0 NS   529531611
+SUSAP KCMAK2FS26   S      010BAINEK2PC0E  I    IF CMA K2      06700110        D   + 03400     18000                 0 NS   529541611
+SUSAP KCMAK2FS26   S      020CECEEK2PC0E  F    CF CMA K2      0670005424700056D   + 02000                 CMA   K2D 0 NS   529551611
+SUSAP KCMAK2FS26   S      030RW26 K2PG0GY M    CF CMA K2      0671000524700049D     00125             -361          0 NS   529561611
+SUSAP KCMAK2FS26   S      040         0  M     CA                     2470        + 00477                           0 NS   529571611
+SUSAP KCMAK2FS26   S      050CMA  K2D 0V       FA CMA K2      000000002650    D   + 02000                           0 NS   529581611
+SUSAP KCMAK2FS26   S      060CMA  K2D 0VY  L   DF                                 + 04400                           0 NS   529591611
+SUSAP KCMAK2FS26   S      070CMA  K2D 0VE  L   HM                     0670T010    + 04400                           0 NS   529601611
+SUSAP KCMAK2GRW26    0060132560 N34124924W119050388         -0012300077000048150R                                          529622209
+SUSAP KLAXK2ALAX     0     129YHN33563299W118242898E012000128         1800018000C    MNAR    LOS ANGELES INTL              359681906
+SUSAP KLAXK2CCATLY K20    C     N33465536W118364610                       E0114     NAR           CATLY                    359972605
+SUSAP KLAXK2CCLPUR K20    W     N33570072W117403689                       E0112     NAR           CLPUR                    360092605
+SUSAP KLAXK2CDYMMO K20    C     N33593682W117490954                       E0113     NAR           DYMMO                    360262605
+SUSAP KLAXK2CFALLT K20    C     N33581645W118040778                       E0113     NAR           FALLT                    360362605
+SUSAP KLAXK2CFOGLA K20    C     N33570239W118162529                       E0114     NAR           FOGLA                    360422504
+SUSAP KLAXK2CFUELR K20    C     N33590967W117534879                       E0113     NAR           FUELR                    360432605
+SUSAP KLAXK2CGAATE K20    C     N33580643W118042843                       E0113     NAR           GAATE                    360452605
+SUSAP KLAXK2CGIGII K20    C     N33565446W118162484                       E0114     NAR           GIGII                    360472504
+SUSAP KLAXK2CHIGHT K20    W     N33554205W118063309                       E0113     NAR           HIGHT                    360562605
+SUSAP KLAXK2CHUNDA K20    C     N33573499W118094364                       E0113     NAR           HUNDA                    360622605
+SUSAP KLAXK2CJUDOH K20    W     N33561237W117485828                       E0113     NAR           JUDOH                    360782504
+SUSAP KLAXK2CJURPE K20    C     N33594471W117491170                       E0113     NAR           JURPE                    360802605
+SUSAP KLAXK2CKENZO K20    W     N33554251W117540593                       E0113     NAR           KENZO                    360832605
+SUSAP KLAXK2CKRAIN K20    C     N34002463W117405807                       E0112     NAR           KRAIN                    360892605
+SUSAP KLAXK2CLYCOM K20    C     N34003271W117405678                       E0112     NAR           LYCOM                    361042605
+SUSAP KLAXK2CMUSIK K20    C     N33591743W117535089                       E0113     NAR           MUSIK                    361152605
+SUSAP KLAXK2COUTDO K20    W     N33573126W118081478                       E0113     NAR           OUTDO                    361302605
+SUSAP KLAXK2CSEAVU K20    C     N33582069W117291855                       E0112     NAR           SEAVU                    361532605
+SUSAP KLAXK2CSHELL K20    C     N33574567W118091577                       E0113     NAR           SHELL                    361552605
+SUSAP KLAXK2CSNNAK K20    W     N33552124W117575106                       E0113     NAR           SNNAK                    361682605
+SUSAP KLAXK2CTAANK K20    C     N34000853W117450656                       E0113     NAR           TAANK                    361732504
+SUSAP KLAXK2CTAROC K20    C     N34000066W117450630                       E0113     NAR           TAROC                    361742504
+SUSAP KLAXK2CTRNDO K20    W     N33533142W118062495                       E0113     NAR           TRNDO                    361822605
+SUSAP KLAXK2CWITZZ K20    W     N33563570W117445541                       E0112     NAR           WITZZ                    361962605
+SUSAP KLAXK2CWUNAR K20    W     N33580266W118025956                       E0113     NAR           WUNAR                    362002605
+SUSAP KLAXK2FI25L  ACLPUR 010CLPURK2PC0E  A    IF                                 + 10000     18000250              0-PS   379302313
+SUSAP KLAXK2FI25L  ACLPUR 020WITZZK2PC0E    010TF                                 + 09000                           0 PS   379311703
+SUSAP KLAXK2FI25L  ACLPUR 030JUDOHK2PC0E    010TF                                 + 08000                           0 PS   379321703
+SUSAP KLAXK2FI25L  ACLPUR 040KENZOK2PC0E    010TF                                 + 07000                           0 PS   379331703
+SUSAP KLAXK2FI25L  ACLPUR 050SNNAKK2PC0E    010TF                                 + 06300                           0 PS   379341703
+SUSAP KLAXK2FI25L  ACLPUR 060WUNARK2PC0E    010TF                                 + 05000          180              0-PS   379352313
+SUSAP KLAXK2FI25L  ACLPUR 070GAATEK2PC0E    010TF                                 + 05000                           0 PS   379362306
+SUSAP KLAXK2FI25L  ACLPUR 080HUNDAK2PC0EE B    CF ILAXK2      0710013125100044PI  + 03600                           0 PS   379372306
+SUSAP KLAXK2FI25L  ACRCUS 010CRCUSK2EA0E  A    IF                                 B 140001200018000270              0-PS   379381711
+SUSAP KLAXK2FI25L  ACRCUS 020KRAINK2PC0E    010TF                                 + 10000                           0 PS   379391703
+SUSAP KLAXK2FI25L  ACRCUS 030TAROCK2PC0E       TF                                 + 09000                           0 PS   379401703
+SUSAP KLAXK2FI25L  ACRCUS 040DYMMOK2PC0E       TF                                 + 08000                           0 PS   379411703
+SUSAP KLAXK2FI25L  ACRCUS 050FUELRK2PC0E       TF                                 + 07000                           0 PS   379421703
+SUSAP KLAXK2FI25L  ACRCUS 060GAATEK2PC0E       TF                                 + 05000                           0 PS   379431703
+SUSAP KLAXK2FI25L  ACRCUS 070HUNDAK2PC0EE B    CF ILAXK2      0710013125100044PI  + 03600                           0 PS   379442105
+SUSAP KLAXK2FI25L  AGAATE 010GAATEK2PC0E  A    IF                                 + 05000     18000                 0 NS   379452105
+SUSAP KLAXK2FI25L  AGAATE 020HUNDAK2PC0EE B    CF ILAXK2      0710013125100044PI  + 03600                           0 NS   379462105
+SUSAP KLAXK2FI25L  ASEAVU 010SEAVUK2PC0E  A    IF                                 B 140001200018000270              0-PS   379471711
+SUSAP KLAXK2FI25L  ASEAVU 020KRAINK2PC0E    010TF                                 + 10000                           0 PS   379481703
+SUSAP KLAXK2FI25L  ASEAVU 030TAROCK2PC0E       TF                                 + 09000                           0 PS   379491703
+SUSAP KLAXK2FI25L  ASEAVU 040DYMMOK2PC0E       TF                                 + 08000                           0 PS   379501703
+SUSAP KLAXK2FI25L  ASEAVU 050FUELRK2PC0E       TF                                 + 07000                           0 PS   379511703
+SUSAP KLAXK2FI25L  ASEAVU 060GAATEK2PC0E       TF                                 + 05000                           0 PS   379521703
+SUSAP KLAXK2FI25L  ASEAVU 070HUNDAK2PC0EE B    CF ILAXK2      0710013125100044PI  + 03600                           0 PS   379532105
+SUSAP KLAXK2FI25L  ATRNDO 010TRNDOK2PC0E  A    IF                                   05000     18000210              0-PS   379541703
+SUSAP KLAXK2FI25L  ATRNDO 020HIGHTK2PC0E    010TF                                 + 04500                           0 PS   379552313
+SUSAP KLAXK2FI25L  ATRNDO 030OUTDOK2PC0E    010TF                                 + 03600          180              0-PS   379562313
+SUSAP KLAXK2FI25L  ATRNDO 040HUNDAK2PC0EE B 010TF ILAXK2      07100131        PI  + 03600                           0 PS   379572306
+SUSAP KLAXK2FI25L  I      010HUNDAK2PC0E  I    IF ILAXK2      07100131        PI  J 036000190018000                 0 NS   379581703
+SUSAP KLAXK2FI25L  I      020GIGIIK2PC0E  F    CF ILAXK2      0710007525100056PI  H 0190001900            LAX  AK2D 0 NS   379592313
+SUSAP KLAXK2FI25L  I      030RW25LK2PG0GY M    CF ILAXK2      0710002025100055PI    00152             -300          0 NS   379601703
+SUSAP KLAXK2FI25L  I      040         0  M     VR SMO K2      1600    2510    D                                     0 NS   379612102
+SUSAP KLAXK2FI25L  I      050         0        VI                     2360                                          0 NS   379621608
+SUSAP KLAXK2FI25L  I      060CATLYK2PC0EY      CF SMO K2      1948015819470090D   + 02000                           0 NS   379632313
+SUSAP KLAXK2FI25L  I      070CATLYK2PC0EE  R   HM                     1947T010    + 02000                           0 NS   379641608
+SUSAP KLAXK2FI25R  ACLPUR 010CLPURK2PC0E  A    IF                                 + 10000     18000                 0 PS   379651706
+SUSAP KLAXK2FI25R  ACLPUR 020WITZZK2PC0E    010TF                                 + 09000                           0 PS   379661706
+SUSAP KLAXK2FI25R  ACLPUR 030JUDOHK2PC0E    010TF                                 + 08000                           0 PS   379671706
+SUSAP KLAXK2FI25R  ACLPUR 040KENZOK2PC0E    010TF                                 + 07000                           0 PS   379681706
+SUSAP KLAXK2FI25R  ACLPUR 050SNNAKK2PC0E    010TF                                 + 06300                           0 PS   379691706
+SUSAP KLAXK2FI25R  ACLPUR 060FALLTK2PC0E    010TF                                 + 05000                           0 PS   379701706
+SUSAP KLAXK2FI25R  ACLPUR 070SHELLK2PC0EE B    CF ICFNK2      0710013625100043PI  + 03700                           0 PS   379712105
+SUSAP KLAXK2FI25R  ACRCUS 010CRCUSK2EA0E  A    IF                                 B 140001200018000270              0-PS   379721706
+SUSAP KLAXK2FI25R  ACRCUS 020LYCOMK2PC0E    010TF                                 + 10000                           0 PS   379731706
+SUSAP KLAXK2FI25R  ACRCUS 030TAANKK2PC0E       TF                                 + 09000                           0 PS   379741706
+SUSAP KLAXK2FI25R  ACRCUS 040JURPEK2PC0E       TF                                 + 08000                           0 PS   379751706
+SUSAP KLAXK2FI25R  ACRCUS 050MUSIKK2PC0E       TF                                 + 07000                           0 PS   379761706
+SUSAP KLAXK2FI25R  ACRCUS 060FALLTK2PC0E       TF                                 + 05000                           0 PS   379771706
+SUSAP KLAXK2FI25R  ACRCUS 070SHELLK2PC0EE B    CF ICFNK2      0710013625100043PI  + 03700                           0 PS   379782105
+SUSAP KLAXK2FI25R  AFALLT 010FALLTK2PC0E  A    IF                                             18000                 0 NS   379792104
+SUSAP KLAXK2FI25R  AFALLT 020SHELLK2PC0EE B    CF ICFNK2      0710013625100043PI  + 03700                           0 NS   379802105
+SUSAP KLAXK2FI25R  ASEAVU 010SEAVUK2PC0E  A    IF                                 B 140001200018000270              0-PS   379811706
+SUSAP KLAXK2FI25R  ASEAVU 020LYCOMK2PC0E    010TF                                 + 10000                           0 PS   379821706
+SUSAP KLAXK2FI25R  ASEAVU 030TAANKK2PC0E       TF                                 + 09000                           0 PS   379831706
+SUSAP KLAXK2FI25R  ASEAVU 040JURPEK2PC0E       TF                                 + 08000                           0 PS   379841706
+SUSAP KLAXK2FI25R  ASEAVU 050MUSIKK2PC0E       TF                                 + 07000                           0 PS   379851706
+SUSAP KLAXK2FI25R  ASEAVU 060FALLTK2PC0E       TF                                 + 05000                           0 PS   379861706
+SUSAP KLAXK2FI25R  ASEAVU 070SHELLK2PC0EE B    CF ICFNK2      0710013625100043PI  + 03700                           0 PS   379872105
+SUSAP KLAXK2FI25R  ATRNDO 010TRNDOK2PC0E  A    IF                                   05000     18000210              0-PS   379881706
+SUSAP KLAXK2FI25R  ATRNDO 020SHELLK2PC0EE B 010TF ICFNK2      07100136        PI  + 03700                           0 PS   379892105
+SUSAP KLAXK2FI25R  I      010SHELLK2PC0E  I    IF ICFNK2      07100136        PI  J 037000190018000                 0 NS   379901706
+SUSAP KLAXK2FI25R  I      020FOGLAK2PC0E  F    CF ICFNK2      0710007625100060PI  H 0190001900            LAX   K2D 0 NS   379912104
+SUSAP KLAXK2FI25R  I      030RW25RK2PG0GY M    CF ICFNK2      0710002125000055PI    00151             -300          0 NS   379922104
+SUSAP KLAXK2FI25R  I      040         0  M     VR SMO K2      1600    2510    D                                     0 NS   379932104
+SUSAP KLAXK2FI25R  I      050         0        VI SMO K2              2360    D                                     0 NS   379942104
+SUSAP KLAXK2FI25R  I      060CATLYK2PC0EY      CF SMO K2      1947015719470129D   + 02000                           0 NS   379952104
+SUSAP KLAXK2FI25R  I      070CATLYK2PC0EE  R   HM                     1947T010    + 02000                           0 NS   379961608
+SUSAP KLAXK2GRW25L   0110952510 N33561451W118225777         -0006100098000054200IILAX3                                     383681612
+SUSAP KLAXK2GRW25R   0129232510 N33562241W118225847         -0006400097095754150IICFN1                                     383691709
+SUSAP KLAXK2IICFN1   011110RW25RN33560725W1182526632510N33561788W1182310180611 10350319300E01205400098                     383702104
+SUSAP KLAXK2IILAX3   010990RW25LN33555986W1182520872510N33561777W1182310211053 10000330300E01205400097                     383741608
+SUSAP KMODK2AMOD     0     059YHN37373297W120571595E016000099         1800018000C    MNAR    MODESTO CITY-COUNTY-HARRY SHAM632032014
+SUSAP KMODK2CDLRAY K20    C     N37274707W120390771                       E0125     NAR           DLRAY                    632042605
+SUSAP KMODK2CKALEI K20    C     N37221198W120284312                       E0125     NAR           KALEI                    632062605
+SUSAP KMODK2CZELAT K20    C     N37341791W120510882                       E0126     NAR           ZELAT                    632082605
+SUSAP KMODK2FI28R  AFRA   010FRA  K2D 0V       IF                                             18000                 0 NS   632092006
+SUSAP KMODK2FI28R  AFRA   020KALEIK2PC0E  A    TF                                 + 07500                           0 NS   632102006
+SUSAP KMODK2FI28R  AFRA   030DLRAYK2PC0EE B    CF IMODK2      1081018028810100PI  + 03500                           0 NS   632112006
+SUSAP KMODK2FI28R  AMOD   010MOD  K2D 0V       IF                                             18000                 0 NS   632122006
+SUSAP KMODK2FI28R  AMOD   020ZELATK2PC0EY      TF                                 + 02000                           0 NS   632132006
+SUSAP KMODK2FI28R  AMOD   030ZELATK2PC0EE AL   HF IMODK2      108100642881T010PI  + 01800                           0 NS   632142006
+SUSAP KMODK2FI28R  APXN   010PXN  K2D 0V       IF                                             18000                 0 NS   632151901
+SUSAP KMODK2FI28R  APXN   020KALEIK2PC0E  A    TF                                 + 07500                           0 NS   632162006
+SUSAP KMODK2FI28R  APXN   030DLRAYK2PC0EE B    CF IMODK2      1081018028810100PI  + 03500                           0 NS   632172006
+SUSAP KMODK2FI28R  AWRAPS 010WRAPSK2EA0E       IF                                             18000                 0 NS   632181901
+SUSAP KMODK2FI28R  AWRAPS 020MOD  K2D 0V       TF                                 + 03000                           0 NS   632191901
+SUSAP KMODK2FI28R  AWRAPS 030ZELATK2PC0EY      TF                                 + 02000                           0 NS   632201901
+SUSAP KMODK2FI28R  AWRAPS 040ZELATK2PC0EE AL   HF IMODK2      108100642881T010PI  + 01800                           0 NS   632212006
+SUSAP KMODK2FI28R  I      010DLRAYK2PC0E  I    IF IMODK2      10810180        PI  J 035000180018000                 0 NS   632222006
+SUSAP KMODK2FI28R  I      020ZELATK2PC0E  F    CF IMODK2      1081006428800116PI  H 0180001800            MOD   K2D 0 NS   632232006
+SUSAP KMODK2FI28R  I      030RW28RK2PG0GY M    CF IMODK2      1081001228800052PI    00134             -300          0 NS   632242603
+SUSAP KMODK2FI28R  I      040         0  M     CA                     2881        + 01500                           0 NS   632251901
+SUSAP KMODK2FI28R  I      050MOD  K2D 0VY  R   DF                                 + 02000                           0 NS   632261901
+SUSAP KMODK2FI28R  I      060MOD  K2D 0VE  L   HM                     2846T010    + 02000                           0 NS   632271901
+SUSAP KMODK2GRW28R   0059042880 N37371433W120563562         -0007100082000053150IIMOD1                                     632662603
+SUSAP KMODK2IIMOD1   011190RW28RN37375380W1205748872881N37372328W1205642271214 09510563300E01605300084                     632672501
+SUSAP KNUQK2ANUQ     0     091YHN37245812W122025687E016000037         1800018000P    MNAR    MOFFETT FEDERAL AIRFIELD      713882210
+SUSAP KNUQK2CAGAPE K20    C     N37082859W121542658                       E0127     NAR           AGAPE                    713892605
+SUSAP KNUQK2CEBIYI K20    C     N37183056W121593414                       E0127     NAR           EBIYI                    713932605
+SUSAP KNUQK2CJULUD K20    C     N37155117W121581254                       E0127     NAR           JULUD                    714022605
+SUSAP KNUQK2CORZOS K20    C     N37140663W121571908                       E0127     NAR           ORZOS                    714062605
+SUSAP KNUQK2CRIROC K20    C     N37114649W121560749                       E0127     NAR           RIROC                    714092605
+SUSAP KNUQK2CZAPEP K20    C     N37050334W121524200                       E0126     NAR           ZAPEP                    714122605
+SUSAP KNUQK2FI32R  AZAPEP 010ZAPEPK2PC0E  A    IF                                 + 05500     18000                 0 DS   714371907
+SUSAP KNUQK2FI32R  AZAPEP 020AGAPEK2PC0EE B    CF INUQK2      1417018832170036PI  + 05200                           0 DS   714382401
+SUSAP KNUQK2FI32R  I      010AGAPEK2PC0E  I    IF INUQK2      14170188        PI  J 052000210018000                 0 DS   714392401
+SUSAP KNUQK2FI32R  I      011RIROCK2PC0E       CF INUQK2      1417015232200035PI  + 04400                           0 DS   714401907
+SUSAP KNUQK2FI32R  I      012ORZOSK2PC0E       CF INUQK2      1417012732200025PI  + 03600                           0 DS   714411907
+SUSAP KNUQK2FI32R  I      013JULUDK2PC0E       CF INUQK2      1417010832200019PI  + 03000                           0 DS   714421907
+SUSAP KNUQK2FI32R  I      020EBIYIK2PC0E  F    CF INUQK2      1417008032200029PI  H 0210002100            SJC   K2D 0 DS   714431913
+SUSAP KNUQK2FI32R  I      030RW32RK2PG0GY M    CF INUQK2      1417001632200063PI    00088             -300          0 DS   714441907
+SUSAP KNUQK2FI32R  I      040         0  M     CA                     3217        + 00700                           0 DS   714452401
+SUSAP KNUQK2FI32R  I      050         0        VI                     3100                                          0 DS   714462401
+SUSAP KNUQK2FI32R  I      060OAK  K2D 0VY      CF OAK K2      0000000031900190D   + 04000                           0 DS   714471913
+SUSAP KNUQK2FI32R  I      070OAK  K2D 0VE  R   HM                     1390T010    + 04000                           0 DS   714481913
+SUSAP KNUQK2GRW32R   0091973210 N37242174W122023425         -0023100031019157200IINUQ1                                     715202210
+SUSAP KNUQK2IINUQ1   011035RW32RN37255271W1220321003217N37243389W1220235030939 11610397300E01605700023                     715222401
+SUSAP KOAKK2AOAK     0     105YHN37431654W122131614E014000009         1800018000C    MNAR    OAKLAND SAN FRANCISCO BAY     719152510
+SUSAP KOAKK2CBBUBB K20    W     N37401458W121501849                       E0128     NAR           BBUBB                    719222605
+SUSAP KOAKK2CCUVSA K20    C     N37414659W122070008                       E0128     NAR           CUVSA                    719332605
+SUSAP KOAKK2CCYMBL K20    W     N37341517W121503707                       E0127     NAR           CYMBL                    719342605
+SUSAP KOAKK2CGROVE K20    C     N37391912W121592757                       E0128     NAR           GROVE                    719422605
+SUSAP KOAKK2CMYSHN K20    W     N37315346W121462930                       E0127     NAR           MYSHN                    719622605
+SUSAP KOAKK2CNAGVY K20    C     N37380835W121555095                       E0128     NAR           NAGVY                    719632605
+SUSAP KOAKK2CNIXDE K20    C     N37405757W122042963                       E0128     NAR           NIXDE                    719642605
+SUSAP KOAKK2CSKYLN K20    C     N37384375W121573925                       E0128     NAR           SKYLN                    719802605
+SUSAP KOAKK2CURZAF K20    C     N37401179W122020906                       E0128     NAR           URZAF                    719852605
+SUSAP KOAKK2FI28R  ABBUBB 010BBUBBK2PC0E  A    IF                                 + 06000     18000200              0-PS   723552506
+SUSAP KOAKK2FI28R  ABBUBB 020NAGVYK2PC0E    010TF                                 + 04200                           0 PS   723562506
+SUSAP KOAKK2FI28R  ABBUBB 030SKYLNK2PC0E       TF                                 + 03800                           0 PS   723572506
+SUSAP KOAKK2FI28R  ABBUBB 040GROVEK2PC0EE B    CF IOAKK2      0982012127820016PI  + 03400                           0 PS   723582506
+SUSAP KOAKK2FI28R  AFFIST 010FFISTK2EA0E  A    IF                                 B 090000700018000200              0-PS   723592506
+SUSAP KOAKK2FI28R  AFFIST 020NAGVYK2PC0E    010TF                                 + 04200                           0 PS   723602506
+SUSAP KOAKK2FI28R  AFFIST 030SKYLNK2PC0E       TF                                 + 03800                           0 PS   723612506
+SUSAP KOAKK2FI28R  AFFIST 040GROVEK2PC0EE B    CF IOAKK2      0982012127820016PI  + 03400                           0 PS   723622506
+SUSAP KOAKK2FI28R  AMYSHN 010MYSHNK2PC0E  A    IF                                 + 06200     18000                 0 PS   723632506
+SUSAP KOAKK2FI28R  AMYSHN 020CYMBLK2PC0E    010TF                                 + 05300                           0 PS   723642506
+SUSAP KOAKK2FI28R  AMYSHN 030NAGVYK2PC0E    010TF                                 + 04200                           0 PS   723652506
+SUSAP KOAKK2FI28R  AMYSHN 040SKYLNK2PC0E       TF                                 + 03800                           0 PS   723662506
+SUSAP KOAKK2FI28R  AMYSHN 050GROVEK2PC0EE B    CF IOAKK2      0982012127820016PI  + 03400          200              0-PS   723672506
+SUSAP KOAKK2FI28R  I      010GROVEK2PC0E  I    IF IOAKK2      09820121        PI  J 034000150018000200              0-DS   723682506
+SUSAP KOAKK2FI28R  I      011URZAFK2PC0E       CF IOAKK2      0982009827800023PI  + 02700                           0 DS   723692506
+SUSAP KOAKK2FI28R  I      012NIXDEK2PC0E       CF IOAKK2      0982007827800020PI  + 02100                           0 DS   723702506
+SUSAP KOAKK2FI28R  I      020CUVSAK2PC0E  F    CF IOAKK2      0982005627800022PI  H 0150001500            OAK   K2D 0 DS   723712107
+SUSAP KOAKK2FI28R  I      030RW28RK2PG0GY M    CF IOAKK2      0982001127800045PI    00059             -300          0 DS   723721513
+SUSAP KOAKK2FI28R  I      040         0  M     CA                     2782        + 01900                           0 DS   723731311
+SUSAP KOAKK2FI28R  I      050         0        VI                     3400                                          0 DS   723741513
+SUSAP KOAKK2FI28R  I      060REBASK2EA0EY      CF SGD K2      1650014334500100D   + 03000                           0 DS   723751513
+SUSAP KOAKK2FI28R  I      070REBASK2EA0EE  R   HM                     3450T010    + 03000                           0 DS   723761513
+SUSAP KOAKK2GRW28R   0054572780 N37432933W122121695         -0030700006000053150IIOAK1                                     725452213
+SUSAP KOAKK2IIOAK1   010990RW28RN37435455W1221334872782N37432860W1221230611303 09880593300E01405300004                     725502310
+SUSAP KPOCK2APOC     0     048YHN34053000W117465440E014001014         1800018000C    MNAR    BRACKETT FLD                  920802014
+SUSAP KPOCK2CGOLDI K20    R     N34013604W117470950                       E0113     NAR           GOLDI                    920812605
+SUSAP KPOCK2FVOR-A ALAHAB 010LAHABK2EA0E  A    IF                                             18000                 3 NC   921670805
+SUSAP KPOCK2FVOR-A ALAHAB 020PRADOK2EA0E       TF                     07600071    + 04000                           3 NC   921680805
+SUSAP KPOCK2FVOR-A ALAHAB 030GOLDIK2PC0EE  L   TFY                    34400063    + 02500                           3 NC   921691310
+SUSAP KPOCK2FVOR-A APDZ   010PDZ  K2D 0V  A    IF                                             18000                 3 NC   921700805
+SUSAP KPOCK2FVOR-A APDZ   020PRADOK2EA0E       TF                     25600127    + 04000                           3 NC   921710805
+SUSAP KPOCK2FVOR-A APDZ   030GOLDIK2PC0EE      TF                     34400063    + 02500                           3 NC   921721310
+SUSAP KPOCK2FVOR-A APOM   010POM  K2D 0V       IF                                             18000                 3 NC   921730805
+SUSAP KPOCK2FVOR-A APOM   020GOLDIK2PC0E       TF                     16400030    + 04000                           3 NC   921741310
+SUSAP KPOCK2FVOR-A APOM   030GOLDIK2PC0E  AL   PI POM K2      1640003120900100D   + 04000                           3 NC   921751310
+SUSAP KPOCK2FVOR-A APOM   040GOLDIK2PC0EE      CF POM K2      1640003134400060D   + 02500                           3 NC   921761310
+SUSAP KPOCK2FVOR-A S      020GOLDIK2PC0E  F    IF POM K2                      D   + 02500     18000       POM   K2D 3 NC   921771310
+SUSAP KPOCK2FVOR-A S      030POM  K2D 0VY M    CF POM K2      0000000034400030D     01014              000          3 NC   921782204
+SUSAP KPOCK2FVOR-A S      040         0  M     CA                     3440        + 01414                           3 NC   921792204
+SUSAP KPOCK2FVOR-A S      050PRADOK2EA0EE  L   CFYPOM K2      1640009316400060D   + 04000                           3 NC   921800809
+SUSAP KRDDK2ARDD     0     070YHN40303235W122173619E014000505         1800018000C    MNAR    REDDING RGNL                  994582406
+SUSAP KRDDK2CLASSN K20    C     N40231722W122174227                       E0134     NAR           LASSN                    994632605
+SUSAP KRDDK2FI35   AITMOR 010ITMORK2EA0E       IF                                             18000                 0 NS   995062605
+SUSAP KRDDK2FI35   AITMOR 020RDD  K2D 0V       TF                                 + 05500                           0 NS   995072605
+SUSAP KRDDK2FI35   AITMOR 030LASSNK2PC0E       TF                                 + 03000                           0 NS   995082605
+SUSAP KRDDK2FI35   AITMOR 040LASSNK2PC0EE AL   PI IRDDK2      1661008121110150PI  + 03000                           0 NS   995092605
+SUSAP KRDDK2FI35   ARBL   010RBL  K2D 0V  A    FC RBL K2      0000000032190079D   + 03000     18000                 0 NS   995102605
+SUSAP KRDDK2FI35   ARBL   020DIBLEK2EA0EE B    CF IRDDK2      1661018032190020PI  + 03000                           0 NS   995112605
+SUSAP KRDDK2FI35   ATAYTO 010TAYTOK2EA0E       IF                                             18000                 0 NS   995122605
+SUSAP KRDDK2FI35   ATAYTO 020RDD  K2D 0V       TF                                 + 05500                           0 NS   995132605
+SUSAP KRDDK2FI35   ATAYTO 030LASSNK2PC0E       TF                                 + 03000                           0 NS   995142605
+SUSAP KRDDK2FI35   ATAYTO 040LASSNK2PC0EE AL   PI IRDDK2      1661008121110150PI  + 03000                           0 NS   995152605
+SUSAP KRDDK2FI35   I      010DIBLEK2EA0E  I    IF IRDDK2      16610180        PI  J 030000270018000                 0 NS   995162605
+SUSAP KRDDK2FI35   I      020LASSNK2PC0E  F    CF IRDDK2      1661008134600099PI  H 0270002700            RDD   K2D 0 NS   995172605
+SUSAP KRDDK2FI35   I      030RW35 K2PG0GY M    CF IRDDK2      1661001334600068PI    00542             -300          0 NS   995182605
+SUSAP KRDDK2FI35   I      040         0  M     CA                     3461        + 02400                           0 NS   995192605
+SUSAP KRDDK2FI35   I      050         0    R   VIY                    1100                                          0 NS   995202605
+SUSAP KRDDK2FI35   I      060ITMORK2EA0EY      CF RDD K2      0440012004400070D   + 05000                           0 NS   995212605
+SUSAP KRDDK2FI35   I      070ITMORK2EA0EE  L   HM                     3570T010    + 05000                           0 NS   995222605
+SUSAP KRDDK2GRW35    0070033460 N40300401W122174159         +0121800491000052150IIRDD1                                     995752605
+SUSAP KRDDK2IIRDD1   010870RW35 N40312304W1221741463461N40301387W1221736400995 09990502300E01405200492                     995762605
+SUSAP KTOAK2ATOA     0     050YHN33481218W118202259E014000103         1800018000C    MNAR    ZAMPERINI FLD                 323152014
+SUSAP KTOAK2CDRIFY K20    C     N33420673W118110917                       E0113     NAR           DRIFY                    323172605
+SUSAP KTOAK2CODEQY K20    R     N33404027W118085915                       E0113     NAR           ODEQY                    323192605
+SUSAP KTOAK2CZILBA K20    C     N33444978W118151402                       E0113     NAR           ZILBA                    323232605
+SUSAP KTOAK2FI29R  AALBAS 010ALBASK2EA0E  A    FC LAX K2      1233026730330062D   + 02000     18000                 0 NS   323601302
+SUSAP KTOAK2FI29R  AALBAS 020DRIFYK2PC0EE B    CF ITOAK2      1145010330330020PI  + 02000                           0 NS   323611610
+SUSAP KTOAK2FI29R  ASLI   010SLI  K2D 0V  A    IF                                             18000                 0 NS   323621610
+SUSAP KTOAK2FI29R  ASLI   020ODEQYK2PC0E       TF                                 + 02000                           0 NS   323631610
+SUSAP KTOAK2FI29R  ASLI   030DRIFYK2PC0EE BR   CFYITOAK2      1145010329450023PI  + 02000                           0 NS   323641610
+SUSAP KTOAK2FI29R  I      010DRIFYK2PC0E  I    IF ITOAK2      11450103        PI  J 020000200018000                 0 NS   323651310
+SUSAP KTOAK2FI29R  I      020ZILBAK2PC0E  F    CF ITOAK2      1144005929400044PI  H 0200002000            LAX   K2D 0 NS   323662107
+SUSAP KTOAK2FI29R  I      030RW29RK2PG0GY M    CF ITOAK2      1145000829400051PI    00149             -340          0 NS   323671610
+SUSAP KTOAK2FI29R  I      040         0  M     VR LAX K2      1500    2940    D   + 03000                           0 NS   323681610
+SUSAP KTOAK2FI29R  I      050         0        VI                     2500                                          0 NS   323691302
+SUSAP KTOAK2FI29R  I      060INISHK2EA0EY      CF LAX K2      1920012019200070D   + 03000                           0 NS   323701610
+SUSAP KTOAK2FI29R  I      070INISHK2EA0EE  R   HM                     0710T010    + 03000                           0 NS   323711610
+SUSAP KTOAK2GRW29R   0050012940 N33480157W118200301         -0006400097054052150IITOA1                                     324181612
+SUSAP KTOAK2IITOA1   011190RW29RN33483194W1182048822945N33480969W1182008600476 08800500340E01405200092                     324191610
+SUSAP KVNYK2AVNY     0     080YHN34123530W118292390E012000802         1800018000C    MNAR    VAN NUYS                      412041608
+SUSAP KVNYK2CFURRY K20    C     N34205090W118301228                       E0115     NAR           FURRY                    412112605
+SUSAP KVNYK2CHIRVI K20    R     N34053592W118272000                       E0114     NAR           HIRVI                    412152605
+SUSAP KVNYK2CJINAT K20    R     N34244939W118303492                       E0115     NAR           JINAT                    412172605
+SUSAP KVNYK2CZIDOM K20    R     N34271386W118354065                       E0115     NAR           ZIDOM                    412262605
+SUSAP KVNYK2FI16RZ AFIM   010FIM  K2D 0V       IF                                             18000                 0 DS   416171608
+SUSAP KVNYK2FI16RZ AFIM   020ZIDOMK2PC0E  A    TF                                 + 06000                           0 DS   416181608
+SUSAP KVNYK2FI16RZ AFIM   030UMBERK2EA0E  B    TF                                 + 06000                           0 DS   416191608
+SUSAP KVNYK2FI16RZ AFIM   040JINATK2PC0EE  R   CFYIVNYK2      3435013216350040PI  + 04900                           0 DS   416201610
+SUSAP KVNYK2FI16RZ AVNY   010VNY  K2D 0V       IF                                             18000                 0 DS   416211608
+SUSAP KVNYK2FI16RZ AVNY   020ZIDOMK2PC0E  A    TF                                 + 06000                           0 DS   416221608
+SUSAP KVNYK2FI16RZ AVNY   030UMBERK2EA0E  B    TF                                 + 06000                           0 DS   416231608
+SUSAP KVNYK2FI16RZ AVNY   040JINATK2PC0EE  R   CFYIVNYK2      3435013216350040PI  + 04900                           0 DS   416241610
+SUSAP KVNYK2FI16RZ I      010JINATK2PC0E  I    IF IVNYK2      34350132        PI  J 049000380018000                 0 DS   416251608
+SUSAP KVNYK2FI16RZ I      020FURRYK2PC0E  F    CF IVNYK2      3435009216400040PI  H 0380003800            VNY   K2D 0 DS   416262107
+SUSAP KVNYK2FI16RZ I      030RW16RK2PG0GY M    CF IVNYK2      3435001216400080PI    00842             -350          0 DS   416271608
+SUSAP KVNYK2FI16RZ I      040         0  M     CD VNY K2              16350015D   - 01750                           0 DS   416281610
+SUSAP KVNYK2FI16RZ I      050HIRVIK2PC0EY      CF VNY K2      1520008015200060D                                     0 DS   416291610
+SUSAP KVNYK2FI16RZ I      060SMO  K2D 0V       DF                                 + 04600                           0 DS   416301610
+SUSAP KVNYK2FI16RZ I      070VTU  K2D 0VY      CF SMO K2      2672030226720302D   + 04600                           0 DS   416311610
+SUSAP KVNYK2FI16RZ I      080VTU  K2D 0VE  L   HM                     1306T010    + 04600                           0 DS   416321608
+SUSAP KVNYK2GRW16R   0080011640 N34125396W118292713         +0207100793143249150IIVNY1                                     416891612
+SUSAP KVNYK2IIVNY1   011130RW16RN34114034W1182920161635N34124488W1182929250897 09010536350E01204900784                     416931905
+SUSAP KWLWK2AWLW     0     041YHN39305672W122130219E014000141         1800018000C    MNAR    WILLOWS/GLENN COUNTY          435262113
+SUSAP KWLWK2CUVXUZ K20    R     N39300745W122130893                       E0132     NAR           UVXUZ                    435282605
+SUSAP KWLWK2CWETEM K20    R     N39250759W122105473                       E0132     NAR           WETEM                    435292605
+SUSAP KWLWK2CWUNIP K20    R     N39184685W122080475                       E0131     NAR           WUNIP                    435312605
+SUSAP KWLWK2FS34   AILA   010ILA  K2D 0V  A    IF                                             18000                 0 DS   435472113
+SUSAP KWLWK2FS34   AILA   020WUNIPK2PC0EE B    TF                                 + 03000                           0 DS   435482113
+SUSAP KWLWK2FS34   S      010WUNIPK2PC0E  I    IF ILA K2      32300153        D   + 03000     18000                 0 DS   435492113
+SUSAP KWLWK2FS34   S      020WETEMK2PC0E  F    CF ILA K2      3230022132300067D   + 02000                 ILA   K2D 0 DS   435502113
+SUSAP KWLWK2FS34   S      030UVXUZK2PC0EY M    CF ILA K2      3230027332300053D     00317             -300          0 DS   435512113
+SUSAP KWLWK2FS34   S      040         0  M     CA                     3230        + 00541                           0 DS   435522113
+SUSAP KWLWK2FS34   S      050         0    R   VIY                    2000                                          0 DS   435532113
+SUSAP KWLWK2FS34   S      060WUNIPK2PC0EY      CF ILA K2      3230015314300120D   + 03000                           0 DS   435542113
+SUSAP KWLWK2FS34   S      070WUNIPK2PC0EE  R   HM                     3230T010    + 03000                           0 DS   435552113
+SUSAP O69 K2AO69     0     036YHN38152806W122361917E016000090         1800018000C    MNAR    PETALUMA MUNI                 506971905
+SUSAP O69 K2CAFTIN K20    R     N38132923W122303419                       E0130     NAR           AFTIN                    506982605
+SUSAP O69 K2FS29   ASGD   010SGD  K2D 0VE AL   HF                     2759T010    + 03000     18000                 0 NS   507741611
+SUSAP O69 K2FS29   S      010SGD  K2D 0V  I    IF SGD K2      00000000        D   + 03000     18000                 0 NS   507751611
+SUSAP O69 K2FS29   S      020AFTINK2PC0E  F    CF SGD K2      2759007027590070D   + 01900                 SGD   K2D 0 NS   507761611
+SUSAP O69 K2FS29   S      030RW29 K2PG0GY M    CF SGD K2      2759011727590047D     00132             -358          0 NS   507771611
+SUSAP O69 K2FS29   S      040RW29 K2PG0G M     FA SGD K2      275901172759    D   + 02000                           0 NS   507781611
+SUSAP O69 K2FS29   S      050PYE  K2D 0VE  L   DF                                 + 03500                           0 NS   507791611
+SUSAP O69 K2GRW29    0036002890 N38151773W122360079         -0008000078000055075R                                          507812407

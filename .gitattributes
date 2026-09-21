@@ -1,3 +1,5 @@
 *.pdf binary
 # Preserve the official coefficient bytes used by the source checksum.
 data/*.COF -text
+# CIFP fixtures retain FAA fixed-width records, including trailing padding.
+test/fixtures/*cifp*.txt -text whitespace=-blank-at-eol

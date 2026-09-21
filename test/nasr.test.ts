@@ -357,11 +357,18 @@ function recordCsv(headers: string[], rows: Record<string, string | number>[]): 
     return csv(headers, rows.map(row => headers.map(header => row[header] ?? '')));
 }
 function preferredRouteInput(overrides: Partial<NasrInput> = {}): NasrInput {
-    const empty = csv(['EFF_DATE'], []);
+    const date = { EFF_DATE: '2026/09/03' };
+    const point = { ...date, LAT_DECIMAL: 37, LONG_DECIMAL: -122 };
+    const table = row => recordCsv(Object.keys(row), [row]);
     return {
-        airports: empty, runways: empty, runwayEnds: empty, fixes: empty,
+        airports: table({ ...point, SITE_NO: '00001.', SITE_TYPE_CODE: 'A', ARPT_ID: 'SBA' }),
+        runways: table({ ...date, SITE_NO: '00001.', SITE_TYPE_CODE: 'A', RWY_ID: '13/31' }),
+        runwayEnds: table({ ...date, SITE_NO: '00001.', SITE_TYPE_CODE: 'A', RWY_ID: '13/31', RWY_END_ID: '13' }),
+        fixes: table({ ...point, FIX_ID: 'TESTF', FIX_USE_CODE: 'WP' }),
         frequencies: recordCsv(frequencyHeaders, [frequencyRow]),
-        navaids: empty, airways: empty, airwaySegments: empty,
+        navaids: table({ ...point, NAV_ID: 'TESTN', NAV_TYPE: 'VOR' }),
+        airways: table({ ...date, REGULATORY: 'Y', AWY_LOCATION: 'C', AWY_ID: 'V1' }),
+        airwaySegments: table({ ...date, REGULATORY: 'Y', AWY_LOCATION: 'C', AWY_ID: 'V1', POINT_SEQ: 1, FROM_POINT: 'TESTN', FROM_PT_TYPE: 'VOR', TO_POINT: '' }),
         preferredRoutes: recordCsv(preferredHeaders, [routeRow]),
         preferredRouteSegments: recordCsv(preferredSegmentHeaders, [segmentRow]),
         ...overrides
@@ -372,12 +379,33 @@ test('NASR frequency input rejects empty records, missing columns, and invalid e
     for (const [frequencies, expected] of [
         [recordCsv(frequencyHeaders, []), /FRQ.csv contains no frequency records/],
         [recordCsv(frequencyHeaders.filter(field => field !== 'FREQ_USE'), [frequencyRow]), /FRQ.csv is missing FREQ_USE/],
-        [recordCsv(frequencyHeaders.filter(field => field !== 'EFF_DATE'), [frequencyRow]), /missing or mismatched effective date/],
+        [recordCsv(frequencyHeaders.filter(field => field !== 'EFF_DATE'), [frequencyRow]), /missing EFF_DATE/],
         [recordCsv(frequencyHeaders, [{ ...frequencyRow, EFF_DATE: ' ' }]), /missing or mismatched effective date/],
         [recordCsv(frequencyHeaders, [{ ...frequencyRow, EFF_DATE: '2026/08/06' }]), /one effective date/]
     ] as const) {
         assert.throws(() => buildNasrProducts(preferredRouteInput({ frequencies })), expected);
     }
+});
+
+test('required NASR tables reject missing schemas, empty input and undated rows before projection', () => {
+    const valid = preferredRouteInput();
+    assert.throws(() => buildNasrProducts({ ...valid, airports: valid.airports.replace('LAT_DECIMAL', 'BAD_LATITUDE') }), /missing LAT_DECIMAL/);
+    for (const key of Object.keys(valid) as (keyof NasrInput)[]) {
+        if (key !== 'preferredRouteSegments') assert.throws(() => buildNasrProducts({ ...valid,
+            [key]: valid[key].split('\r\n')[0] + '\r\n' }), /contains no/);
+        assert.throws(() => buildNasrProducts({ ...valid, [key]: valid[key].replaceAll('2026/09/03', '') }), /effective date/);
+    }
+});
+
+test('excluded NASR points and dependent rows remain accounted for with source row identities', () => {
+    const valid = preferredRouteInput();
+    const data = buildNasrProducts({ ...valid, airports: valid.airports.replace('"37"', '""') });
+    assert.equal(data.airports.features.length, 0);
+    assert.deepEqual(data.coverage.APT_BASE, { sourceRows: 1, exportedRows: 0, excludedRows: 1 });
+    assert.equal(data.excluded.find(row => row.table === 'APT_BASE')?.reason, 'unavailable-coordinates');
+    assert.equal(data.coverage.APT_RWY.excludedRows, 1);
+    assert.equal(data.coverage.APT_RWY_END.excludedRows, 1);
+    for (const ledger of Object.values(data.coverage)) assert.equal(ledger.exportedRows + ledger.excludedRows, ledger.sourceRows);
 });
 
 test('preferred routes retain directional variants, coded restrictions, NAR fields, and ordered segments', () => {
@@ -461,9 +489,9 @@ test('preferred routes reject ambiguous joins and mismatched cycles', () => {
         [routes([{ ...routeRow, EFF_DATE: '' }]), /missing or mismatched effective date/],
         [segments([{ ...segmentRow, EFF_DATE: '  ' }]), /missing or mismatched effective date/],
         [{ preferredRoutes: recordCsv(preferredHeaders.filter(header => header !== 'EFF_DATE'), [routeRow]) },
-            /missing or mismatched effective date/],
+            /missing EFF_DATE/],
         [{ preferredRouteSegments: recordCsv(preferredSegmentHeaders.filter(header => header !== 'EFF_DATE'), [segmentRow]) },
-            /missing or mismatched effective date/],
+            /missing EFF_DATE/],
         [routes([{ ...routeRow, EFF_DATE: '2026/08/06' }]), /one effective date/],
         [segments([{ ...segmentRow, EFF_DATE: '2026/08/06' }]), /one effective date/]
     ];
@@ -478,7 +506,7 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     t.after(() => fs.rm(root, { recursive: true, force: true }));
     const sourceDir = path.join(root, 'sources');
     await fs.mkdir(sourceDir);
-    await fs.copyFile(new URL('./fixtures/approach-cifp.txt', import.meta.url), path.join(sourceDir, 'FAACIFP18'));
+    await fs.copyFile(new URL('./fixtures/terminal-cifp.txt', import.meta.url), path.join(sourceDir, 'FAACIFP18'));
     const input = preferredRouteInput({
         airports: csv(
             ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'ICAO_ID', 'STATE_CODE', 'COUNTRY_CODE',
@@ -522,13 +550,13 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     const nav = path.join(cycleDir, 'nav');
     const originalManifest = await fs.readFile(path.join(nav, 'manifest.json'), 'utf8');
     const manifest = JSON.parse(originalManifest);
-    const airportData = JSON.parse(await fs.readFile(path.join(nav, 'airports.geojson'), 'utf8'));
+    const airportData = JSON.parse(await fs.readFile(path.join(nav, manifest.products.find(p => p.id === 'airports').file), 'utf8'));
     assert.deepEqual(airportData.features.map(feature => feature.properties.frequencies), [
         [{ type: 'TOWER', frequencyMHz: 119.7, use: 'LCL/P' }], []
     ]);
     assert.equal(manifest.sourceArchives.find(source => source.group === 'FRQ').filename, 'FRQ_CSV.zip');
     const magneticProduct = manifest.products.find(product => product.id === 'magnetic-model');
-    assert.equal(magneticProduct.file, 'magnetic-model.json');
+    assert.match(magneticProduct.file, /^magnetic-model\.[a-f0-9]{64}\.json$/);
     assert.equal(magneticProduct.count, 90);
     assert.equal(magneticProduct.model, 'WMM-2025');
     const modelBytes = await fs.readFile(path.join(nav, magneticProduct.file));
@@ -546,25 +574,35 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     assert.equal(magneticModel.source.sha256,
         'dfa8597825af4e0b87ff4198a5b4fb661b3c49f4cd090cd0164e0259b075582f');
     const navaidProduct = manifest.products.find(product => product.id === 'navaids');
-    assert.deepEqual(navaidProduct, { id: 'navaids', file: 'navaids.geojson', count: 4 });
+    assert.equal(navaidProduct.count, 4);
+    assert.match(navaidProduct.file, /^navaids\.[a-f0-9]{64}\.geojson$/);
     const navaidData = JSON.parse(await fs.readFile(path.join(nav, navaidProduct.file), 'utf8'));
     assert.deepEqual(navaidData.features.map(feature => feature.properties.stationDeclinationDeg), [15, -10, 0, undefined]);
     assert.equal(Object.hasOwn(navaidData.features[3].properties, 'stationDeclinationDeg'), false);
-    assert.deepEqual(manifest.products.find(product => product.id === 'terminal-procedures'), {
-        id: 'terminal-procedures', file: 'terminal-procedures.json', count: 2
-    });
-    const procedureData = JSON.parse(await fs.readFile(path.join(nav, 'terminal-procedures.json'), 'utf8'));
+    const terminalProduct = manifest.products.find(product => product.id === 'terminal-procedures');
+    const terminalBytes = await fs.readFile(path.join(nav, terminalProduct.file));
+    assert.equal(terminalProduct.count, 2);
+    assert.equal(terminalProduct.bytes, terminalBytes.length);
+    assert.equal(terminalProduct.sha256, createHash('sha256').update(terminalBytes).digest('hex'));
+    const cifpSource = manifest.sourceArchives.find(source => source.group === 'CIFP');
+    assert.equal(cifpSource.recordFile.sha256, createHash('sha256')
+        .update(await fs.readFile(path.join(sourceDir, 'FAACIFP18'))).digest('hex'));
+    const procedureData = JSON.parse(await fs.readFile(path.join(nav, terminalProduct.file), 'utf8'));
     assert.deepEqual(procedureData.procedures.map(procedure => procedure.ident), ['SPTNS1', 'OHSEA3']);
     assert.equal(procedureData.approaches.type, 'ZLayerApproachRoutes');
     assert.equal(procedureData.approaches.metadata.effectiveDate, '2026-09-03');
-    assert.equal(procedureData.approaches.procedures.length, 4);
+    assert.equal(procedureData.approaches.procedures.length, 7);
+    assert.ok(procedureData.approaches.procedures.some(procedure => procedure.id === 'KVGT:I12L'));
+    assert.ok(procedureData.codedProcedures.procedures.some(procedure => procedure.kind === 'departure'));
+    assert.ok(procedureData.codedProcedures.procedures.some(procedure => procedure.kind === 'arrival'));
+    assert.deepEqual(terminalProduct.coverage, procedureData.coverage);
     assert.equal(procedureData.approaches.procedures.find(procedure => procedure.id === 'KSFO:I28R').final.at(-1).fix.ident, 'VIKYU');
     const arc = procedureData.approaches.procedures.find(procedure => procedure.id === 'KSNS:I31')
         .transitions.find(transition => transition.id === 'SNS2').legs.find(leg => leg.path === 'AF');
     assert.equal(arc.radiusNm, 22);
     assert.deepEqual(arc.center, [-121.60318333333333, 36.66383888888889]);
     const historyProduct = manifest.products.find(product => product.id === 'route-history');
-    assert.equal(historyProduct.file, 'route-history.json.gz');
+    assert.match(historyProduct.file, /^route-history\.json\.[a-f0-9]{64}\.gz$/);
     assert.equal(historyProduct.compression, 'gzip');
     assert.equal(historyProduct.count, 2);
     const originalHistory = await fs.readFile(path.join(nav, historyProduct.file));
@@ -575,15 +613,13 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     assert.equal(history.effectiveDate, options.cycle);
     assert.equal(history.countBasis, 'source-filed-route-use-count');
     assert.equal(history.observationRange.lastSeen, '2026-01-25');
-    assert.deepEqual(manifest.products.find(product => product.id === 'preferred-routes'), {
-        id: 'preferred-routes', file: 'preferred-routes.json', count: 1
-    });
+    assert.equal(manifest.products.find(product => product.id === 'preferred-routes').count, 1);
     const source = manifest.sourceArchives.find(source => source.group === 'PFR');
     assert.equal(source.filename, 'PFR_CSV.zip');
     assert.match(source.url, /PFR_CSV\.zip$/);
     const bytes = await fs.readFile(path.join(cycleDir, 'nasr', source.filename));
     assert.equal(source.sha256, createHash('sha256').update(bytes).digest('hex'));
-    const originalRoutes = await fs.readFile(path.join(nav, 'preferred-routes.json'), 'utf8');
+    const originalRoutes = await fs.readFile(path.join(nav, manifest.products.find(p => p.id === 'preferred-routes').file), 'utf8');
     assert.deepEqual(JSON.parse(originalRoutes), buildNasrProducts(input).preferredRoutes);
     const snapshot = new Map(await Promise.all((await fs.readdir(nav)).map(async name =>
         [name, await fs.readFile(path.join(nav, name))] as const)));
@@ -594,6 +630,11 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     };
 
     const cifpFile = path.join(sourceDir, 'FAACIFP18'), cifp = await fs.readFile(cifpFile, 'utf8');
+    await fs.rm(cifpFile);
+    await assert.rejects(buildNasrData(options), /CIFP is required/);
+    await assertUnchanged();
+    await fs.writeFile(cifpFile, cifp);
+
     const truncatedCifp = cifp.split('\n').map(line => line.slice(6, 10) === 'KSFO' &&
         line.slice(13, 19).trim() === 'I28R' && line.slice(29, 34) === 'AXMUL' && line.slice(47, 49) === 'CF'
         ? line.slice(0, -1) : line).join('\n');

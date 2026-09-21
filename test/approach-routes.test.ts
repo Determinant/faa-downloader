@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
-import { buildApproachRoutes, loadApproachRoutes } from '../lib/approach-routes.ts';
+import { buildApproachRoutes } from '../lib/approach-routes.ts';
 
 // Public FAA CIFP 2609: KSFO I28R/R28L, KSBA I07 and KSNS I31, plus referenced fixes/navaids.
 const source = fs.readFileSync(new URL('./fixtures/approach-cifp.txt', import.meta.url), 'utf8');
@@ -29,15 +29,15 @@ test('FAA primary approach records retain published transitions, final, runway a
 test('altitude legs remain endpoint-free and continuation records do not become route legs', () => {
     const rnav = buildApproachRoutes(source, '2026-09-03').procedures.find(p => p.id === 'KSFO:R28L')!;
     assert.equal(rnav.final.filter(leg => leg.fix?.ident === 'DUYET').length, 1);
-    assert.deepEqual(rnav.final.find(leg => leg.path === 'CA'), { path: 'CA', missed: true, magneticCourse: 283.9 });
+    assert.deepEqual(rnav.final.find(leg => leg.path === 'CA'), { path: 'CA', id: 'R::040', gnssFms: 'A', qualifiers: 'JS', waypointDescriptor: '  M ', missed: true, magneticCourse: 283.9,
+        altitude: { restriction: '+', first: '01020', second: '' } });
     const noFix = source.split('\n').filter(line => !(line[12] === 'C' && line.slice(13, 18) === 'AXMUL')).join('\n');
     assert.equal(buildApproachRoutes(noFix, '2026-09-03').procedures.find(p => p.id === 'KSFO:I28R').final[1].fix, undefined);
 });
 
-test('wrong cycles are rejected and offline NASR builds can explicitly omit unavailable CIFP', async () => {
+test('wrong cycles and empty CIFP procedure files are rejected', async () => {
     assert.throws(() => buildApproachRoutes(source, '2026-08-06'), /header/);
     assert.throws(() => buildApproachRoutes(source, '2026-09-04'), /header/);
-    assert.equal(await loadApproachRoutes('2026-09-03', '/unused', '/nonexistent-cifp-fixture'), undefined);
 });
 
 test('malformed CIFP records fail instead of silently dropping an approach leg', () => {
@@ -161,4 +161,52 @@ test('explicit terminal NDB positions take precedence and remain scoped to their
     assert.deepEqual(faf(elsewhere + terminal('KMWH')), { ident: 'MW', coordinate: [-120, 48], role: 'FAF' });
     const noDb = elsewhere.split('\n').filter(line => line.slice(4, 6) !== 'DB').join('\n');
     assert.equal(faf(noDb), undefined, 'a terminal station at another airport is not a fallback');
+});
+
+const pathSource = fs.readFileSync(new URL('./fixtures/approach-paths-cifp.txt', import.meta.url), 'utf8');
+test('raw CIFP retains scoped station/localizer references, radial/range conditions and source sequences', () => {
+    const data = buildApproachRoutes(pathSource, '2026-09-03');
+    assert.equal(data.metadata.schemaVersion, 2);
+    assert.equal(data.procedures.length, 16);
+    assert.deepEqual(data.unavailable, []);
+    const final = (id: string) => data.procedures.find(p => p.id === id)!.final;
+    const willows = final('KWLW:S34').find(l => l.path === 'CF')!;
+    assert.equal(willows.reference!.ident, 'ILA');
+    assert.equal(willows.reference!.declination, 18);
+    assert.equal(willows.radial, 323);
+    assert.equal(willows.reference!.id, 'D:K2:ILA:');
+    assert.equal(data.procedures.find(p => p.id === 'KWLW:S34')!.magneticVariation, 14);
+    const radial = final('KLAX:I25L').find(l => l.path === 'VR')!;
+    assert.ok(radial.reference!.coordinate);
+    assert.ok(radial.reference!.declination !== undefined);
+    assert.ok(radial.radial !== undefined);
+    const range = final('KVNY:I16RZ').find(l => l.path === 'CD')!;
+    assert.equal(range.reference!.ident, 'VNY');
+    assert.ok(range.reference!.dmeCoordinate);
+    assert.equal(range.distance, 1.5);
+    const localizer = final('KNUQ:I32R').find(l => l.reference?.type === 'localizer')!.reference!;
+    assert.equal(localizer.ident, 'INUQ');
+    assert.equal(localizer.declination, 16);
+    assert.ok(localizer.coordinate);
+    const climb = final('KOAK:I28R').find(l => l.path === 'CA')!;
+    assert.equal(climb.altitude!.first, '01900');
+    assert.equal(climb.fix, undefined);
+    assert.match(climb.id, /^[A-Z]:[^:]*:\d{3}$/);
+    const missing = pathSource.split('\n').filter(l => !(l.slice(4, 6) === 'D ' && l.slice(13, 18).trim() === 'ILA')).join('\n');
+    const unresolved = buildApproachRoutes(missing, '2026-09-03').procedures.find(p => p.id === 'KWLW:S34')!.final.find(l => l.path === 'CF')!;
+    assert.equal(unresolved.reference!.id, willows.reference!.id);
+    assert.equal(unresolved.reference!.coordinate, undefined);
+    assert.equal(unresolved.reference!.declination, undefined);
+});
+
+test('unavailable main branches retain their source legs instead of silently disappearing', () => {
+    const main = source.split('\n').filter(l => l.slice(6, 10) === 'KSFO' && l.slice(13, 19).trim() === 'I28R' && l[19] !== 'A');
+    const data = buildApproachRoutes(source + '\n' + main.map(l => l.slice(0, 19) + 'Z' + l.slice(20)).join('\n'), '2026-09-03');
+    assert.ok(!data.procedures.some(p => p.id === 'KSFO:I28R'));
+    const unavailable = data.unavailable.find(p => p.id === 'KSFO:I28R')!;
+    assert.equal(unavailable.reason, 'multiple-main-branches');
+    assert.equal(unavailable.branches.length, 6);
+    assert.ok(unavailable.branches.every(b => b.legs.length && b.legs.every(l => l.id)));
+    const missing = buildApproachRoutes(source.split('\n').filter(l => !main.includes(l)).join('\n'), '2026-09-03');
+    assert.equal(missing.unavailable.find(p => p.id === 'KSFO:I28R')!.reason, 'missing-main-branch');
 });

@@ -182,6 +182,7 @@ export async function buildRouteHistory(options: BuildOptions) {
             + `${(bytes / 1_000_000).toFixed(1)} MB gzip; observed ${history.observationRange.firstSeen}`
             + ` through ${history.observationRange.lastSeen}`);
         return { count: history.pairs.length, routeCount: history.routeCount, bytes,
+            jsonSha256: createHash('sha256').update(JSON.stringify(document)).digest('hex'),
             uncompressedBytes: Buffer.byteLength(json), source,
             observationRange: history.observationRange };
     } finally {

@@ -19,10 +19,10 @@ along with the chart output.
 The public product is a single gzip-compressed JSON file:
 
 ```text
-dist/charts/YYYY-MM-DD/nav/route-history.json.gz
+dist/charts/YYYY-MM-DD/nav/route-history.json.<SHA256>.gz
 ```
 
-It appears in `nav/manifest.json` as `route-history`, with `compression: "gzip"`,
+Resolve the filename through `nav/manifest.json`; it appears there as `route-history`, with `compression: "gzip"`,
 `count` (directional endpoint pairs), `routeCount`, compressed `bytes`,
 `uncompressedBytes`, `source`, and `observationRange`. Consumers should download
 and cache the compressed bytes and decompress them as gzip before parsing JSON.

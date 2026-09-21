@@ -47,13 +47,15 @@ export function parseCsvRows(source: string): string[][] {
     return rows.filter(candidate => candidate.some(value => value.length > 0));
 }
 
-export function parseCsvRecords(source: string, label = 'CSV input'): CsvRecord[] {
+export function parseCsvRecords(source: string, label = 'CSV input', requiredHeaders: readonly string[] = []): CsvRecord[] {
     const rows = parseCsvRows(source);
     if (rows.length === 0) throw new Error(`${label} is empty`);
 
     const headers = rows[0].map(value => value.trim());
     if (headers.some(value => !value)) throw new Error(`${label} contains an empty header`);
     if (new Set(headers).size !== headers.length) throw new Error(`${label} contains duplicate headers`);
+    const missing = requiredHeaders.filter(header => !headers.includes(header));
+    if (missing.length) throw new Error(`${label} is missing ${missing.join(', ')}`);
 
     return rows.slice(1).map((values, index) => {
         if (values.length !== headers.length) {

@@ -233,11 +233,15 @@ test('local procedure build does not access the network', async () => {
         const catalog = await buildProcedureCatalog({ output: root, sourceXml: xmlPath });
         assert.equal(catalog.airports.length, 1);
         const written = JSON.parse(await fs.readFile(
-            path.join(root, 'charts', '2026-09-03', 'tpp', 'catalog.json'),
+            path.join(root, 'charts', '2026-09-03', 'tpp', JSON.parse(await fs.readFile(path.join(root, 'charts', '2026-09-03', 'tpp', 'manifest.json'), 'utf8')).file),
             'utf8'
         ));
         assert.equal(written.sourceXml.sha256.length, 64);
         assert.deepEqual(written.volumes, []);
+
+        await fs.writeFile(xmlPath, `\uFEFF${XML}`);
+        assert.equal((await buildProcedureCatalog({ output: root, sourceXml: xmlPath })).sourceXml.sha256, written.sourceXml.sha256,
+            'local BOM decoding must agree with online Response.text decoding');
 
         const outputDirectory = path.join(root, 'charts', '2026-09-03', 'tpp');
         await fs.rm(path.join(outputDirectory, 'manifest.json'));
@@ -247,6 +251,7 @@ test('local procedure build does not access the network', async () => {
             assert.equal((await fs.stat(outputDirectory)).mode & 0o777, 0o755);
         }
 
+        await fs.rm(path.join(outputDirectory, 'manifest.json'));
         await fs.writeFile(
             path.join(outputDirectory, 'catalog.json'),
             '{"schemaVersion":1,"airports":[],"volumes":[]}\n'
@@ -281,18 +286,23 @@ test('procedure builds index Alaska and Pacific filenames and refresh older cata
             const current = await buildProcedureCatalog({ output, sourceXml });
             assert.equal(current.generatedAt, catalog.generatedAt);
 
-            const catalogPath = path.join(cycleDirectory, 'tpp', 'catalog.json');
-            await fs.writeFile(catalogPath, JSON.stringify({ ...catalog, builderVersion: 1 }));
+            const manifestPath = path.join(cycleDirectory, 'tpp', 'manifest.json');
+            // Old unversioned catalogs are rebuilt into immutable generations.
+            await fs.rm(manifestPath);
+            await fs.writeFile(path.join(cycleDirectory, 'tpp', 'catalog.json'), JSON.stringify({ ...catalog, builderVersion: 1 }));
             const rebuilt = await buildProcedureCatalog({ output, sourceXml });
             assert.equal(rebuilt.builderVersion, catalog.builderVersion);
 
             // A missing active target must fail without replacing the published catalog.
+            const catalogPath = path.join(cycleDirectory, 'tpp', JSON.parse(await fs.readFile(manifestPath, 'utf8')).file);
             const previous = await fs.readFile(catalogPath, 'utf8');
+            const previousManifest = await fs.readFile(manifestPath, 'utf8');
             await fs.writeFile(sourceXml, XML.replace('volume="SW-2"', `volume="${volumeId}"`)
                 .replace('<bvpage>94</bvpage>', '<bvpage>999</bvpage>'));
             await assert.rejects(buildProcedureCatalog({ output, sourceXml }),
                 /KHWD: RNAV \(GPS\) RWY 28L \(05015R28L\.PDF\)/);
             assert.equal(await fs.readFile(catalogPath, 'utf8'), previous);
+            assert.equal(await fs.readFile(manifestPath, 'utf8'), previousManifest);
         }
     } finally {
         await fs.rm(root, { recursive: true, force: true });

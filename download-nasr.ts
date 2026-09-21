@@ -3,19 +3,23 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import { JSDOM } from 'jsdom';
 import {
     DEFAULT_DOWNLOAD_CONCURRENCY,
     mapWithConcurrency,
     parseConcurrency
 } from './lib/concurrency.ts';
-import { replaceDirectoryAtomically, sha256File, writeFileAtomic } from './lib/fs-utils.ts';
+import { sha256File, writeFileAtomic } from './lib/fs-utils.ts';
+import { publishGeneration, stageArtifact, stageJson } from './lib/publication.ts';
 import { downloadFile } from './lib/http-download.ts';
 import { buildNasrProducts, type NasrInput } from './lib/nasr.ts';
 import { buildRouteHistory } from './lib/route-history.ts';
 import { buildMagneticModel } from './lib/magnetic-model.ts';
-import { buildTerminalProcedures, type TerminalProcedureInput } from './lib/terminal-procedures.ts';
-import { loadApproachRoutes } from './lib/approach-routes.ts';
+import type { TerminalProcedureInput } from './lib/terminal-procedures.ts';
+import { buildTerminalBundle } from './lib/terminal-bundle.ts';
+import { acquireCifp } from './lib/cifp-source.ts';
+import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 
 const NASR_INDEX_URL =
@@ -116,7 +120,8 @@ terminal procedure sequences and CIFP approaches, NOAA WMM geographic magnetic v
 and Aeronautic AQ historical filed routes.
 Online builds download the current FAA cycle and AQ snapshot. Local builds use
 all eight CSV ZIP groups and include history only with --route-history-source.
-Include an extracted FAACIFP18 in --source-dir for local approach route data.
+Local builds require FAACIFP18 or the matching CIFP_YYMMDD.zip in --source-dir.
+Missing terminal sources fail the build and preserve the existing nav/ bundle.
 Replaces the cycle's complete nav/ directory after all products succeed.
 
 Options:
@@ -197,9 +202,9 @@ export async function downloadNasrFile(url: string, destination: string): Promis
 async function findLocalArchive(sourceDir: string, group: NasrGroup): Promise<string> {
     const entries = await fs.readdir(sourceDir, { withFileTypes: true });
     const pattern = new RegExp(`(?:^|_)${group}(?:_CSV)?\\.zip$`, 'i');
-    const match = entries.find(entry => entry.isFile() && pattern.test(entry.name));
-    if (!match) throw new Error(`No ${group} CSV ZIP found in ${sourceDir}`);
-    return path.join(sourceDir, match.name);
+    const matches = entries.filter(entry => entry.isFile() && pattern.test(entry.name));
+    if (matches.length !== 1) throw new Error(`Expected one ${group} CSV ZIP in ${sourceDir}; found ${matches.length}`);
+    return path.join(sourceDir, matches[0].name);
 }
 
 async function acquireArchives(
@@ -278,10 +283,6 @@ async function readNasrInput(sourceDirectory: string): Promise<NasrInput> {
     ]);
     return { airports, runways, runwayEnds, frequencies, fixes, navaids, airways, airwaySegments,
         preferredRoutes, preferredRouteSegments };
-}
-
-async function writeJson(filePath: string, value: unknown): Promise<void> {
-    await fs.writeFile(filePath, `${JSON.stringify(value)}\n`);
 }
 
 async function readTerminalInput(sourceDirectory: string): Promise<TerminalProcedureInput> {
@@ -365,6 +366,15 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
     const chartRoot = path.join(outputRoot, 'charts');
     await fs.mkdir(chartRoot, { recursive: true });
 
+    const release = await acquireChartBuildLock(path.join(chartRoot, '.navigation'));
+    try {
+        await buildNavigationCycle(buildOptions, outputRoot, chartRoot);
+    } finally {
+        await release();
+    }
+}
+
+async function buildNavigationCycle(buildOptions: Options, outputRoot: string, chartRoot: string): Promise<void> {
     const acquired = await acquireArchives(
         buildOptions,
         cycle => path.join(chartRoot, cycle, 'nasr')
@@ -378,26 +388,40 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
     try {
         await extractRequiredFiles(acquired.archives, sourceDirectory);
         const products = buildNasrProducts(await readNasrInput(sourceDirectory));
+        for (const [name, count] of [['airports', products.airports.features.length], ['fixes', products.fixes.features.length],
+            ['navaids', products.navaids.features.length], ['airways', products.airways.airways.length]] as const) {
+            if (!count) throw new Error(`NASR projection contains no ${name}; inspect source validation and exclusions before publishing`);
+        }
         if (products.effectiveDate !== acquired.cycle) {
             throw new Error(
                 `NASR page cycle ${acquired.cycle} does not match CSV effective date ${products.effectiveDate}`
             );
         }
-        const terminal = buildTerminalProcedures(await readTerminalInput(sourceDirectory), products.effectiveDate);
-        const approaches = await loadApproachRoutes(products.effectiveDate, path.join(cycleDirectory, 'nasr'), buildOptions.sourceDir);
+        const cifp = await acquireCifp(products.effectiveDate, path.join(cycleDirectory, 'nasr'), buildOptions.sourceDir);
+        const terminal = buildTerminalBundle(await readTerminalInput(sourceDirectory), cifp.text, products.effectiveDate, cifp.source);
         const magneticModel = await buildMagneticModel(products.effectiveDate);
         const magneticModelFile = 'magnetic-model.json';
 
-        await Promise.all([
-            writeJson(path.join(stagingDirectory, 'airports.geojson'), products.airports),
-            writeJson(path.join(stagingDirectory, 'fixes.geojson'), products.fixes),
-            writeJson(path.join(stagingDirectory, 'vfr-waypoints.geojson'), products.vfrWaypoints),
-            writeJson(path.join(stagingDirectory, 'navaids.geojson'), products.navaids),
-            writeJson(path.join(stagingDirectory, 'airways.json'), products.airways),
-            writeJson(path.join(stagingDirectory, 'preferred-routes.json'), products.preferredRoutes),
-            writeJson(path.join(stagingDirectory, 'terminal-procedures.json'), { ...terminal, ...(approaches ? { approaches } : {}) }),
-            writeJson(path.join(stagingDirectory, magneticModelFile), magneticModel)
-        ]);
+        const definitions = [
+            ['airports', 'airports.geojson', products.airports, products.airports.features.length],
+            ['fixes', 'fixes.geojson', products.fixes, products.fixes.features.length],
+            ['vfr-waypoints', 'vfr-waypoints.geojson', products.vfrWaypoints, products.vfrWaypoints.features.length],
+            ['navaids', 'navaids.geojson', products.navaids, products.navaids.features.length],
+            ['airways', 'airways.json', products.airways, products.airways.airways.length],
+            ['preferred-routes', 'preferred-routes.json', products.preferredRoutes, products.preferredRoutes.routes.length],
+            ['terminal-procedures', 'terminal-procedures.json', terminal, terminal.procedures.length],
+            ['magnetic-model', magneticModelFile, magneticModel, magneticModel.coefficients.length],
+            ['nasr-coverage', 'nasr-coverage.json', { effectiveDate: products.effectiveDate,
+                tables: products.coverage, excluded: products.excluded }, products.excluded.length],
+        ] as const;
+        const artifacts = await Promise.all(definitions.map(async ([id, name, data, count]) => ({
+            id, count, ...await stageJson(stagingDirectory, name, data),
+            ...(id === 'terminal-procedures' ? { schemaVersion: 2, coverage: terminal.coverage } : {}),
+            ...(id === 'vfr-waypoints' ? { classification: 'FIX_USE_CODE=VFR' } : {}),
+            ...(id === 'magnetic-model' ? { model: magneticModel.model, validFrom: magneticModel.validFrom,
+                validUntil: magneticModel.validUntil, source: magneticModel.source } : {}),
+        })));
+        const sourceArtifact = await stageArtifact(stagingDirectory, 'cifp-source.txt.gz', gzipSync(cifp.text));
 
         const history = await buildRouteHistory({
             outputRoot,
@@ -406,51 +430,37 @@ export async function buildNasrData(options: NasrBuildOptions): Promise<void> {
             sourceFile: buildOptions.routeHistorySource,
             offline: Boolean(buildOptions.sourceDir)
         });
+        let historyArtifact;
+        if (history) {
+            const file = path.join(stagingDirectory, 'route-history.json.gz');
+            historyArtifact = await stageArtifact(stagingDirectory, 'route-history.json.gz', await fs.readFile(file));
+            await fs.rm(file);
+        }
 
-        const sourceArchives = await Promise.all(GROUPS.map(async group => ({
+        const sourceArchives = [...await Promise.all(GROUPS.map(async group => ({
             group,
             url: acquired.urls[group],
             filename: path.basename(acquired.archives[group]),
             sha256: await sha256File(acquired.archives[group])
-        })));
+        }))), cifp.source];
         const manifest = {
-            schemaVersion: 1,
+            schemaVersion: 2,
             effectiveDate: products.effectiveDate,
             generatedAt: new Date().toISOString(),
             source: NASR_INDEX_URL,
             sourceArchives,
             products: [
-                { id: 'airports', file: 'airports.geojson', count: products.airports.features.length },
-                { id: 'fixes', file: 'fixes.geojson', count: products.fixes.features.length },
-                {
-                    id: 'vfr-waypoints',
-                    file: 'vfr-waypoints.geojson',
-                    count: products.vfrWaypoints.features.length,
-                    classification: 'FIX_USE_CODE=VFR'
-                },
-                { id: 'navaids', file: 'navaids.geojson', count: products.navaids.features.length },
-                { id: 'airways', file: 'airways.json', count: products.airways.airways.length },
-                { id: 'terminal-procedures', file: 'terminal-procedures.json', count: terminal.procedures.length },
-                {
-                    id: 'magnetic-model', file: magneticModelFile, count: magneticModel.coefficients.length,
-                    model: magneticModel.model, validFrom: magneticModel.validFrom, validUntil: magneticModel.validUntil,
-                    bytes: (await fs.stat(path.join(stagingDirectory, magneticModelFile))).size,
-                    sha256: await sha256File(path.join(stagingDirectory, magneticModelFile)),
-                    source: magneticModel.source
-                },
-                {
-                    id: 'preferred-routes',
-                    file: 'preferred-routes.json',
-                    count: products.preferredRoutes.routes.length
-                },
-                ...(history ? [{ id: 'route-history', file: 'route-history.json.gz', compression: 'gzip', ...history }] : [])
+                ...artifacts,
+                { id: 'cifp-source', ...sourceArtifact, compression: 'gzip',
+                    count: cifp.text.split(/\r?\n/).filter(Boolean).length,
+                    decodedSha256: cifp.source.recordFile.sha256 },
+                ...(history ? [{ id: 'route-history', compression: 'gzip', ...history, ...historyArtifact }] : [])
             ]
         };
-        await writeJson(path.join(stagingDirectory, 'manifest.json'), manifest);
-        await fs.chmod(stagingDirectory, 0o755);
         const navigationDirectory = path.join(cycleDirectory, 'nav');
-        await replaceDirectoryAtomically(stagingDirectory, navigationDirectory);
+        await publishGeneration(stagingDirectory, navigationDirectory, manifest);
         await pruneNasrCycles(chartRoot, buildOptions.retainCycles, acquired.cycle);
+        console.log(`Terminal coverage: ${JSON.stringify(terminal.coverage)}`);
         console.log(`NASR navigation data is ready under ${navigationDirectory}`);
     } finally {
         await fs.rm(sourceDirectory, { recursive: true, force: true });

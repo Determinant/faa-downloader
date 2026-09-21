@@ -58,7 +58,7 @@ test('retains source discontinuities and never invents associations for unassoci
     const body = result.procedures[0]!.routes[0]!;
     assert.deepEqual(body.airports, []);
     assert.equal(body.points[0]!.next, undefined);
-    assert.deepEqual(build({ departureRoutes: input.departureRoutes.split('\n')[0] + '\n' }).procedures[0]!.routes, []);
+    assert.deepEqual(build({ departureRoutes: input.departureRoutes.split('\n')[0] + '\n', departureAirports: input.departureAirports.split('\n')[0] + '\n' }).procedures[0]!.routes, []);
 });
 
 test('uncoded FAA procedures are not assigned made-up filing identifiers', () => {

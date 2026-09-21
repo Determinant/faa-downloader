@@ -1,4 +1,5 @@
-import { parseCsvRecords, type CsvRecord } from './csv.ts';
+import type { CsvRecord } from './csv.ts';
+import { readNasrTables } from './nasr-tables.ts';
 import { airportFrequencyIndex } from './airport-frequencies.ts';
 
 type Geometry = {
@@ -36,6 +37,8 @@ export type NasrInput = {
 };
 
 export type NasrProducts = {
+    coverage: Record<string, { sourceRows: number; exportedRows: number; excludedRows: number }>;
+    excluded: { table: string; row: number; reason: string; record: CsvRecord }[];
     effectiveDate: string;
     airports: NasrFeatureCollection;
     fixes: NasrFeatureCollection;
@@ -94,20 +97,6 @@ function assertUniqueIds(label: string, ids: string[]): void {
         if (seen.has(id)) throw new Error(`${label} contains duplicate feature ID: ${id}`);
         seen.add(id);
     }
-}
-
-function effectiveDate(records: CsvRecord[][]): string {
-    const values = new Set(
-        records.flatMap(group => group.map(record => present(record.EFF_DATE)).filter(Boolean))
-    );
-    if (values.size !== 1) {
-        throw new Error(`NASR inputs must have one effective date; found ${[...values].join(', ')}`);
-    }
-    const value = [...values][0];
-    if (!/^\d{4}\/\d{2}\/\d{2}$/.test(value)) {
-        throw new Error(`Unexpected NASR effective date: ${value}`);
-    }
-    return value.replaceAll('/', '-');
 }
 
 function pointFeature(
@@ -294,39 +283,34 @@ function normalizePreferredRoutes(
 }
 
 export function buildNasrProducts(input: NasrInput): NasrProducts {
-    const airportRows = parseCsvRecords(input.airports, 'APT_BASE.csv');
-    const runwayRows = parseCsvRecords(input.runways, 'APT_RWY.csv');
-    const runwayEndRows = parseCsvRecords(input.runwayEnds, 'APT_RWY_END.csv');
-    const frequencyRows = parseCsvRecords(input.frequencies, 'FRQ.csv');
-    if (frequencyRows.length === 0) throw new Error('FRQ.csv contains no frequency records');
-    for (const field of ['SERVICED_FACILITY', 'SERVICED_SITE_TYPE', 'SERVICED_STATE',
-        'SERVICED_COUNTRY', 'FACILITY_TYPE', 'FREQ', 'FREQ_USE']) {
-        if (!Object.hasOwn(frequencyRows[0], field)) throw new Error(`FRQ.csv is missing ${field}`);
-    }
-    const fixRows = parseCsvRecords(input.fixes, 'FIX_BASE.csv');
-    const navaidRows = parseCsvRecords(input.navaids, 'NAV_BASE.csv');
-    const airwayRows = parseCsvRecords(input.airways, 'AWY_BASE.csv');
-    const segmentRows = parseCsvRecords(input.airwaySegments, 'AWY_SEG_ALT.csv');
-    const preferredRouteRows = parseCsvRecords(input.preferredRoutes, 'PFR_BASE.csv');
-    const preferredSegmentRows = parseCsvRecords(input.preferredRouteSegments, 'PFR_SEG.csv');
-    const effective = effectiveDate([
-        airportRows,
-        runwayRows,
-        runwayEndRows,
-        frequencyRows,
-        fixRows,
-        navaidRows,
-        airwayRows,
-        segmentRows,
-        preferredRouteRows,
-        preferredSegmentRows
-    ]);
-    const sourceDate = effective.replaceAll('-', '/');
-    for (const row of frequencyRows) {
-        if (present(row.EFF_DATE) !== sourceDate) {
-            throw new Error('FRQ record has a missing or mismatched effective date');
-        }
-    }
+    const source = readNasrTables(input), { tables, exclude } = source, effective = source.effectiveDate;
+    const points = (rows: CsvRecord[], identity: string[]) => rows.filter(row => {
+        const reason = identity.some(field => !present(row[field])) ? 'missing-identity'
+            : !pointFeature('validation', row, {}) ? 'unavailable-coordinates' : undefined;
+        if (reason) exclude(row, reason);
+        return !reason;
+    });
+    const airportRows = points(tables.airports, ['SITE_NO', 'SITE_TYPE_CODE']);
+    const fixRows = points(tables.fixes, ['FIX_ID']);
+    const navaidRows = points(tables.navaids, ['NAV_ID', 'NAV_TYPE']);
+    const airportKeys = new Set(airportRows.map(row => `${row.SITE_NO.trim()}:${row.SITE_TYPE_CODE.trim()}`));
+    const runwayRows = tables.runways.filter(row => {
+        const valid = !!present(row.RWY_ID) && airportKeys.has(`${row.SITE_NO.trim()}:${row.SITE_TYPE_CODE.trim()}`);
+        if (!valid) exclude(row, 'unavailable-airport-or-runway-identity');
+        return valid;
+    });
+    const runwayKeys = new Set(runwayRows.map(row => `${row.SITE_NO.trim()}:${row.SITE_TYPE_CODE.trim()}:${row.RWY_ID.trim()}`));
+    const runwayEndRows = tables.runwayEnds.filter(row => {
+        const valid = !!present(row.RWY_END_ID) && runwayKeys.has(`${row.SITE_NO.trim()}:${row.SITE_TYPE_CODE.trim()}:${row.RWY_ID.trim()}`);
+        if (!valid) exclude(row, 'unavailable-runway-or-end-identity');
+        return valid;
+    });
+    const { frequencies: frequencyRows, airways: airwayRows, airwaySegments: segmentRows,
+        preferredRoutes: preferredRouteRows, preferredRouteSegments: preferredSegmentRows } = tables;
+    const airwayKey = (row: CsvRecord) => ['REGULATORY', 'AWY_LOCATION', 'AWY_ID'].map(field => row[field].trim()).join(':');
+    const airwayKeys = new Set(airwayRows.map(airwayKey));
+    for (const row of airwayRows) if (!present(row.AWY_ID)) throw new Error('AWY_BASE.csv has a missing airway identity');
+    for (const row of segmentRows) if (!airwayKeys.has(airwayKey(row))) throw new Error('AWY segment has no parent airway');
 
     const runwayEnds = new Map<string, Record<string, unknown>[]>();
     for (const row of runwayEndRows) {
@@ -367,7 +351,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
         runways.set(facilityKey, values);
     }
 
-    const frequencies = airportFrequencyIndex(airportRows, frequencyRows);
+    const frequencies = airportFrequencyIndex(airportRows, frequencyRows, exclude);
     const airports = airportRows.flatMap(row => {
         const siteNumber = present(row.SITE_NO);
         const facilityType = present(row.SITE_TYPE_CODE);
@@ -475,6 +459,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
     });
 
     return {
+        coverage: source.coverage(), excluded: source.excluded,
         effectiveDate: effective,
         airports: collection(effective, airports, 'airports'),
         fixes: collection(effective, fixes, 'fixes'),

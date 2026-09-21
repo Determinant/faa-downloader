@@ -1,0 +1,243 @@
+{
+  "effectiveDate": "2026-09-03",
+  "entries": [
+    {
+      "airport": "K50",
+      "title": "RNAV (GPS)-A",
+      "routeId": "K50:RNVA",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/11772RA.PDF",
+        "comparedFixes": "REPPO / RW35 / BAHMM"
+      }
+    },
+    {
+      "airport": "KPNS",
+      "title": "VOR RWY 08",
+      "routeId": "KPNS:V08",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00318V8.PDF",
+        "comparedFixes": "NUN / RW08 / NUN"
+      }
+    },
+    {
+      "airport": "KSMX",
+      "title": "VOR RWY 12",
+      "routeId": "KSMX:V12",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00379V12.PDF",
+        "comparedFixes": "GLJ / RW12 / MQO"
+      }
+    },
+    {
+      "airport": "KTBN",
+      "title": "VOR RWY 33",
+      "routeId": "KTBN:V33",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/05093V33.PDF",
+        "comparedFixes": "HAUKE / WOVNU / REBBS"
+      }
+    },
+    {
+      "airport": "KPMD",
+      "title": "VOR OR TACAN Z RWY 25",
+      "routeId": "KPMD:S25",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00310VTZ25.PDF",
+        "comparedFixes": "THERO / EKOTY / PMD"
+      }
+    },
+    {
+      "airport": "KSBD",
+      "title": "ILS OR LOC Z RWY 06",
+      "routeId": "KSBD:I06",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00547ILZ6.PDF",
+        "comparedFixes": "PETIS / RW06 / PDZ"
+      }
+    },
+    {
+      "airport": "KSLE",
+      "title": "ILS OR LOC Z RWY 31",
+      "routeId": "KSLE:I31",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00361ILZ31.PDF",
+        "comparedFixes": "LOTKE / RW31 / ARTTY"
+      }
+    },
+    {
+      "airport": "PASD",
+      "title": "NDB RWY 32",
+      "routeId": "PASD:Q32",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/06537N32.PDF",
+        "comparedFixes": "JOTOK / RW32 / HBT"
+      }
+    },
+    {
+      "airport": "PGSN",
+      "title": "NDB Z RWY 07",
+      "routeId": "PGSN:Q07-Z",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/06293NZ7.PDF",
+        "comparedFixes": "SHAKA / SN / SHAKA"
+      }
+    },
+    {
+      "airport": "PGUM",
+      "title": "NDB RWY 24R",
+      "routeId": "PGUM:Q24R",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/02146N24R.PDF",
+        "comparedFixes": "MOGOE / NOVKE / ADAYI"
+      }
+    },
+    {
+      "airport": "PTKK",
+      "title": "NDB RWY 22",
+      "routeId": "PTKK:Q22",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/02655N22.PDF",
+        "comparedFixes": "ZELIB / WIROS / DAMAY"
+      }
+    },
+    {
+      "airport": "KNOW",
+      "title": "COPTER RNAV (GPS) RWY 26",
+      "routeId": "KNOW:R26",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00653COPTERR26.PDF",
+        "comparedFixes": "GOLTE / RW26 / KACNE"
+      }
+    },
+    {
+      "airport": "KWAY",
+      "title": "COPTER RNAV (GPS) Y RWY 09",
+      "routeId": "KWAY:R09-Y",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/10357COPTERRY9.PDF",
+        "comparedFixes": "ULUFY / RW09 / TIKKU"
+      }
+    },
+    {
+      "airport": "W99",
+      "title": "COPTER RNAV (GPS) X RWY 31",
+      "routeId": "W99:R31-X",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/06500COPTERRX31.PDF",
+        "comparedFixes": "CAPIV / RW31 / ESL"
+      }
+    },
+    {
+      "airport": "KAST",
+      "title": "COPTER LOC RWY 26",
+      "routeId": "KAST:L26",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00024COPTERL26.PDF",
+        "comparedFixes": "UWYUK / RW26 / AST"
+      }
+    },
+    {
+      "airport": "KHUM",
+      "title": "COPTER VOR RWY 12",
+      "routeId": "KHUM:S12",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/05037COPTERV12.PDF",
+        "comparedFixes": "SEYVO / RW12 / BOURG"
+      }
+    },
+    {
+      "airport": "KEWR",
+      "title": "COPTER ILS Y OR LOC Y RWY 04L",
+      "routeId": "KEWR:I04LY",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00285COPTERIYLY4L.PDF",
+        "comparedFixes": "RODII / RW04L / FLYRS"
+      }
+    },
+    {
+      "airport": "KMKT",
+      "title": "COPTER ILS Z OR LOC Z RWY 33",
+      "routeId": "KMKT:I33-Z",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/05755COPTERIZLZ33.PDF",
+        "comparedFixes": "RATEL / RW33 / ANIMY"
+      }
+    },
+    {
+      "airport": "KOTH",
+      "title": "COPTER ILS Y OR LOC Y RWY 05",
+      "routeId": "KOTH:I05-Y",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00929COPTERIYLY5.PDF",
+        "comparedFixes": "EMIRE / RW05 / YICBU"
+      }
+    },
+    {
+      "airport": "KRST",
+      "title": "COPTER ILS Y OR LOC Y RWY 31",
+      "routeId": "KRST:I31-Y",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/05041COPTERIYLY31.PDF",
+        "comparedFixes": "MINGO / RW31 / RST"
+      }
+    },
+    {
+      "airport": "KTEB",
+      "title": "COPTER ILS Y OR LOC Y RWY 06",
+      "routeId": "KTEB:I06-Y",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00890COPTERIYLY6.PDF",
+        "comparedFixes": "TORBY / RW06 / UBUCK"
+      }
+    },
+    {
+      "airport": "KMSP",
+      "title": "ILS RWY 35 (SA CAT I)",
+      "routeId": "KMSP:I35-Z",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00264I35SAC1.PDF",
+        "comparedFixes": "LORAH / RW35 / LYDIA"
+      }
+    },
+    {
+      "airport": "KDFW",
+      "title": "ILS V RWY 13R (CONVERGING)",
+      "routeId": "KDFW:I13RV",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/06039IV13RCON.PDF",
+        "comparedFixes": "HODAX / RW13R / SLOTT"
+      }
+    },
+    {
+      "airport": "KMSP",
+      "title": "ILS V RWY 35 (CONVERGING)",
+      "routeId": "KMSP:I35-V",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00264IV35CON.PDF",
+        "comparedFixes": "LORAH / RW35 / LYDIA"
+      }
+    },
+    {
+      "airport": "KPHL",
+      "title": "ILS V RWY 09R (CONVERGING)",
+      "routeId": "KPHL:I09RV",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00320IV9RCON.PDF",
+        "comparedFixes": "KELEE / RW09R / OOD"
+      }
+    },
+    {
+      "airport": "KPHL",
+      "title": "ILS V RWY 17 (CONVERGING)",
+      "routeId": "KPHL:I17-V",
+      "evidence": {
+        "plateUrl": "https://aeronav.faa.gov/d-tpp/2609/00320IV17CON.PDF",
+        "comparedFixes": "HYILL / RW17 / ARD"
+      }
+    }
+  ],
+  "sources": {
+    "cifpSha256": "fbea2179a990e1d371d77439961d137e83252582b3c67b6ec85b8d9d11c76cad",
+    "chartXmlSha256": "dfb85069a1b3a64231d09397b707b386ccd1f96aedb0ea923be51014df1ed657"
+  }
+}

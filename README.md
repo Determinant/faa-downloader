@@ -434,7 +434,7 @@ and JSON for route records.
 `terminal-procedures`) preserves assigned FAA computer identifiers, served airports,
 body/transition routes, airport/runway associations, ordered typed points, ICAO
 regions and explicit next-point links. Empty BASE tables fail the build before
-replacing `nav/`. `NOT ASSIGNED` procedures are excluded; empty route/airport
+committing the navigation manifest. `NOT ASSIGNED` procedures are excluded; empty route/airport
 associations remain empty, never inferred. These are **waypoint sequences**, not
 ARINC flight-guidance legs: no vector/turn geometry or altitude/speed constraints
 are synthesized. Cache the national file once per export. Rebuild with
@@ -442,22 +442,38 @@ are synthesized. Cache the national file once per export. Rebuild with
 plate books do not need rebuilding. Local `--source-dir` builds now also require
 the `DP` and `STAR` CSV ZIPs.
 
-Online navigation builds also fetch the matching [FAA CIFP](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/)
+All navigation builds require the matching [FAA CIFP](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/cifp/)
 edition and add `approaches: ZLayerApproachRoutes` to `terminal-procedures.json`.
+Online builds download CIFP; local builds require `FAACIFP18` or the matching
+`CIFP_YYMMDD.zip` in `--source-dir`. Missing input fails before committing the navigation manifest.
 The ARINC 424-18 parser checks the file header cycle, record lengths and coordinate
 ranges before publication, and retains airport-scoped
 published entry transitions, common/final and missed legs, fix/runway coordinates,
 fix roles, RF centers, AF DME antenna centers and radii (`radiusNm`), and hold direction.
+The additive `metadata.schemaVersion: 2` export also preserves source branch/sequence
+IDs, waypoint descriptors, altitude conditions, theta/rho, and scoped recommended
+navaid/localizer references with station declination and separate VOR/DME positions.
+ILS references also retain separate DME antenna coordinates from an unambiguous
+airport-associated D record matched by airport, ICAO region and identifier.
+Missing or conflicting DME records never fall back to the localizer position.
 Airport magnetic variation and explicitly true courses retain their reference.
 Holding inbound courses, distance legs and timed legs (`holdMinutes`) are retained;
 time is never treated as distance. Missed segments keep their path terminators,
 including altitude-terminated climbs without fixed endpoints.
 AF radii come from the coded rho field, separately from leg distance; the center
 uses the DME antenna coordinates even when offset from the VOR. Missing fixes and variable-termination
-legs have no invented coordinates. Ambiguous main branches are omitted. For a
-local build, put the matching extracted `FAACIFP18` in `--source-dir`; omission
-keeps an older-style SID/STAR-only export. Republish `nav/` to enable approach
-entry selection in clients. Chart/PDF builds need no change.
+legs have no invented coordinates. Unresolved references retain their identity.
+Multiple or missing main branches are retained in the `unavailable` ledger with
+their source legs instead of disappearing from the export. For a
+local build, use the matching extracted `FAACIFP18` or dated CIFP ZIP. The same
+parser also exports airport-specific SID/STAR branches as `codedProcedures`,
+separately from the existing NASR filing topology. Excluded NASR records and
+unresolved references retain explicit diagnostics, and source/exported record
+counts must reconcile before publication. The manifest records CIFP provenance,
+terminal-file bytes/hash and coverage. Navigation builds are serialized through
+publication and pruning. Republish the complete `nav/` bundle and manifest to
+enable approach entry selection in clients. Chart/PDF builds need no change.
+See [terminal data architecture, review and verification](docs/terminal-data.md).
 
 `airports.geojson` includes the FAA location and ICAO identifiers, facility type,
 public/private use, status, elevation, tower type, chart name, NOTAM identifier, and a
@@ -506,10 +522,33 @@ lookup. Consumers should map ICAO airport codes to FAA identifiers using the air
 data and display the published conditions alongside each result. The full PFR source
 ZIP, including its layout documentation and `PFR_RMT_FMT.csv`, is retained in `nasr/`.
 
-`manifest.json` records the effective cycle, source URLs, source ZIP checksums, output
-counts, and classification rule. Existing source ZIPs are reused; the `nav/` output is
-replaced atomically only after all groups parse successfully. The current and previous
-NASR cycles are retained by default.
+`nav/manifest.json` uses schema version 2. It records source identities, wire SHA-256,
+UTF-8 `JSON.stringify(parsedDocument)` SHA-256, byte sizes, counts, and terminal
+coverage. Product filenames include their wire digest; the short names in this
+section identify products, not paths clients should construct. Always resolve files
+through the manifest. The builder publishes immutable files before atomically
+replacing this single manifest. Prior same-cycle generations stay readable until
+cycle retention removes the edition. Upload the files before uploading the manifest;
+an external directory sync is not the publisher's atomic commit.
+
+All required NASR tables validate headers, nonempty input and every row's edition.
+`nasr-coverage` accounts for each table's source/export/exclusion rows and retains
+excluded records with reasons. Empty core map products cannot publish. The current
+and previous NASR cycles are retained by default.
+
+After rebuilding navigation, run `npm run build:procedures` for the same edition.
+The TPP catalog publishes associations tied to the exact terminal JSON and FAA XML
+identities, including unmatched charts and explicit parallel-runway choices. PDF page
+indexes are reused when source bytes and books are unchanged. Reviewed exceptions
+live in `data/approach-associations/YYYY-MM-DD.json`, with source hashes and plate/fix
+evidence; they never carry forward to another edition automatically. Standalone plate
+builds still work before navigation is available, with association status unavailable.
+The TPP manifest also uses immutable filenames and a single manifest commit.
+
+Run `npm run build:supplements` once to publish schema version 2 supplement coverage.
+It records the full expected FAA index even for a partial regional build. A region
+missing an expected book cannot be saved as complete. Raster chart products and PDF
+books do not need to be regenerated for these contract updates.
 
 Airway `segments[]` preserve FAA `AWY_SEG_GAP_FLAG` as boolean `gap`. Consumers
 must not connect across a segment with `gap: true`, or assume connectivity from
@@ -648,7 +687,7 @@ npm run build:nav -- --source-dir=/path/to/zips --cycle=YYYY-MM-DD --route-histo
 ~~~
 
 Without that option, local builds omit history. Normal online builds fail on source
-or data errors before replacing `nav/`, preserving the previously published files.
+or data errors before committing the navigation manifest, preserving the previously published files.
 
 ## Repository layout
 

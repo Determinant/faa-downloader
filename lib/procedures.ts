@@ -3,6 +3,7 @@ import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
 import { JSDOM } from 'jsdom';
 
 export const FAA_DTPP_BASE_URL = 'https://aeronav.faa.gov/d-tpp/';
+// PDF page-index version; publication and association contracts version separately.
 export const PROCEDURE_BUILDER_VERSION = 2;
 
 export type ProcedureKind =
@@ -89,6 +90,7 @@ export type ProcedureCatalog = {
     };
     volumes: ProcedureVolume[];
     airports: ProcedureAirport[];
+    associations?: import('./approach-associations.ts').ApproachAssociations;
 };
 
 export type IndexedPdfPage = {

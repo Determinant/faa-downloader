@@ -27,9 +27,9 @@ export async function buildChartSupplements(options: Options): Promise<Supplemen
     const catalogFile = path.join(directory, 'catalog.json');
     const receiptFile = path.resolve(options.output, 'supplements', `${revision}.build.json`);
     const catalog: SupplementCatalog = {
-        schemaVersion: 1, builderVersion: SUPPLEMENT_BUILDER_VERSION,
+        schemaVersion: 2, builderVersion: SUPPLEMENT_BUILDER_VERSION,
         effectiveDate: '', expirationDate: '', generatedAt: new Date().toISOString(),
-        sourceXml: { url: '', sha256: '' }, volumes: [], airports: [],
+        sourceXml: { url: '', sha256: '' }, volumes: [], airports: [], expected: [],
     };
     const volumes: Array<Omit<SupplementVolume, 'pageCount'> & { file: string }> = [];
     for (const region of SUPPLEMENT_REGIONS) {
@@ -64,6 +64,7 @@ export async function buildChartSupplements(options: Options): Promise<Supplemen
                 catalog.effectiveDate = index.effectiveDate;
                 catalog.expirationDate = index.expirationDate;
                 catalog.sourceXml = { url, sha256: createHash('sha256').update(xml).digest('hex') };
+                catalog.expected = index.airports.map(({ faaId, state, volumeId, printedPage }) => ({ faaId, state, volumeId, printedPage }));
                 inputSha256 = buildFingerprint({
                     schemaVersion: catalog.schemaVersion, builderVersion: SUPPLEMENT_BUILDER_VERSION,
                     revision, sourceXml: catalog.sourceXml,
