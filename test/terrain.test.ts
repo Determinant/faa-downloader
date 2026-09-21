@@ -259,15 +259,16 @@ test('geographic GDAL conversion rounds metres upward and preserves negative/mis
     assert.throws(() => encodeTerrainArchive(zoom, x + 1, y, grids));
 });
 
-test('4.9-arc-second cells preserve narrow source peaks and have the same angular spacing at all latitudes', gdalTest, async t => {
+test('2.45-arc-second cells preserve narrow source peaks and have the same angular spacing at all latitudes', gdalTest, async t => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'terrain-peak-test-'));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
-    assert.equal(terrainSpacing(TERRAIN_MAX_ZOOM) * 3600, 4.9);
+    assert.equal(terrainSpacing(TERRAIN_MAX_ZOOM) * 3600, 2.45);
+    for (let z = 1; z <= 10; z++) assert.equal(terrainSpacing(z), 4.9 / 3600 * 2 ** (10 - z), 'existing grid levels remain aligned');
     for (const y of [60, 150, 400]) {
-        const bounds = terrainGridBounds(10, 164, y);
-        assert.ok(Math.abs((bounds[3] - bounds[1]) / 512 * 3600 - 4.9) < 1e-10);
+        const bounds = terrainGridBounds(TERRAIN_MAX_ZOOM, 328, y);
+        assert.ok(Math.abs((bounds[3] - bounds[1]) / 512 * 3600 - 2.45) < 1e-10);
     }
-    const zoom = 10, x = 164, y = 150, bounds = terrainGridBounds(zoom, x, y);
+    const zoom = TERRAIN_MAX_ZOOM, x = 328, y = 300, bounds = terrainGridBounds(zoom, x, y);
     const step = terrainSpacing(zoom), left = bounds[0] + 100 * step, top = bounds[3] - 100 * step;
     await raster(root, 'peak', bounds, (lon, lat) => lon >= left && lon < left + step / 2 &&
         lat <= top && lat > top - step / 2 ? 9321.25 : 10.1, 1024);
@@ -275,6 +276,7 @@ test('4.9-arc-second cells preserve narrow source peaks and have the same angula
         [path.join(root, 'peak.tif')], root);
     assert.equal(grids[0].readInt16LE((100 * 256 + 100) * 2), 9322, 'a single fine source peak survives aggregation');
     assert.equal(grids[0].readInt16LE(0), 11);
+    assert.equal(encodeTerrainArchive(zoom, x, y, grids).readUInt32LE(8), 11);
 });
 
 test('mixed-resolution mosaics preserve single-cell peaks from the finer raster', gdalTest, async t => {
@@ -324,7 +326,9 @@ test('every overview retains a native peak and builds after the finest level', g
         bounds: [[left, top - step, left + step, top]] }],
     { sourceDirectory: dir, logger: { log: s => logs.push(s), warn: s => logs.push(s) } });
     const archives = await readArchives(root, manifest);
-    for (let zoom = 1; zoom <= 10; zoom++) {
+    assert.equal(manifest.maxZoom, 11);
+    assert.equal(manifest.resolutionArcSeconds, 2.45);
+    for (let zoom = 1; zoom <= TERRAIN_MAX_ZOOM; zoom++) {
         let maximum = TERRAIN_NODATA;
         for (const archive of archives.filter(a => a.zoom === zoom)) {
             const bytes = await fs.readFile(path.join(root, 'charts/terrain', archive.file));
@@ -342,8 +346,8 @@ test('every overview retains a native peak and builds after the finest level', g
     }
     const rendering = logs.filter(line => /rendering \d+ source rasters/.test(line));
     assert.equal(rendering.length, 1, 'only the finest level reads source rasters');
-    assert.match(rendering[0], /batch 1\/10, level 10/);
-    assert.ok(logs.some(line => /batch 10\/10, level 1: complete/.test(line)), 'small builds report progress too');
+    assert.match(rendering[0], /batch 1\/11, level 11/);
+    assert.ok(logs.some(line => /batch 11\/11, level 1: complete/.test(line)), 'small builds report progress too');
 });
 
 test('unchanged USGS files require only catalog requests; revisions rebuild affected batches and repair metadata', gdalTest, async t => {
@@ -456,20 +460,25 @@ test('local GeoTIFF inputs record datums, preserve missing samples and recover f
 
 test('date-line envelopes select both sides without covering the globe', () => {
     const blocks = terrainBlocks([{ id: 'islands', title: 'Islands', bounds: [[179.9, 51, 180, 51.01], [-180, 51, -179.9, 51.01]] }]);
-    assert.ok(blocks.some(a => a.zoom === 10 && a.x === 0));
-    assert.ok(blocks.some(a => a.zoom === 10 && a.x === ((terrainGridSize(10).columns - 1) & ~1)));
+    for (const zoom of [10, 11]) {
+        assert.ok(blocks.some(a => a.zoom === zoom && a.x === 0));
+        assert.ok(blocks.some(a => a.zoom === zoom && a.x === ((terrainGridSize(zoom).columns - 1) & ~1)));
+    }
     assert.ok(blocks.length < 100);
     assert.equal(new Set(blocks.map(a => `${a.zoom}/${a.x}/${a.y}`)).size, blocks.length);
 });
 
-test('partial eastern edge tiles retain valid cells and pad the rest with NoData', gdalTest, async t => {
+for (const zoom of [10, 11]) test(`level ${zoom} eastern edge tiles retain valid cells and pad the rest with NoData`, gdalTest, async t => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'terrain-edge-test-'));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
-    const zoom = 10, x = (terrainGridSize(zoom).columns - 1) & ~1, y = 100;
+    const x = (terrainGridSize(zoom).columns - 1) & ~1, y = 100;
     const bounds = terrainGridBounds(zoom, x, y);
     await raster(root, 'edge', bounds, () => 20.5);
     const grids = await renderTerrainBatch({ zoom, x, y, span: 2, blocks: [{ zoom, x, y }] },
         [path.join(root, 'edge.tif')], root);
-    assert.equal(grids[1].readInt16LE((128 * 256 + 1) * 2), 21);
-    assert.equal(grids[1].readInt16LE((128 * 256 + 200) * 2), TERRAIN_NODATA);
+    const columns = Math.ceil(360 / terrainSpacing(zoom)) - x * 256;
+    const sample = (column: number) => grids[Math.floor(column / 256)].readInt16LE((128 * 256 + column % 256) * 2);
+    assert.equal(sample(1), 21);
+    assert.equal(sample(columns - 2), 21);
+    for (let column = columns; column < 512; column++) assert.equal(sample(column), TERRAIN_NODATA);
 });

@@ -1,8 +1,8 @@
 /** Keep geometry synchronized with ZLayer packages/contracts/src/terrain.ts.
- * Geographic cells are anchored at (-180, 90); zoom 10 is exactly 4.9 arc-seconds.
+ * Geographic cells are anchored at (-180, 90); zoom 11 is exactly 2.45 arc-seconds.
  * Coarser levels double that spacing. Tile and archive edges never shift the grid. */
-export const TERRAIN_RESOLUTION_ARC_SECONDS = 4.9;
-export const TERRAIN_MAX_ZOOM = 10;
+export const TERRAIN_RESOLUTION_ARC_SECONDS = 2.45;
+export const TERRAIN_MAX_ZOOM = 11;
 export const TERRAIN_NODATA = -32768;
 export const terrainSpacing = (zoom: number) => TERRAIN_RESOLUTION_ARC_SECONDS / 3600 * 2 ** (TERRAIN_MAX_ZOOM - zoom);
 export const terrainGridSize = (zoom: number) => ({

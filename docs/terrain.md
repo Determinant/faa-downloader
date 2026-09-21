@@ -3,7 +3,7 @@
 `npm run build:terrain` builds elevation packages directly from the USGS
 [3D Elevation Program (3DEP)](https://www.usgs.gov/3d-elevation-program), using the
 current 1-arc-second (approximately 30-metre) seamless DEM GeoTIFFs. Delivery
-cells have exactly **4.9 arc-seconds** of latitude and longitude spacing; coarser
+cells have exactly **2.45 arc-seconds** of latitude and longitude spacing; coarser
 overviews double that spacing at each level. Elevations use compressed signed
 16-bit integer metres. USGS makes
 these products available without use restrictions. Published packages retain the
@@ -34,11 +34,12 @@ two sides of the date line. Custom region files use:
 [{"id":"sample","title":"Sample","bounds":[[-122.01,37.01,-122.009,37.011]]}]
 ```
 
-The default envelopes produce **6,834 archives**, containing about **3.3 GiB** of
-uncompressed delivery grids before gzip (including all overviews). The previous
-10-metre/float32 Mercator build needed 633.8 GiB before gzip. These are geometry
-estimates, not compressed deployment sizes. Start with selected regions to measure
-actual compression. Source GeoTIFF storage is additional; the 30-metre source has
+The default envelopes produce **25,956 archives**, containing about **12.7 GiB** of
+uncompressed delivery grids before gzip (including all overviews). The full national
+build verified on 2026-09-21 used **2.91 GB compressed**, including spatial indexes,
+provenance, and the manifest. Compression depends on the source data; retained older
+versions add to the deployment's disk usage. `--estimate` reports uncompressed grid
+geometry, not compressed deployment size. Source GeoTIFF storage is additional; the 30-metre source has
 roughly one ninth as many samples as the previous 10-metre source. Online builds
 report the selected source inventory's total byte size before downloading. `--estimate`
 reports delivery geometry only; it does not query USGS, download, or write files.
@@ -84,7 +85,7 @@ product; their content hashes detect changes. `--output=DIR` changes the build r
 
 Numeric source elevations are mosaicked and reduced using GDAL's **maximum**
 resampler onto an EPSG:4326 geographic grid anchored at longitude -180, latitude
-90. Level 10 has 4.9-arc-second cells; levels 9 through 1 double cell spacing at
+90. Level 11 has 2.45-arc-second cells; levels 10 through 1 double cell spacing at
 each step. These levels are geographic overview levels, not Web Mercator zooms.
 The same angular spacing applies in Alaska and the contiguous states.
 
@@ -95,7 +96,7 @@ neither an adjacent coarser raster nor averaged overviews remove source peaks
 before the maximum reduction. This preserves peaks available in the 30-metre source; it
 does not recover features absent from that source or establish Garmin/SVT accuracy.
 Processing groups up to 8×8 native tiles per GDAL call and extracts 2×2 archives.
-GDAL runs only at the finest, 4.9-arc-second level. Coarser levels take the maximum
+GDAL runs only at the finest, 2.45-arc-second level. Coarser levels take the maximum
 of each 2×2 group of child cells, preserving peaks without rereading the source
 GeoTIFFs. Missing child archives remain NoData, so overview coverage follows the
 packaged finest-level coverage. Completed batches are reported immediately;
@@ -143,8 +144,8 @@ product independently of FAA chart cycles; existing offline selections need
 ## Delivery format, version 2
 
 The manifest and indexes declare `schemaVersion: 2`, `encoding: int16-metres-gzip`,
-`grid: EPSG:4326`, `resolutionArcSeconds: 4.9`, `minZoom: 1`, and `maxZoom: 10`.
-At level `z`, cell spacing is `4.9 / 3600 * 2 ** (10 - z)` degrees in both axes.
+`grid: EPSG:4326`, `resolutionArcSeconds: 2.45`, `minZoom: 1`, and `maxZoom: 11`.
+At level `z`, cell spacing is `2.45 / 3600 * 2 ** (11 - z)` degrees in both axes.
 Tile `(x, y)` starts at `(-180 + x * 256 * spacing, 90 - y * 256 * spacing)`.
 The last tiles are padded where the global extent does not divide into whole tiles.
 
@@ -159,18 +160,23 @@ streams of 65,536 little-endian int16 metre values. Missing samples are -32768.
 Archives are bounded to 2 MiB and indexes to 512 KiB.
 
 ZLayer converts geographic elevations into the requested display tile in its
-worker. Close-up map zooms reuse the same 4.9-arc-second data; display pixel
+worker. Close-up map zooms reuse the same 2.45-arc-second data; display pixel
 footprints retain maxima from intersecting native cells. Higher display zooms do
 not require additional packages. A bounded 8 MiB decoded geographic cache allows
 neighbouring display tiles to share source grids.
 
-Deploy the updated ZLayer consumer **before publishing the new terrain manifest**.
-It accepts both schemas: previously saved float32/Mercator packages continue to
-work, while **Verify / update** selects the smaller geographic packages. Old client
-versions cannot consume schema 2. Retained immutable files are not automatically
-pruned; publishing a new manifest does not reclaim older delivery files or source
-caches. The new default source has different URLs, so it does not reuse old
-10-metre downloads as 30-metre inputs.
+Deploy the updated ZLayer consumer **before publishing the 2.45-arc-second
+manifest**. It accepts both geographic pairs: 4.9 arc-seconds / level 10 and
+2.45 arc-seconds / level 11. Levels 1–10 keep exactly the same geometry; level 11
+adds four times as many cells per area. Existing geographic and legacy
+float32/Mercator offline selections keep working at their saved resolution.
+**Verify / update** acquires the finer packages. Older clients that only accept
+4.9-arc-second manifests need the consumer update first.
+
+This resolution increase reuses the existing 1-arc-second USGS source cache;
+only derived grids need rebuilding. Retained immutable files are not automatically
+pruned: publishing a new manifest does not reclaim older delivery files or source
+caches. Include retained versions when checking the deployment's disk budget.
 
 Contours remain route-dependent and are generated in the browser. Changing the
 source does not establish an end-to-end rendering speedup.

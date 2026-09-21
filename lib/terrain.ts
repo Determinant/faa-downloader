@@ -12,12 +12,13 @@ import { missingTerrainGrid, reduceTerrainArchive } from './terrain-overviews.ts
 import { validateRegions, type OfflineRegionDefinition } from './chart-packager.ts';
 
 // Bump when raster processing or packaging semantics change, independently of the delivery format.
-const TERRAIN_BUILD_VERSION = 5;
-// Finest-level GDAL processing is unchanged, so existing native batches remain reusable.
+const TERRAIN_BUILD_VERSION = 6;
+// The grid at each existing level and the GDAL processing are unchanged.
 const TERRAIN_RASTER_BUILD_VERSION = 4;
 export type TerrainArchive = { zoom: number; x: number; y: number; file: string; sha256: string; byteLength: number };
 export type TerrainManifest = {
-    schemaVersion: 2; encoding: 'int16-metres-gzip'; grid: 'EPSG:4326'; resolutionArcSeconds: 4.9; minZoom: 1; maxZoom: 10; generatedAt: string;
+    schemaVersion: 2; encoding: 'int16-metres-gzip'; grid: 'EPSG:4326';
+    resolutionArcSeconds: typeof TERRAIN_RESOLUTION_ARC_SECONDS; minZoom: 1; maxZoom: typeof TERRAIN_MAX_ZOOM; generatedAt: string;
     source: string; attribution: string; shards: TerrainArchive[];
     verticalDatum: string; provenance: { file: string; sha256: string; byteLength: number };
 };
@@ -80,7 +81,7 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
         const archives: TerrainArchive[] = [];
         const batches = terrainBatches(blocks).sort((a, b) => b.zoom - a.zoom || a.x - b.x || a.y - b.y);
         const available = new Map<string, TerrainArchive>();
-        logger.log(`Terrain: ${batches.length} batches; building 4.9-arc-second grids first, then maximum-elevation overviews`);
+        logger.log(`Terrain: ${batches.length} batches; building ${TERRAIN_RESOLUTION_ARC_SECONDS}-arc-second grids first, then maximum-elevation overviews`);
         let rebuilt = 0;
         for (const [index, batch] of batches.entries()) {
             // Include a two-cell halo for source dependency tracking.

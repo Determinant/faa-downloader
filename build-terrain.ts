@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { buildTerrain, terrainBlocks } from './lib/terrain.ts';
+import { TERRAIN_RESOLUTION_ARC_SECONDS } from './lib/terrain-grid.ts';
 
 async function main() {
     let output = 'dist', regions: string | URL = new URL('./data/terrain-regions.json', import.meta.url);
@@ -14,7 +15,7 @@ async function main() {
         else if (arg === '--estimate') estimate = true;
         else if (arg === '--help' || arg === '-h') {
             console.log('Usage: npm run build:terrain -- [--output=dist] [--regions=regions.json] [--source-directory=DIR] [--rebuild] [--estimate]\n' +
-                'Build independent terrain packages from current USGS 3DEP 1-arc-second GeoTIFFs; 4.9-arc-second geographic output with coarser overviews.\n' +
+                `Build independent terrain packages from current USGS 3DEP 1-arc-second GeoTIFFs; ${TERRAIN_RESOLUTION_ARC_SECONDS}-arc-second geographic output with coarser overviews.\n` +
                 'Use --estimate before a large build. Regions: [{"id":"name","title":"Name","bounds":[[west,south,east,north]]}].\n' +
                 'Every online run checks USGS object versions; unchanged GeoTIFFs are not downloaded again.\n' +
                 '--rebuild regenerates packages from verified source cache. Local sources require matching .tif/.xml files.\n' +
@@ -27,7 +28,7 @@ async function main() {
     const definitions = JSON.parse(await fs.readFile(regions, 'utf8'));
     if (estimate) {
         const blocks = terrainBlocks(definitions);
-        console.log(`${blocks.length.toLocaleString()} archives; ${(blocks.length / 2048).toFixed(1)} GiB of int16 delivery grids before gzip (4.9 arc-seconds plus overviews).\n` +
+        console.log(`${blocks.length.toLocaleString()} archives; ${(blocks.length / 2048).toFixed(1)} GiB of int16 delivery grids before gzip (${TERRAIN_RESOLUTION_ARC_SECONDS} arc-seconds plus overviews).\n` +
             'USGS GeoTIFF download/cache size is additional and depends on coverage. No files downloaded.');
         return;
     }
