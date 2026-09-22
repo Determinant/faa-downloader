@@ -18,10 +18,14 @@ const TPP_REGIONS = [
     'SE1', 'SE2', 'SE3', 'SE4',
     'SW1', 'SW2', 'SW3', 'SW4'
 ] as const;
-// The FAA currently publishes the conterminous U.S. low-altitude series as L01-L36.
-const IFR_ENROUTE_REGIONS = Array.from(
+// Conterminous U.S. enroute series: L01-L36 and H01-H12.
+const IFR_LOW_REGIONS = Array.from(
     { length: 36 },
     (_, index) => `L${String(index + 1).padStart(2, '0')}`
+);
+const IFR_HIGH_REGIONS = Array.from(
+    { length: 12 },
+    (_, index) => `H${String(index + 1).padStart(2, '0')}`
 );
 const VFR_SECTIONAL_REGIONS = [
     'Albuquerque',
@@ -131,23 +135,13 @@ export type ChartExtraction = {
     filename: string;
 };
 
-function ifrExtractions(region: string): ChartExtraction[] {
-    if (region === 'L06') {
-        return [
-            {
-                sourceName: 'ENR_L06N.tif',
-                filename: 'ifr-enroute-low-l06n.tif'
-            },
-            {
-                sourceName: 'ENR_L06S.tif',
-                filename: 'ifr-enroute-low-l06s.tif'
-            }
-        ];
-    }
-    return [{
-        sourceName: `ENR_${region}.tif`,
-        filename: `ifr-enroute-low-${region.toLowerCase()}.tif`
-    }];
+function ifrExtractions(altitude: 'low' | 'high', region: string): ChartExtraction[] {
+    // L06 is the only CONUS enroute archive containing two chart sheets.
+    const sheets = altitude === 'low' && region === 'L06' ? ['L06N', 'L06S'] : [region];
+    return sheets.map(sheet => ({
+        sourceName: `ENR_${sheet}.tif`,
+        filename: `ifr-enroute-${altitude}-${sheet.toLowerCase()}.tif`
+    }));
 }
 
 function sectionalExtractions(region: string): ChartExtraction[] {
@@ -208,7 +202,8 @@ function terminalExtractions(region: string): ChartExtraction[] {
 
 export function configuredRasterFilenames(): string[] {
     return [
-        ...IFR_ENROUTE_REGIONS.flatMap(region => ifrExtractions(region)),
+        ...IFR_LOW_REGIONS.flatMap(region => ifrExtractions('low', region)),
+        ...IFR_HIGH_REGIONS.flatMap(region => ifrExtractions('high', region)),
         ...VFR_SECTIONAL_REGIONS.flatMap(region => sectionalExtractions(region)),
         ...VFR_TERMINAL_REGIONS.flatMap(region => terminalExtractions(region))
     ].map(extraction => extraction.filename).sort();
@@ -359,8 +354,14 @@ async function discoverTerminalProcedures(context: DiscoveryContext): Promise<Re
     return files;
 }
 
-async function discoverIfrEnroute(context: DiscoveryContext): Promise<RegionMap> {
-    const files = createRegionMap(IFR_ENROUTE_REGIONS);
+async function discoverIfrEnroute(context: DiscoveryContext): Promise<{
+    low: RegionMap;
+    high: RegionMap;
+}> {
+    const files = {
+        low: createRegionMap(IFR_LOW_REGIONS),
+        high: createRegionMap(IFR_HIGH_REGIONS)
+    };
     const directory = latestPublishedDirectory(
         await fetchDom(IFR_ENROUTE_URL, context),
         IFR_ENROUTE_URL,
@@ -377,10 +378,11 @@ async function discoverIfrEnroute(context: DiscoveryContext): Promise<RegionMap>
         if (!match) continue;
 
         const region = match[1].toUpperCase();
-        addCandidate(files, region, {
+        const altitude = region.startsWith('H') ? 'high' : 'low';
+        addCandidate(files[altitude], region, {
             url: new URL(href || filename, directory.url).href,
             date: directory.date,
-            extractions: ifrExtractions(region)
+            extractions: ifrExtractions(altitude, region)
         }, context.today);
     }
     return files;
@@ -453,7 +455,8 @@ export async function discoverCharts(options: {
         discoverVfr(context)
     ]);
     const requiredRasterGroups = [
-        { prefix: 'ifr-enroute-low', files: ifrEnroute },
+        { prefix: 'ifr-enroute-low', files: ifrEnroute.low },
+        { prefix: 'ifr-enroute-high', files: ifrEnroute.high },
         { prefix: 'vfr-sectional', files: vfr.sectional },
         { prefix: 'vfr-terminal', files: vfr.terminal }
     ];
@@ -470,8 +473,6 @@ export async function discoverCharts(options: {
     return [
         { prefix: 'cs', files: supplements },
         { prefix: 'tpp', files: terminalProcedures },
-        { prefix: 'ifr-enroute-low', files: ifrEnroute },
-        { prefix: 'vfr-sectional', files: vfr.sectional },
-        { prefix: 'vfr-terminal', files: vfr.terminal }
+        ...requiredRasterGroups
     ];
 }

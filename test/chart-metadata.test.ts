@@ -58,7 +58,18 @@ test('clips pixel-aligned antimeridian extents to their world edge', () => {
         [-180, 51, -172, 54]);
 });
 
-test('real GDAL build publishes the curved L13 edge and actual stored zooms', async t => {
+for (const sheet of [
+    {
+        id: 'ifr-enroute-low-l13', kind: 'ifr-low', north: 49.2795,
+        extent: ['-2300000', '1600000', '-300000', '400000'],
+        sample: ['-112.35', '49.15']
+    },
+    {
+        id: 'ifr-enroute-high-h01', kind: 'ifr-high', north: 50.04,
+        extent: ['-2900000', '1700000', '-300000', '400000'],
+        sample: ['-117.81', '49.6']
+    }
+]) test(`real GDAL build publishes the curved ${sheet.id} edge and actual stored zooms`, async t => {
     // Receipt/parser unit tests need no native tools. Exercise the real pipeline
     // too whenever the chart-building GDAL installation is available.
     try {
@@ -74,12 +85,12 @@ test('real GDAL build publishes the curved L13 edge and actual stored zooms', as
         const cycle = path.join(chartRoot, '2026-09-03');
         const cache = path.join(root, 'mbtiles', '2026-09-03');
         await fs.mkdir(cycle, { recursive: true });
-        const source = path.join(cycle, 'ifr-enroute-low-l13.tif');
-        const archive = path.join(cache, 'ifr-enroute-low-l13.mbtiles');
+        const source = path.join(cycle, `${sheet.id}.tif`);
+        const archive = path.join(cache, `${sheet.id}.mbtiles`);
         await execFileAsync('gdal_create', [
             '-of', 'GTiff', '-outsize', '512', '256', '-bands', '3', '-burn', '255',
             '-a_srs', chartCutlineForFilename(source).srs,
-            '-a_ullr', '-2300000', '1600000', '-300000', '400000', source
+            '-a_ullr', ...sheet.extent, source
         ]);
         await tileMbtilesFromTiff(source);
         await writeChartManifests(chartRoot);
@@ -88,14 +99,15 @@ test('real GDAL build publishes the curved L13 edge and actual stored zooms', as
             path.join(cache, 'chart-manifest.json'), 'utf8'
         ));
         const chart = manifest.charts[0];
+        assert.equal(chart.kind, sheet.kind);
         assert.deepEqual(chart.bounds, actual.bounds);
         assert.equal(chart.minZoom, actual.minZoom);
         assert.equal(chart.maxZoom, actual.maxZoom);
         assert.notEqual(chart.maxZoom, 12);
-        assert.ok(chart.bounds[3] > 49.2795);
-        // This opaque pixel is outside the former corner-only north bound (48.9921).
+        assert.ok(chart.bounds[3] > sheet.north);
+        // These opaque pixels fall above a cutline joined in geographic coordinates.
         const { stdout } = await execFileAsync('gdallocationinfo', [
-            '-wgs84', '-b', '4', '-valonly', archive, '-112.35', '49.15'
+            '-wgs84', '-b', '4', '-valonly', archive, ...sheet.sample
         ]);
         assert.equal(Number(stdout.trim()), 255);
         await buildChartPackages(root);
@@ -103,6 +115,7 @@ test('real GDAL build publishes the curved L13 edge and actual stored zooms', as
         const packages = JSON.parse(await fs.readFile(path.join(delivery, 'manifest.json'), 'utf8'));
         assert.equal(packages.schemaVersion, 2);
         assert.ok(packages.archives.length > 0);
+        assert.ok(packages.archives.every(archive => archive.kind === sheet.kind));
         assert.deepEqual((await fs.readdir(delivery)).sort(),
             ['manifest.json', ...packages.archives.map(archive => archive.file)].sort());
         assert.equal(await fs.stat(archive).then(stat => stat.size), chart.byteLength);

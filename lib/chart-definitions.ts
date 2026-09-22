@@ -5,12 +5,16 @@ import {
 } from './chartmaker-cutlines.ts';
 
 const CHARTMAKER_PROVENANCE = `N129BZ/chartmaker@${CHARTMAKER_COMMIT}` as const;
-const IFR_LOW_PROVENANCE =
+const IFR_PROVENANCE =
     `${CHARTMAKER_PROVENANCE}+local-lambert-neatline@faa-raster-2026-09-03` as const;
 const MEASURED_VFR_PROVENANCE = 'local-measurement@faa-raster-2026-09-03';
 
 export type { LongitudeLatitude } from './chartmaker-cutlines.ts';
-export type ChartKind = 'vfr-sectional' | 'vfr-terminal' | 'vfr-flyway' | 'ifr-low';
+export type ChartKind = 'vfr-sectional' | 'vfr-terminal' | 'vfr-flyway' | 'ifr-low' | 'ifr-high';
+
+export function isIfrChartKind(kind: ChartKind): boolean {
+    return kind === 'ifr-low' || kind === 'ifr-high';
+}
 
 export type ChartPresentation = {
     title: string;
@@ -20,7 +24,7 @@ export type ChartPresentation = {
 export type ChartDefinition = ChartPresentation & {
     coordinates: readonly LongitudeLatitude[];
     provenance: typeof CHARTMAKER_PROVENANCE
-        | typeof IFR_LOW_PROVENANCE
+        | typeof IFR_PROVENANCE
         | typeof MEASURED_VFR_PROVENANCE;
 };
 
@@ -79,8 +83,10 @@ const SPECIAL_SECTIONAL_TITLES: Readonly<Record<string, string>> = {
 };
 
 function presentationForFilename(filename: string): ChartPresentation {
-    const ifr = filename.match(/^ifr-enroute-low-(l\d{2}[ns]?)\.tif$/);
-    if (ifr) return { title: `IFR Low · ${ifr[1].toUpperCase()}`, kind: 'ifr-low' };
+    const low = filename.match(/^ifr-enroute-low-(l\d{2}[ns]?)\.tif$/);
+    if (low) return { title: `IFR Low · ${low[1].toUpperCase()}`, kind: 'ifr-low' };
+    const high = filename.match(/^ifr-enroute-high-(h\d{2})\.tif$/);
+    if (high) return { title: `IFR High · ${high[1].toUpperCase()}`, kind: 'ifr-high' };
 
     const terminal = filename.match(/^vfr-terminal-(.+)\.tif$/);
     if (terminal) {
@@ -106,8 +112,8 @@ const chartmakerDefinitions: Record<string, ChartDefinition> = Object.fromEntrie
                 presentation.title,
                 presentation.kind,
                 coordinates,
-                presentation.kind === 'ifr-low'
-                    ? IFR_LOW_PROVENANCE
+                isIfrChartKind(presentation.kind)
+                    ? IFR_PROVENANCE
                     : CHARTMAKER_PROVENANCE
             )
         ];

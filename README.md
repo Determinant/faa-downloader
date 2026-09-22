@@ -207,8 +207,10 @@ procedures are included in Chart Supplement Pacific. PDFs retain the existing
 `tpp-<volume>.pdf` and `cs-<region>.pdf` filenames under their publication dates.
 
 The configured raster footprint includes every FAA Sectional, all 34 Terminal Area
-(TAC) sheets and 21 Flyway (FLY) sheets, and the main L01-L36 conterminous U.S. IFR
-Low Enroute sheets: 150 independently trimmed rasters in total. The 30 TAC archives
+(TAC) sheets and 21 Flyway (FLY) sheets, and the main L01-L36 Low and H01-H12 High
+conterminous U.S. IFR Enroute sheets: 162 independently trimmed rasters in total.
+Low and High publish as separate `ifr-low` and `ifr-high` tile layers, both included
+in offline region dependencies wherever they intersect the region. The 30 TAC archives
 include paired terminal sheets for Anchorage/Fairbanks, Denver/Colorado Springs,
 Seattle/Portland, and Tampa/Orlando. Flyways are extracted only where the FAA provides
 a georeferenced FLY sheet. The unreferenced Anchorage Graphic and New York VFR
@@ -402,7 +404,7 @@ only read and cache these static artifacts; the hosting server performs no chart
 rendering. Overview levels extend through factor 128 so high-density clients can retain
 2× chart sampling at the widest supported map view.
 
-The 129 community cutlines are generated from the pinned N129BZ/chartmaker shapefiles. Verify
+The 141 community cutlines are generated from the pinned N129BZ/chartmaker shapefiles. Verify
 or refresh them from a clean checkout at the pinned commit. The generated coordinates
 are checked in, so ordinary download and tile builds do not use chartmaker or require
 its checkout:

@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 import {
     CHART_DEFINITIONS,
+    isIfrChartKind,
     type ChartDefinition,
     type ChartPresentation
 } from './chart-definitions.ts';
@@ -32,7 +33,7 @@ const GEOGRAPHIC_CUTLINE_SRS = 'EPSG:4326';
 // FAA IFR enroute GeoTIFFs use this Lambert Conformal Conic projection. Keeping
 // their four reviewed corners in this CRS makes the edges follow the raster's
 // straight neatlines instead of bowing through the scale rulers in EPSG:4326.
-const IFR_LOW_PROJECTION = {
+const IFR_PROJECTION = {
     latitudeOfOrigin: 39,
     centralMeridian: -95,
     firstParallel: 45,
@@ -40,13 +41,13 @@ const IFR_LOW_PROJECTION = {
     semiMajorAxis: 6_378_137,
     inverseFlattening: 298.257221999999
 } as const;
-const IFR_LOW_CUTLINE_SRS = [
-    '+proj=lcc', `+lat_0=${IFR_LOW_PROJECTION.latitudeOfOrigin}`,
-    `+lon_0=${IFR_LOW_PROJECTION.centralMeridian}`,
-    `+lat_1=${IFR_LOW_PROJECTION.firstParallel}`,
-    `+lat_2=${IFR_LOW_PROJECTION.secondParallel}`,
-    '+x_0=0', '+y_0=0', `+a=${IFR_LOW_PROJECTION.semiMajorAxis}`,
-    `+rf=${IFR_LOW_PROJECTION.inverseFlattening}`,
+const IFR_CUTLINE_SRS = [
+    '+proj=lcc', `+lat_0=${IFR_PROJECTION.latitudeOfOrigin}`,
+    `+lon_0=${IFR_PROJECTION.centralMeridian}`,
+    `+lat_1=${IFR_PROJECTION.firstParallel}`,
+    `+lat_2=${IFR_PROJECTION.secondParallel}`,
+    '+x_0=0', '+y_0=0', `+a=${IFR_PROJECTION.semiMajorAxis}`,
+    `+rf=${IFR_PROJECTION.inverseFlattening}`,
     '+units=m', '+no_defs'
 ].join(' ');
 const execFileAsync = promisify(execFile);
@@ -145,14 +146,14 @@ async function findTiffs(directory: string): Promise<string[]> {
     return tiffs.sort();
 }
 
-const ifrLowCoordinate = (() => {
-    const flattening = 1 / IFR_LOW_PROJECTION.inverseFlattening;
+const ifrCoordinate = (() => {
+    const flattening = 1 / IFR_PROJECTION.inverseFlattening;
     const eccentricity = Math.sqrt(2 * flattening - flattening ** 2);
     const radians = Math.PI / 180;
-    const latitudeOfOrigin = IFR_LOW_PROJECTION.latitudeOfOrigin * radians;
-    const firstParallel = IFR_LOW_PROJECTION.firstParallel * radians;
-    const secondParallel = IFR_LOW_PROJECTION.secondParallel * radians;
-    const centralMeridian = IFR_LOW_PROJECTION.centralMeridian * radians;
+    const latitudeOfOrigin = IFR_PROJECTION.latitudeOfOrigin * radians;
+    const firstParallel = IFR_PROJECTION.firstParallel * radians;
+    const secondParallel = IFR_PROJECTION.secondParallel * radians;
+    const centralMeridian = IFR_PROJECTION.centralMeridian * radians;
     const m = (value: number): number => Math.cos(value) /
         Math.sqrt(1 - eccentricity ** 2 * Math.sin(value) ** 2);
     const t = (value: number): number => Math.tan(Math.PI / 4 - value / 2) /
@@ -161,11 +162,11 @@ const ifrLowCoordinate = (() => {
     const cone = (Math.log(m(firstParallel)) - Math.log(m(secondParallel))) /
         (Math.log(t(firstParallel)) - Math.log(t(secondParallel)));
     const scale = m(firstParallel) / (cone * t(firstParallel) ** cone);
-    const originRadius = IFR_LOW_PROJECTION.semiMajorAxis *
+    const originRadius = IFR_PROJECTION.semiMajorAxis *
         scale * t(latitudeOfOrigin) ** cone;
 
     return ([longitude, latitude]: ChartDefinition['coordinates'][number]) => {
-        const radius = IFR_LOW_PROJECTION.semiMajorAxis *
+        const radius = IFR_PROJECTION.semiMajorAxis *
             scale * t(latitude * radians) ** cone;
         const angle = cone * (longitude * radians - centralMeridian);
         return [
@@ -176,11 +177,10 @@ const ifrLowCoordinate = (() => {
 })();
 
 function cutlineForDefinition(definition: ChartDefinition): ChartCutline {
-    const srs = definition.kind === 'ifr-low'
-        ? IFR_LOW_CUTLINE_SRS
-        : GEOGRAPHIC_CUTLINE_SRS;
-    const coordinates = definition.kind === 'ifr-low'
-        ? definition.coordinates.map(ifrLowCoordinate)
+    const ifr = isIfrChartKind(definition.kind);
+    const srs = ifr ? IFR_CUTLINE_SRS : GEOGRAPHIC_CUTLINE_SRS;
+    const coordinates = ifr
+        ? definition.coordinates.map(ifrCoordinate)
         : definition.coordinates;
     const first = coordinates[0];
     const ring = [...coordinates, first];
@@ -282,8 +282,8 @@ function configurationSha256(tifPath: string): string {
         ? {
             coordinates: definition.coordinates,
             provenance: definition.provenance,
-            ...(definition.kind === 'ifr-low'
-                ? { edgeSrs: IFR_LOW_CUTLINE_SRS }
+            ...(isIfrChartKind(definition.kind)
+                ? { edgeSrs: IFR_CUTLINE_SRS }
                 : {})
         }
         : null;

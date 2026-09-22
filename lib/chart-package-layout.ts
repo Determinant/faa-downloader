@@ -25,7 +25,7 @@ export async function flattenChartPackages(output: string): Promise<void> {
     assert.ok(manifest.schemaVersion === 2 && manifest.packagingVersion === 1 && Array.isArray(manifest.archives),
         'Invalid legacy package manifest');
     const files = entries.filter(file => file !== 'manifest.json');
-    const packageName = /^(?:vfr-sectional|vfr-terminal|vfr-flyway|ifr-low)-z\d+-r\d+-\d+-\d+-([a-f0-9]{64})\.mbtiles$/;
+    const packageName = /^(?:vfr-sectional|vfr-terminal|vfr-flyway|ifr-low|ifr-high)-z\d+-r\d+-\d+-\d+-([a-f0-9]{64})\.mbtiles$/;
     const sizes = new Map<string, number>();
     for (const file of files) {
         const match = packageName.exec(file);

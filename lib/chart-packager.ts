@@ -83,7 +83,7 @@ export async function packageChartCycle(
         await fs.mkdir(snapshots);
         const charts = [...manifest.charts].sort((a, b) => a.id.localeCompare(b.id));
         for (const chart of charts) {
-            assert.ok(['vfr-sectional', 'vfr-terminal', 'vfr-flyway', 'ifr-low'].includes(chart.kind),
+            assert.ok(['vfr-sectional', 'vfr-terminal', 'vfr-flyway', 'ifr-low', 'ifr-high'].includes(chart.kind),
                 `Unknown chart kind: ${chart.kind}`);
             assert.ok(Number.isInteger(chart.minZoom) && chart.minZoom >= 0 &&
                 Number.isInteger(chart.maxZoom) && chart.maxZoom >= chart.minZoom && chart.maxZoom <= 24,

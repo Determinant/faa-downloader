@@ -14,6 +14,7 @@ import { tileBounds, type Bounds, type Tile } from '../lib/chart-package-grid.ts
 import { sha256File, type ChartManifest } from '../lib/chart-tiler.ts';
 import { CHARTMAKER_COMMIT } from '../lib/chartmaker-cutlines.ts';
 import { PackageSource } from '../lib/chart-package-source.ts';
+import type { ChartKind } from '../lib/chart-definitions.ts';
 
 async function fixture(t: TestContext) {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-packages-'));
@@ -21,7 +22,7 @@ async function fixture(t: TestContext) {
     const manifest: ChartManifest = { schemaVersion: 1, effectiveDate: '2026-09-03', generatedAt: '2026-09-15T00:00:00Z', charts: [] };
     return {
         directory, output: path.join(directory, 'delivery'), manifest,
-        async add(id: string, bounds: Bounds, tiles: Array<Tile & { data: Buffer }>) {
+        async add(id: string, bounds: Bounds, tiles: Array<Tile & { data: Buffer }>, kind: ChartKind = 'vfr-sectional') {
             const file = `${id}.mbtiles`;
             const db = new DatabaseSync(path.join(directory, file));
             try {
@@ -30,7 +31,7 @@ async function fixture(t: TestContext) {
                 for (const tile of tiles) insert.run(tile.z, tile.x, 2 ** tile.z - 1 - tile.y, tile.data);
             } finally { db.close(); }
             manifest.charts.push({
-                id, file, title: id, kind: 'vfr-sectional', bounds,
+                id, file, title: id, kind, bounds,
                 minZoom: Math.min(...tiles.map(tile => tile.z)), maxZoom: Math.max(...tiles.map(tile => tile.z)),
                 byteLength: (await fs.stat(path.join(directory, file))).size,
                 sha256: await sha256File(path.join(directory, file)),
@@ -43,6 +44,34 @@ async function fixture(t: TestContext) {
 }
 
 const color = (background: string) => sharp({ create: { width: 256, height: 256, channels: 4, background } }).png().toBuffer();
+
+test('keeps IFR High and Low as separate layers with shared offline region dependencies', async t => {
+    const f = await fixture(t);
+    const area: Bounds = [-179, 1, -1, 84];
+    const low = await color('#ff0000');
+    const high = await color('#0000ff');
+    await f.add('ifr-enroute-low-l01', area, [{ z: 1, x: 0, y: 0, data: low }], 'ifr-low');
+    await f.add('ifr-enroute-high-h01', area, [{ z: 1, x: 0, y: 0, data: high }], 'ifr-high');
+    await f.save();
+    const manifest = await packageChartCycle(f.directory, f.output);
+    assert.deepEqual([...new Set(manifest.archives.map(archive => archive.kind))].sort(), ['ifr-high', 'ifr-low']);
+    for (const kind of ['ifr-high', 'ifr-low']) {
+        const archives = manifest.archives.filter(archive => archive.kind === kind);
+        assert.deepEqual(archives.map(archive => archive.zoom), [0, 1]);
+        const db = new DatabaseSync(path.join(f.output, archives[1].file), { readOnly: true });
+        try {
+            const row = db.prepare('SELECT tile_data FROM tiles WHERE zoom_level=1 AND tile_column=0 AND tile_row=1').get();
+            const pixels = await sharp(Buffer.from(row.tile_data as Uint8Array)).stats();
+            const expectedChannel = kind === 'ifr-high' ? 2 : 0;
+            const otherChannel = kind === 'ifr-high' ? 0 : 2;
+            assert.ok(pixels.channels[expectedChannel].mean > 240, `${kind} retains its own imagery`);
+            assert.ok(pixels.channels[otherChannel].mean < 10, `${kind} excludes the other layer`);
+        } finally { db.close(); }
+    }
+    for (const region of manifest.regions) {
+        assert.deepEqual(region.archiveIds, manifest.archives.map(archive => archive.id));
+    }
+});
 
 async function pausePackager(t: TestContext, directory: string, output: string) {
     const packager = new URL('../lib/chart-packager.ts', import.meta.url).href;

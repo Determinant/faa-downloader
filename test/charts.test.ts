@@ -20,6 +20,10 @@ const IFR_LOW_REGIONS = Array.from(
     { length: 36 },
     (_, index) => `L${String(index + 1).padStart(2, '0')}`
 );
+const IFR_HIGH_REGIONS = Array.from(
+    { length: 12 },
+    (_, index) => `H${String(index + 1).padStart(2, '0')}`
+);
 const SECTIONAL_REGIONS = [
     'Albuquerque', 'Anchorage', 'Atlanta', 'Bethel', 'Billings', 'Brownsville',
     'Cape_Lisburne', 'Charlotte', 'Cheyenne', 'Chicago', 'Cincinnati', 'Cold_Bay',
@@ -62,7 +66,9 @@ const readFixtureMetadata = async (): Promise<ChartMetadata> => ({
 
 test('every current VFR and IFR raster has a closed cutline', () => {
     const filenames = configuredRasterFilenames();
-    assert.equal(filenames.length, 150);
+    assert.equal(filenames.length, 162);
+    assert.equal(Object.values(CHART_DEFINITIONS).filter(chart => chart.kind === 'ifr-low').length, 37);
+    assert.equal(Object.values(CHART_DEFINITIONS).filter(chart => chart.kind === 'ifr-high').length, 12);
     assert.equal(Object.values(CHART_DEFINITIONS).filter(chart => chart.kind === 'vfr-terminal').length, 34);
     assert.equal(Object.values(CHART_DEFINITIONS).filter(chart => chart.kind === 'vfr-flyway').length, 21);
     assert.equal(new Set(filenames).size, filenames.length);
@@ -82,7 +88,7 @@ test('every current VFR and IFR raster has a closed cutline', () => {
         assert.match(cutline?.wkt ?? '', /^POLYGON \(\(.+\)\)$/);
         assert.equal(
             cutline?.srs === 'EPSG:4326',
-            !filename.startsWith('ifr-enroute-low-'),
+            !filename.startsWith('ifr-enroute-'),
             filename
         );
         const coordinates = cutline?.wkt.slice('POLYGON (('.length, -2).split(', ');
@@ -367,7 +373,7 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
             '<a href="09-03-2026/">09-03-2026</a>'
         ].join(''),
         'https://aeronav.faa.gov/enroute/09-03-2026/':
-            IFR_LOW_REGIONS
+            [...IFR_LOW_REGIONS, ...IFR_HIGH_REGIONS]
                 .map(region => `<a href="ENR_${region}.zip">ENR_${region}.zip</a>`).join(''),
         'https://aeronav.faa.gov/visual/':
             '<a href="09-03-2026/">09-03-2026</a>',
@@ -390,7 +396,8 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
     const groups = await discoverCharts({ fetch, today: '2026-09-14' });
     const supplements = groups.find(group => group.prefix === 'cs');
     const procedures = groups.find(group => group.prefix === 'tpp');
-    const ifr = groups.find(group => group.prefix === 'ifr-enroute-low');
+    const low = groups.find(group => group.prefix === 'ifr-enroute-low');
+    const high = groups.find(group => group.prefix === 'ifr-enroute-high');
     const sectional = groups.find(group => group.prefix === 'vfr-sectional');
     const terminal = groups.find(group => group.prefix === 'vfr-terminal');
     assert.deepEqual(Object.keys(supplements.files), SUPPLEMENT_REGIONS);
@@ -407,16 +414,28 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
             date: '2026-09-03'
         });
     }
-    assert.deepEqual(Object.keys(ifr?.files ?? {}), IFR_LOW_REGIONS);
+    for (const [altitude, title, regions, group] of [
+        ['low', 'Low', IFR_LOW_REGIONS, low],
+        ['high', 'High', IFR_HIGH_REGIONS, high]
+    ] as const) {
+        assert.deepEqual(Object.keys(group?.files ?? {}), regions);
+        for (const region of regions) {
+            const candidate = group?.files[region].current;
+            assert.equal(candidate?.url, `https://aeronav.faa.gov/enroute/09-03-2026/ENR_${region}.zip`);
+            assert.equal(candidate?.date, '2026-09-03');
+            // Check the split L06 archive explicitly below.
+            if (region === 'L06') continue;
+            const filename = `ifr-enroute-${altitude}-${region.toLowerCase()}.tif`;
+            assert.deepEqual(candidate?.extractions, [{ sourceName: `ENR_${region}.tif`, filename }]);
+            assert.equal(CHART_DEFINITIONS[filename].kind, `ifr-${altitude}`);
+            assert.equal(CHART_DEFINITIONS[filename].title, `IFR ${title} · ${region}`);
+        }
+    }
     assert.deepEqual(Object.keys(sectional?.files ?? {}), SECTIONAL_REGIONS);
     assert.deepEqual(Object.keys(terminal?.files ?? {}), TERMINAL_REGIONS);
-    assert.ok(Object.values(ifr?.files ?? {}).every(listing => listing.current));
     assert.ok(Object.values(sectional?.files ?? {}).every(listing => listing.current));
     assert.ok(Object.values(terminal?.files ?? {}).every(listing => listing.current));
-    assert.deepEqual(ifr?.files.L01.current?.extractions, [
-        { sourceName: 'ENR_L01.tif', filename: 'ifr-enroute-low-l01.tif' }
-    ]);
-    assert.deepEqual(ifr?.files.L06.current?.extractions, [
+    assert.deepEqual(low?.files.L06.current?.extractions, [
         { sourceName: 'ENR_L06N.tif', filename: 'ifr-enroute-low-l06n.tif' },
         { sourceName: 'ENR_L06S.tif', filename: 'ifr-enroute-low-l06s.tif' }
     ]);
@@ -496,8 +515,8 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
     assert.ok(!requested.some(url => url.includes('2026-08-06/')));
     assert.ok(!requested.some(url => url.includes('2026-10-01/')));
 
-    pages['https://aeronav.faa.gov/enroute/09-03-2026/'] = IFR_LOW_REGIONS
-        .filter(region => region !== 'L36')
+    pages['https://aeronav.faa.gov/enroute/09-03-2026/'] = [...IFR_LOW_REGIONS, ...IFR_HIGH_REGIONS]
+        .filter(region => region !== 'L36' && region !== 'H12')
         .map(region => `<a href="ENR_${region}.zip">ENR_${region}.zip</a>`).join('');
     pages['https://aeronav.faa.gov/visual/09-03-2026/sectional-files/'] = SECTIONAL_REGIONS
         .filter(region => region !== 'Seattle')
@@ -507,6 +526,6 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
         .map(region => `<a href="${region}_TAC.zip">${region}_TAC.zip</a>`).join('');
     await assert.rejects(
         discoverCharts({ fetch, today: '2026-09-14' }),
-        /ifr-enroute-low\/L36.*vfr-sectional\/Seattle.*vfr-terminal\/Tampa-Orlando/
+        /ifr-enroute-low\/L36.*ifr-enroute-high\/H12.*vfr-sectional\/Seattle.*vfr-terminal\/Tampa-Orlando/
     );
 });
