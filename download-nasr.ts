@@ -18,6 +18,7 @@ import { buildRouteHistory } from './lib/route-history.ts';
 import { buildMagneticModel } from './lib/magnetic-model.ts';
 import type { TerminalProcedureInput } from './lib/terminal-procedures.ts';
 import { buildTerminalBundle } from './lib/terminal-bundle.ts';
+import { addCifpRunwayHeadings } from './lib/runway-headings.ts';
 import { acquireCifp } from './lib/cifp-source.ts';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
@@ -399,6 +400,7 @@ async function buildNavigationCycle(buildOptions: Options, outputRoot: string, c
         }
         const cifp = await acquireCifp(products.effectiveDate, path.join(cycleDirectory, 'nasr'), buildOptions.sourceDir);
         const terminal = buildTerminalBundle(await readTerminalInput(sourceDirectory), cifp.text, products.effectiveDate, cifp.source);
+        addCifpRunwayHeadings(products.airports, cifp.text);
         const magneticModel = await buildMagneticModel(products.effectiveDate);
         const magneticModelFile = 'magnetic-model.json';
 

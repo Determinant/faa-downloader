@@ -482,7 +482,18 @@ public/private use, status, elevation, tower type, chart name, NOTAM identifier,
 runway summary. Runways include dimensions/surface plus `ends[]` joined from
 `APT_RWY_END.csv` by site number, facility type, and runway ID. Each end preserves its
 identifier, published `trueHeadingDeg`, and `trafficPattern` (`left`/`right`). Blank
-headings and pattern flags remain absent; runway numbers are not used as true headings.
+headings and pattern flags remain absent. Matching-cycle CIFP primary PG runway records
+add `magneticHeadingDeg` from the published magnetic bearing (columns 28–31,
+tenths of a degree), joined by ICAO airport identifier, or the published FAA identifier
+when ICAO is absent, and the exact runway-end identifier. Only CIFP's `RW` prefix is
+removed: suffixes such as `08G`, `032`, and `18W`, and named ends such as `N` or `NE`,
+are preserved. Airport prefixes and runway bearings are never inferred.
+Blank, non-magnetic, invalid, or conflicting bearings remain absent; runway numbers
+are never used to estimate headings. This supplies magnetic headings even where
+NASR true alignment is blank, including KSLI. The airport artifact hash and source
+metadata cover this enrichment. Rebuild with `npm run build:nav` (`build:charts`
+does not rebuild navigation), then upload the dated `nav/` artifacts before its
+`manifest.json`, preserving earlier immutable files.
 Airport `frequencies[]` come from `FRQ.csv`: ATIS/D-ATIS, AWOS/ASOS, Tower, CTAF,
 and Ground, with `frequencyMHz`, published `use`, `sector`, `hours`, and `remarks`.
 `hours` is the source `TOWER_HRS` text: it describes the tower even when repeated
