@@ -343,7 +343,8 @@ const segmentRow = {
 };
 const frequencyHeaders = [
     'EFF_DATE', 'FACILITY_TYPE', 'SERVICED_FACILITY', 'SERVICED_SITE_TYPE',
-    'SERVICED_STATE', 'SERVICED_COUNTRY', 'FREQ', 'FREQ_USE'
+    'SERVICED_STATE', 'SERVICED_COUNTRY', 'FREQ', 'FREQ_USE', 'FACILITY', 'FAC_NAME', 'ARTCC_OR_FSS_ID',
+    'TOWER_OR_COMM_CALL', 'PRIMARY_APPROACH_RADIO_CALL'
 ];
 const frequencyRow = {
     EFF_DATE: '2026/09/03', FACILITY_TYPE: 'ATCT', SERVICED_FACILITY: 'SBA',
@@ -382,6 +383,26 @@ test('NASR frequency input rejects empty records, missing columns, and invalid e
     ] as const) {
         assert.throws(() => buildNasrProducts(preferredRouteInput({ frequencies })), expected);
     }
+});
+
+test('terminal radios are additive properties and preserve the airport records accepted by older PWAs', () => {
+    const input = preferredRouteInput({ airports: recordCsv(
+        ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'STATE_CODE', 'COUNTRY_CODE', 'LAT_DECIMAL', 'LONG_DECIMAL'],
+        [{ EFF_DATE: '2026/09/03', SITE_NO: '00001.', SITE_TYPE_CODE: 'A', ARPT_ID: 'SBA', STATE_CODE: 'CA',
+            COUNTRY_CODE: 'US', LAT_DECIMAL: 34.4278, LONG_DECIMAL: -119.84 }]) });
+    const legacy = buildNasrProducts(input);
+    const frequencies = recordCsv(frequencyHeaders, [frequencyRow,
+        ...['CD/P', 'APCH/P', 'DEP/P', 'APCH/P DEP/P'].map(FREQ_USE => ({ ...frequencyRow, FREQ: '124.3', FREQ_USE })),
+        { ...frequencyRow, FACILITY_TYPE: 'RCAG', FACILITY: 'TEST RCAG', ARTCC_OR_FSS_ID: 'ZOA', FREQ: '127.95', FREQ_USE: 'TEST RCAG' }]);
+    const updated = buildNasrProducts({ ...input, frequencies });
+    const { terminalFrequencies, centerFrequencies, ...originalProperties } = updated.airports.features[0].properties;
+    assert.deepEqual(originalProperties, legacy.airports.features[0].properties);
+    assert.deepEqual((terminalFrequencies as { type: string }[]).map(record => record.type),
+        ['CLEARANCE', 'APPROACH', 'DEPARTURE', 'APPROACH/DEPARTURE']);
+    assert.equal('terminalFrequencies' in legacy.airports.features[0].properties, false);
+    assert.deepEqual(centerFrequencies, [{ type: 'CENTER', frequencyMHz: 127.95, use: 'TEST RCAG', facilityId: 'ZOA' }]);
+    assert.equal('centerFrequencies' in legacy.airports.features[0].properties, false);
+    assert.deepEqual(updated.coverage.FRQ, { sourceRows: 6, exportedRows: 6, excludedRows: 0 });
 });
 
 test('required NASR tables reject missing schemas, empty input and undated rows before projection', () => {
@@ -505,6 +526,7 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     await fs.mkdir(sourceDir);
     await fs.copyFile(new URL('./fixtures/terminal-cifp.txt', import.meta.url), path.join(sourceDir, 'FAACIFP18'));
     const input = preferredRouteInput({
+        frequencies: recordCsv(frequencyHeaders, [frequencyRow, { ...frequencyRow, FREQ: '132.9', FREQ_USE: 'CD/P' }]),
         airports: csv(
             ['EFF_DATE', 'SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'ICAO_ID', 'STATE_CODE', 'COUNTRY_CODE',
                 'LAT_DECIMAL', 'LONG_DECIMAL'],
@@ -550,6 +572,9 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     const airportData = JSON.parse(await fs.readFile(path.join(nav, manifest.products.find(p => p.id === 'airports').file), 'utf8'));
     assert.deepEqual(airportData.features.map(feature => feature.properties.frequencies), [
         [{ type: 'TOWER', frequencyMHz: 119.7, use: 'LCL/P' }], []
+    ]);
+    assert.deepEqual(airportData.features.map(feature => feature.properties.terminalFrequencies), [
+        [{ type: 'CLEARANCE', frequencyMHz: 132.9, use: 'CD/P' }], undefined
     ]);
     assert.equal(manifest.sourceArchives.find(source => source.group === 'FRQ').filename, 'FRQ_CSV.zip');
     const fixesProduct = manifest.products.find(product => product.id === 'fixes');

@@ -503,8 +503,33 @@ NASR true alignment is blank, including KSLI. The airport artifact hash and sour
 metadata cover this enrichment. Rebuild with `npm run build:nav` (or the full
 `npm run build:charts` pipeline), then upload the dated `nav/` artifacts before its
 `manifest.json`, preserving earlier immutable files.
-Airport `frequencies[]` come from `FRQ.csv`: ATIS/D-ATIS, AWOS/ASOS, Tower, CTAF,
-and Ground, with `frequencyMHz`, published `use`, `sector`, `hours`, and `remarks`.
+Airport radio records come from `FRQ.csv`, with `frequencyMHz`, published `use`,
+`sector`, `hours`, and `remarks`. `frequencies[]` retains only ATIS/D-ATIS,
+AWOS/ASOS, Tower, CTAF, and Ground: older PWAs strictly validate those service
+types. Optional `terminalFrequencies[]` adds `CLEARANCE`, `APPROACH`, `DEPARTURE`,
+and `APPROACH/DEPARTURE`; old clients ignore this property, while newer clients
+display both lists together. Optional `centerFrequencies[]` adds `CENTER`; never
+expand either previous list's service enum, since existing PWAs validate both.
+Terminal and Center records also include optional `facilityId` and `facilityName`.
+The name uses the provider's own published radio call when available, falling
+back to its official facility name. Primary approach calls repeated on serviced
+airport rows can belong to a different provider; they are not blindly applied to
+secondary, departure or Center channels. Conflicting names are not guessed.
+RCAG/ARTCC rows join only their explicitly serviced airports. RCAG records carry
+the owning `ARTCC_OR_FSS_ID`, with the Center name resolved by that exact ID from
+APT's `RESP_ARTCC_ID`/`ARTCC_NAME` or the Center's own FRQ record. The remote site
+stays in `use`; `sector` retains the published LOW/HIGH/other altitude designation.
+An airport's responsible Center or a nearby transmitter does not establish an
+airport frequency assignment. Unknown Center names retain the identifier.
+This additive extension keeps the existing navigation manifest version, paths,
+and product IDs. Normal hashed artifact names and digests change with the content;
+publish artifacts before the manifest and retain prior immutable files as usual.
+Explicit `CD/P`, `CD/S`, pre-taxi/pre-departure clearance,
+`APCH/P`, `APCH/S`, `DEP/P`, `DEP/S`, and `APCH/DEP/P` or `/S` uses are recognized.
+Combined uses remain one record, preserving source-row coverage counts; raw use
+qualifiers such as `IC` remain available to clients. Named procedure frequencies,
+ambiguous abbreviations, and approach/departure roles mentioned only in remarks
+are not inferred as these services.
 `hours` is the source `TOWER_HRS` text: it describes the tower even when repeated
 on an ATIS or Ground record. It is not a service-specific operating schedule.
 The join uses the **serviced** FAA identifier, state, country, and facility type,

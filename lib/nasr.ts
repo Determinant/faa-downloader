@@ -1,6 +1,6 @@
 import type { CsvRecord } from './csv.ts';
 import { readNasrTables } from './nasr-tables.ts';
-import { airportFrequencyIndex } from './airport-frequencies.ts';
+import { airportFrequencyIndex, airportFrequencyProperties } from './airport-frequencies.ts';
 
 type Geometry = {
     type: 'Point';
@@ -382,7 +382,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
             towered: towerType ? towerType !== 'NON-ATCT' : undefined,
             fuelTypes: present(row.FUEL_TYPES),
             longestRunwayFt,
-            frequencies: frequencies.get(`${siteNumber}:${facilityType}`) || [],
+            ...airportFrequencyProperties(frequencies.get(`${siteNumber}:${facilityType}`)),
             runways: airportRunways
         });
         return feature ? [feature] : [];
