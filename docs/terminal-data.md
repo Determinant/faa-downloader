@@ -1,7 +1,7 @@
 # Terminal data build and review
 
 The navigation build publishes one complete terminal edition. `download-charts.ts`
-and `download-nasr.ts` both use this path. An approach chart in `tpp/catalog.json`
+and `download-nasr.ts` both use this path. An approach chart in the TPP catalog
 does not establish that its coded procedure exists in the navigation bundle.
 
 ## Ownership
@@ -13,7 +13,7 @@ does not establish that its coded procedure exists in the navigation bundle.
 | `lib/approach-routes.ts` | Project coded approaches into the existing client format; retain ambiguous/missing main branches in the unavailable ledger. |
 | `lib/terminal-procedures.ts` | Validate NASR DP/STAR tables and joins; preserve filing identities, runway associations and waypoint topology. |
 | `lib/terminal-bundle.ts` | Require all three coded families, assemble the output and reconcile source/exported records. |
-| `download-nasr.ts` | Serialize builds, stage all navigation products, write their manifest, and replace `nav/` only after success. |
+| `download-nasr.ts` | Serialize builds, stage all navigation products, commit their manifest, then prune unreferenced files. |
 | `lib/procedures.ts`, `build-procedures.ts` | Build the independent d-TPP chart catalog and PDF targets, including IAP, DP/ODP and STR/STAR records. |
 
 The chart parser already retains deleted-record handling, chart identity,
@@ -66,16 +66,15 @@ Additions are:
 - `continuations` on their primary legs, preserving all 132 characters and
   decoding W authorization/service names. Orphan, duplicate, mismatched and
   declared-but-missing continuations fail validation.
-- `cifp-source.txt.gz`, a separate manifest product containing the entire original
-  CIFP text with compressed and decoded hashes. Supporting records and fields
-  beyond the current projection remain available for audit.
+- The original CIFP ZIP or text file is retained in `dist/sources/<cycle>/nav/`,
+  with decoded-file hashes in the navigation manifest. Supporting records and
+  fields beyond the current projection remain available locally for audit.
 
 The updated ZLayer client validates and uses coded SID/STAR branches in its
 runway/transition picker, map, saved routes and navlog. Existing filing topology
 remains available for older clients and pasted filing strings. The reviewed
-terminal JSON is about 55.4 MiB; the separate source archive is about 7.2 MiB.
-The terminal file remains one shared national resource, and the client does not
-automatically download the raw audit source.
+terminal JSON is about 55.4 MiB. The terminal file remains one shared national
+resource, and the raw input is not part of the published navigation bundle.
 
 This is a planning-data export, not a full avionics database. W continuations
 describe service availability, not numerical minima. Other supporting ARINC

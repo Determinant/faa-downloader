@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
-import { replaceDirectoryAtomically, sha256File } from './lib/fs-utils.ts';
+import { sha256File, writeFileAtomic } from './lib/fs-utils.ts';
 import { downloadFile } from './lib/http-download.ts';
 import { writeObstacleGeoJson } from './lib/obstacles.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
@@ -85,9 +85,23 @@ export async function buildObstacles(options: BuildOptions) {
             horizontalDatum: 'WGS84',
             dataset: { path: filename, format: 'geojson', compression: 'gzip', sha256, bytes, ...stats }
         };
-        await fs.writeFile(path.join(staged, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
-        await fs.chmod(staged, 0o755);
-        await replaceDirectoryAtomically(staged, path.join(chartRoot, 'obstacles'));
+        const published = path.join(chartRoot, 'obstacles');
+        await fs.mkdir(published, { recursive: true, mode: 0o755 });
+        const destination = path.join(published, filename);
+        try {
+            await fs.link(path.join(staged, filename), destination);
+        } catch (error: any) {
+            if (error.code !== 'EEXIST') throw error;
+            if (await sha256File(destination) !== sha256) {
+                throw new Error(`Published obstacle snapshot is corrupt: ${filename}`);
+            }
+        }
+        await writeFileAtomic(path.join(published, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+        for (const name of await fs.readdir(published)) {
+            if (name !== filename && /^obstacles-[a-f0-9]{64}\.geojson\.gz$/.test(name)) {
+                await fs.rm(path.join(published, name));
+            }
+        }
 
         // Keep the successful online snapshot; local builds leave the download cache alone.
         if (!options.sourceFile) {

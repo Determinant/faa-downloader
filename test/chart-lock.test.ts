@@ -151,3 +151,15 @@ test('an empty directory left by interrupted lock cleanup can be acquired', asyn
     await release();
     assert.deepEqual(await fs.readdir(f.root), []);
 });
+
+test('a reused PID does not keep an old lock alive', async t => {
+    const f = await fixture(t);
+    await fs.mkdir(f.lock);
+    await fs.writeFile(path.join(f.lock, `${process.pid}-${randomUUID()}.json`),
+        JSON.stringify({ pid: process.pid, token: 'old-owner' }));
+    const old = new Date(Date.now() - 120_000);
+    await fs.utimes(f.lock, old, old);
+    const release = await acquireChartBuildLock(f.base);
+    await release();
+    assert.deepEqual(await fs.readdir(f.root), []);
+});

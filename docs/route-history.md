@@ -89,8 +89,8 @@ The decompressed document has this shape (example abbreviated):
   Combined with `--source-dir`, this rebuilds entirely offline. Without an explicit
   history source, local NASR builds omit this product.
 
-Source/download/schema failures stop an online build before the existing `nav/`
-directory is replaced. There is no background collector or credential file.
+Source/download/schema failures stop an online build before `nav/manifest.json`
+is replaced. There is no background collector or credential file.
 
 On September 19, 2026, AQ replaced the legacy snapshot with a new export using
 `route_type = 'filed'` instead of `'f'`. The snapshot inspected at 23:25 UTC was

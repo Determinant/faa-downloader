@@ -65,8 +65,8 @@ download or conversion failures preserve the previous public directory. Concurre
 obstacle builds sharing an output root are guarded by the existing build-lock helper.
 
 Each run replaces the full snapshot, so removed obstacles disappear without replaying
-daily change files. Upload the compressed artifact **before** `manifest.json`, and
-retain previously published hashed artifacts for clients holding an older manifest.
+daily change files. Upload the compressed artifact **before** `manifest.json`.
+The local builder removes older snapshots after switching the manifest.
 The existing chart publisher's data-then-manifest upload covers this directory.
 Consumers should resolve `dataset.path` from the manifest, decompress the gzip bytes,
 and use `source.lastModified` for source freshness. A successful build does not imply

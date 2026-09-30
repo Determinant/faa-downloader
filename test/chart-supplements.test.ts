@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { buildChartSupplements } from '../build-chart-supplements.ts';
+import { acquireChartBuildLock } from '../lib/chart-build-lock.ts';
 import { parseSupplementIndex, supplementDateCode, supplementPageLabel } from '../lib/chart-supplements.ts';
 
 const airport = (id: string, pdf: string) => `<airport><aptname>TEST AIRPORT</aptname><aptcity>TEST</aptcity>
@@ -77,14 +78,22 @@ async function supplementFixture(t: import('node:test').TestContext) {
     t.after(() => fs.rm(output, { recursive: true, force: true }));
     const effectiveDate = '2026-09-03';
     const directory = path.join(output, 'charts', effectiveDate);
-    await fs.mkdir(directory, { recursive: true });
-    const file = path.join(directory, 'cs-sw.pdf');
+    await fs.mkdir(path.join(directory, 'cs'), { recursive: true });
+    const file = path.join(directory, 'cs', 'cs-sw.pdf');
     const sourceXml = path.join(output, 'afd.xml');
     await fs.writeFile(file, supplementPdf());
     await fs.writeFile(sourceXml, xml(airport('HWD', 'sw_174_03SEP2026.pdf')));
     return { output, effectiveDate, sourceXml, file, directory,
         catalogFile: path.join(directory, 'cs', 'catalog.json') };
 }
+
+test('supplement publication rejects a concurrent builder for the same cycle', async t => {
+    const fixture = await supplementFixture(t);
+    const release = await acquireChartBuildLock(path.join(fixture.directory, '.cs'));
+    try {
+        await assert.rejects(buildChartSupplements(fixture), /Chart build already in progress/);
+    } finally { await release(); }
+});
 
 test('unchanged CS books and XML reuse the verified catalog; force rebuilds it', async t => {
     const f = await supplementFixture(t);
@@ -120,7 +129,7 @@ test('CS reuse invalidates changed XML, same-size PDF edits, and the available b
     await fs.writeFile(f.sourceXml, xml(airport('SQL', 'sw_175_03SEP2026.pdf') + airport('PUW', 'nw_175_03SEP2026.pdf')));
     const partial = await buildChartSupplements(f);
     assert.equal(partial.volumes.length, 1);
-    const northwest = path.join(f.directory, 'cs-nw.pdf');
+    const northwest = path.join(f.directory, 'cs', 'cs-nw.pdf');
     await fs.copyFile(f.file, northwest);
     const expanded = await buildChartSupplements(f);
     assert.equal(expanded.volumes.length, 2);

@@ -2,7 +2,7 @@ import { DOMParser } from '@xmldom/xmldom';
 import type { PdfTextItem } from './procedures.ts';
 
 export const SUPPLEMENT_REGIONS = ['AK', 'EC', 'NC', 'NE', 'NW', 'PAC', 'SC', 'SE', 'SW'] as const;
-export const SUPPLEMENT_BUILDER_VERSION = 2;
+export const SUPPLEMENT_BUILDER_VERSION = 3;
 
 export type SupplementAirport = {
     faaId: string;
@@ -23,7 +23,7 @@ export type SupplementVolume = {
 };
 
 export type SupplementCatalog = {
-    schemaVersion: 2;
+    schemaVersion: 3;
     builderVersion: number;
     effectiveDate: string;
     expirationDate: string;
@@ -31,7 +31,6 @@ export type SupplementCatalog = {
     sourceXml: { url: string; sha256: string };
     volumes: SupplementVolume[];
     airports: SupplementAirport[];
-    expected: Pick<SupplementAirport, 'faaId' | 'state' | 'volumeId' | 'printedPage'>[];
 };
 
 export function supplementDate(value: string): string {

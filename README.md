@@ -124,7 +124,7 @@ npm run build:far fetches the current eCFR XML for Title 14, filters it to the c
 The output includes:
 
 - index.html, the PWA shell and entry point
-- far-parts/, one HTML page per included part
+- far-parts/, with HTML part pages and retained generations for existing links
 - vendor/, locally bundled TreeView assets
 - manifest.webmanifest, icons, and service-worker.js
 - normalized and combined XML build intermediates
@@ -204,7 +204,8 @@ The selected PDF coverage includes all 25 TPP volumes: AK, EC1–EC3, NC1–NC3,
 NE1–NE4, NW1, SC1–SC5, SE1–SE4, and SW1–SW4. It also includes all nine
 Chart Supplements: AK, EC, NC, NE, NW, PAC, SC, SE, and SW. Pacific terminal
 procedures are included in Chart Supplement Pacific. PDFs retain the existing
-`tpp-<volume>.pdf` and `cs-<region>.pdf` filenames under their publication dates.
+`tpp-<volume>.pdf` and `cs-<region>.pdf` filenames inside each cycle's `tpp/` and
+`cs/` directories respectively.
 
 The configured raster footprint includes every FAA Sectional, all 34 Terminal Area
 (TAC) sheets and 21 Flyway (FLY) sheets, and the main L01-L36 Low and H01-H12 High
@@ -241,29 +242,24 @@ dist/
 │   ├── obstacles/
 │   │   ├── obstacles-<sha256>.geojson.gz
 │   │   └── manifest.json
+│   ├── terrain/
+│   │   ├── <sha256>.dem
+│   │   ├── <sha256>.terrain
+│   │   ├── <sha256>.terrain-sources.json
+│   │   └── manifest.json
 │   └── YYYY-MM-DD/
-│       ├── *.pdf
-│       ├── *.tif
 │       ├── mbtiles/
 │       │   ├── <kind>-z<zoom>-r<depth>-<x>-<y>-<sha256>.mbtiles
 │       │   └── manifest.json
 │       ├── nav/
-│       │   ├── airports.geojson
-│       │   ├── fixes.geojson
-│       │   ├── vfr-waypoints.geojson
-│       │   ├── navaids.geojson
-│       │   ├── airways.json
-│       │   ├── terminal-procedures.json
-│       │   ├── magnetic-model.json
-│       │   ├── preferred-routes.json
-│       │   ├── route-history.json.gz
+│       │   ├── <manifest-listed product files>
 │       │   └── manifest.json
-│       ├── nasr/
-│       │   └── *_CSV.zip
 │       ├── cs/
+│       │   ├── cs-*.pdf
 │       │   └── catalog.json
 │       └── tpp/
-│           ├── catalog.json
+│           ├── tpp-*.pdf
+│           ├── catalog.<sha256>.json
 │           └── manifest.json
 ├── mbtiles/                         # local build cache; do not upload
 │   └── YYYY-MM-DD/
@@ -271,6 +267,14 @@ dist/
 │       ├── <sheet>.mbtiles.build.json
 │       ├── chart-packages-<output-id>.build.json
 │       └── chart-manifest.json
+├── sources/                         # local extracted inputs; do not upload
+│   └── YYYY-MM-DD/
+│       ├── charts/
+│       │   └── *.tif
+│       └── nav/
+│           ├── *_CSV.zip
+│           ├── CIFP_*.zip (or local FAACIFP18)
+│           └── coverage.json
 ├── supplements/                     # local XML and index-build cache; do not upload
 │   ├── afd_<edition>.xml
 │   └── YYYY-MM-DD.build.json
@@ -278,17 +282,22 @@ dist/
 │   └── <etag-sha256>.sqlite.zst
 ├── obstacles/                       # local daily FAA ZIP cache; do not upload
 │   └── <etag-sha256>.zip
+├── terrain-cache/                   # local USGS sources and batch receipts; do not upload
 └── zips/                            # local source cache; do not upload
     └── YYYY-MM-DD/
         └── *.zip
 ~~~
+
+Resolve navigation and TPP filenames through their manifests. Builders keep only the
+current generation in local output. Run `npm run clean:generated` once to migrate and
+compact output from older builds; it does not download source data.
 
 Downloaded cycle PDFs and ZIP files are reused on subsequent runs; rolling obstacle and route-history sources are checked for updates. Each MBTiles file has a build receipt containing source, output, and tiler-configuration hashes; cached tiles are reused only while that receipt still matches. Generated chart data is ignored by Git because a complete collection is several gigabytes. The chart builder currently produces the download and tile data; it does not provide a chart-viewer PWA.
 
 Large per-sheet archives, receipts, build manifests, and GDAL/packaging work files live
 under `dist/mbtiles/YYYY-MM-DD/`, alongside the `dist/zips/` source cache. Only the small
 delivery archives and their `manifest.json` live in `dist/charts/YYYY-MM-DD/mbtiles/`.
-Original PDFs and TIFFs remain at the chart cycle root.
+Original PDFs live in the cycle's `tpp/` and `cs/` folders; TIFFs are kept under `sources/`.
 The per-chart lock directory remains beside the source TIFF during a build and is
 removed when the operation finishes. Its owner marker is published atomically;
 retries reclaim dead owners without deleting another builder's lock. Legacy empty
@@ -304,8 +313,8 @@ from cutline corners or chart-family defaults. This requires `gdalinfo` but does
 render tiles. Normal chart builds relocate caches too. Conflicting old and new files
 cause an error rather than overwriting either copy. Wait for running builders to finish
 and run migration on local build output, not an actively served directory. Upload
-`charts/` without filtering out intermediate MBTiles; neither `dist/mbtiles/` nor
-`dist/zips/` belongs on the chart host. Delivery files must arrive before their manifest
+`charts/` without filtering out delivery MBTiles; `dist/sources/`, `dist/mbtiles/`, and
+`dist/zips/` stay local. Delivery files must arrive before their manifest
 even with asynchronous syncing. ZLayers reads `mbtiles/manifest.json`, with fallbacks
 for older published layouts. If packages do not exist yet, or imagery/region definitions
 changed, follow the manifest command with `npm run build:chart-packages`.
@@ -313,7 +322,7 @@ changed, follow the manifest command with `npm run build:chart-packages`.
 Upgrading from builds made before the Lambert IFR cutline change requires rebuilding
 the affected IFR sheets (L02–L04 in the former default coverage). Their old receipts
 are intentionally invalid: a manifest refresh cannot correct the imagery. Run
-`npm run build:charts -- --tile=dist/charts/YYYY-MM-DD/ifr-enroute-low-l02.tif`
+`npm run build:charts -- --tile=dist/sources/YYYY-MM-DD/charts/ifr-enroute-low-l02.tif`
 for each affected sheet, then rerun `build:chart-manifests` and `build:chart-packages`.
 Alternatively, `npm run build:charts` rebuilds stale sheets as part of the full pipeline.
 If a manifest refresh has already stopped on a stale receipt, its completed file moves
@@ -372,8 +381,8 @@ cycle, including older cycles.
 Package filenames contain their content hash; unchanged outputs reuse the same
 identity. The local index is replaced atomically
 only after every referenced file is present. Upload package files **before** their
-manifest; keep previously published hashed files for open/offline clients. Old packages
-are deliberately not garbage-collected automatically. For current ZLayers imagery
+manifest. The local builder removes unreferenced old packages after switching the
+manifest. For current ZLayers imagery
 delivery, upload `charts/YYYY-MM-DD/mbtiles/`; the larger per-sheet archives stay in
 the separate build cache and are not additional downloads required by the package feed.
 
@@ -390,7 +399,7 @@ justify it; it should not introduce a second large regional MBTiles storage form
 To tile one existing TIFF without downloading anything:
 
 ~~~bash
-npm run build:charts -- --tile=dist/charts/YYYY-MM-DD/chart.tif
+npm run build:charts -- --tile=dist/sources/YYYY-MM-DD/charts/chart.tif
 ~~~
 
 Add `--force` to rebuild an existing MBTiles file. Rebuilds are staged and replaced
@@ -491,8 +500,8 @@ are preserved. Airport prefixes and runway bearings are never inferred.
 Blank, non-magnetic, invalid, or conflicting bearings remain absent; runway numbers
 are never used to estimate headings. This supplies magnetic headings even where
 NASR true alignment is blank, including KSLI. The airport artifact hash and source
-metadata cover this enrichment. Rebuild with `npm run build:nav` (`build:charts`
-does not rebuild navigation), then upload the dated `nav/` artifacts before its
+metadata cover this enrichment. Rebuild with `npm run build:nav` (or the full
+`npm run build:charts` pipeline), then upload the dated `nav/` artifacts before its
 `manifest.json`, preserving earlier immutable files.
 Airport `frequencies[]` come from `FRQ.csv`: ATIS/D-ATIS, AWOS/ASOS, Tower, CTAF,
 and Ground, with `frequencyMHz`, published `use`, `sector`, `hours`, and `remarks`.
@@ -503,9 +512,9 @@ including AWOS/ASOS records associated with that airport. Ambiguous matches are
 omitted. Exact duplicates are removed; distinct sectors and restrictions remain.
 UNICOM and approach channels are not substituted for CTAF. Rebuild and upload the
 cycle's `nav/` directory to expose frequencies; no chart or plate rebuild is needed.
-`fixes.geojson` contains the complete FIX group. VFR waypoints
-are additionally written to `vfr-waypoints.geojson`, classified by the FAA's
-`FIX_USE_CODE=VFR` field instead of by identifier prefix alone. The FAA specifies VFR
+The `fixes` product contains the complete FIX group, including VFR waypoints.
+Select VFR waypoints with the FAA's `FIX_USE_CODE=VFR` field instead of by identifier
+prefix alone. The FAA specifies VFR
 waypoint names beginning with `VP`, but the prefix is not a safe converse test because
 some `VP...` identifiers are used for instrument procedures.
 
@@ -533,20 +542,29 @@ the navigation export.
 The complete national file can be cached once per cycle for offline airport-pair
 lookup. Consumers should map ICAO airport codes to FAA identifiers using the airport
 data and display the published conditions alongside each result. The full PFR source
-ZIP, including its layout documentation and `PFR_RMT_FMT.csv`, is retained in `nasr/`.
+ZIP, including its layout documentation and `PFR_RMT_FMT.csv`, is retained in `sources/<cycle>/nav/`.
 
-`nav/manifest.json` uses schema version 2. It records source identities, wire SHA-256,
+`nav/manifest.json` uses schema version 3. It records source identities, wire SHA-256,
 UTF-8 `JSON.stringify(parsedDocument)` SHA-256, byte sizes, counts, and terminal
 coverage. Product filenames include their wire digest; the short names in this
 section identify products, not paths clients should construct. Always resolve files
 through the manifest. The builder publishes immutable files before atomically
-replacing this single manifest. Prior same-cycle generations stay readable until
-cycle retention removes the edition. Upload the files before uploading the manifest;
+replacing this single manifest. The local builder then removes unreferenced files.
+Upload the files before uploading the manifest;
 an external directory sync is not the publisher's atomic commit.
 
+The generated navigation layout is organized by data role, not FAA input feed.
+The fixes product includes `vfrWaypointCount`; it contains all FIX records, and
+consumers derive VFR waypoints from records with `kind: "vfr-waypoint"`.
+NASR and CIFP identities remain in provenance for traceability. Terminal filing
+sequences and coded legs stay as separate fields because they have different
+meaning and cannot be joined safely by name alone. The consumer can adapt these
+published fields without preserving the original FAA file layout.
+
 All required NASR tables validate headers, nonempty input and every row's edition.
-`nasr-coverage` accounts for each table's source/export/exclusion rows and retains
-excluded records with reasons. Empty core map products cannot publish. The current
+`sources/<cycle>/nav/coverage.json` accounts for each table's source/export/exclusion
+rows and retains excluded records with reasons. The original CIFP input is kept in
+the same local source cache. Empty core map products cannot publish. The current
 and previous NASR cycles are retained by default.
 
 After rebuilding navigation, run `npm run build:procedures` for the same edition.
@@ -556,11 +574,11 @@ indexes are reused when source bytes and books are unchanged. Reviewed exception
 live in `data/approach-associations/YYYY-MM-DD.json`, with source hashes and plate/fix
 evidence; they never carry forward to another edition automatically. Standalone plate
 builds still work before navigation is available, with association status unavailable.
-The TPP manifest also uses immutable filenames and a single manifest commit.
+The TPP manifest also uses immutable filenames and a single manifest commit; the
+local builder removes older catalogs after the commit.
 
-Run `npm run build:supplements` once to publish schema version 2 supplement coverage.
-It records the full expected FAA index even for a partial regional build. A region
-missing an expected book cannot be saved as complete. Raster chart products and PDF
+Run `npm run build:supplements` once to publish schema version 3 supplement coverage.
+The catalog includes entries from each available regional book. Raster chart products and PDF
 books do not need to be regenerated for these contract updates.
 
 Airway `segments[]` preserve FAA `AWY_SEG_GAP_FLAG` as boolean `gap`. Consumers
@@ -582,7 +600,7 @@ value versions client URLs; already saved snapshots retain their original data u
 ### Geographic magnetic variation
 
 `npm run build:charts` and `npm run build:nav` also publish
-`charts/YYYY-MM-DD/nav/magnetic-model.json`, listed as product `magnetic-model`
+the `magnetic-model` product in `charts/YYYY-MM-DD/nav/manifest.json`
 in the existing navigation manifest. It contains the global **WMM2025** model
 from [NOAA NCEI and the British Geological Survey](https://www.ncei.noaa.gov/products/world-magnetic-model).
 Consumers can calculate local magnetic variation from geographic position and date,
@@ -619,7 +637,7 @@ To update the model, replace the official coefficient file, its identity/checksu
 and validity constants in `lib/magnetic-model.ts`, the published-value tests, and
 the third-party notice. Verify against NOAA's release before publishing. Then rebuild
 navigation and upload the complete cycle's `nav/` directory; client URLs use the
-manifest's refreshed `generatedAt`. See [third-party notices](THIRD_PARTY_NOTICES.md).
+product's content-addressed filename. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
 To rebuild the complete navigation bundle:
 
@@ -673,7 +691,7 @@ for offline XML input, cycle selection, and the catalog format.
 ### Historical filed routes
 
 `npm run build:charts` and `npm run build:nav` download Aeronautic AQ's public
-`routes.sqlite.zst` snapshot and package `nav/route-history.json.gz` in the current
+`routes.sqlite.zst` snapshot and package a gzip route-history product in the current
 chart cycle. No account, API key, queue, or separate collection process is needed.
 The source download is cached under `dist/route-history/` and refreshed when its
 ETag changes. Completed source snapshots are retained because newer versions can

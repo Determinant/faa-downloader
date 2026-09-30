@@ -34,7 +34,7 @@ export async function stageJson(directory: string, name: string, value: unknown)
 
 /** Immutable files become visible first. Replacing the manifest is the sole
  * commit point; interruption leaves a complete previous or next generation.
- * Old generations are retained until the containing edition is pruned. */
+ * Callers may prune unreferenced files after the new manifest is committed. */
 export async function publishGeneration(staging: string, target: string, manifest: unknown): Promise<void> {
     await fs.mkdir(target, { recursive: true });
     for (const name of await fs.readdir(staging)) {
@@ -49,4 +49,16 @@ export async function publishGeneration(staging: string, target: string, manifes
         }
     }
     await writeFileAtomic(path.join(target, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+}
+
+/** Compact an owned publication directory after its new manifest is committed. */
+export async function pruneGeneration(target: string, files: Iterable<string>): Promise<void> {
+    const keep = new Set(['manifest.json', ...files]);
+    for (const name of keep) {
+        if (path.basename(name) !== name) throw new Error(`Invalid publication filename: ${name}`);
+        await fs.access(path.join(target, name));
+    }
+    for (const entry of await fs.readdir(target, { withFileTypes: true })) {
+        if (entry.isFile() && !keep.has(entry.name)) await fs.rm(path.join(target, entry.name));
+    }
 }

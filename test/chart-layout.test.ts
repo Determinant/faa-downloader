@@ -4,8 +4,22 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { flattenChartPackages } from '../lib/chart-package-layout.ts';
-import { chartCacheDirectory, chartMbtilesPath } from '../lib/chart-paths.ts';
+import { chartCacheDirectory, chartLayoutForCycleDirectory, chartMbtilesPath, chartSourceDirectory } from '../lib/chart-paths.ts';
 import { sha256File, writeChartBuildReceipt, writeChartManifests } from '../lib/chart-tiler.ts';
+
+test('chart layout resolves standard cycles and retains ad-hoc cycle directories', () => {
+    const root = path.resolve('/tmp/chart-layout-example');
+    const cycle = path.join(root, 'charts', '2026-09-03');
+    assert.deepEqual(chartLayoutForCycleDirectory(cycle), {
+        legacyDirectory: cycle,
+        sourceDirectory: path.join(root, 'sources', '2026-09-03', 'charts'),
+        cacheDirectory: path.join(root, 'mbtiles', '2026-09-03'),
+        deliveryDirectory: path.join(cycle, 'mbtiles')
+    });
+    const adHoc = path.join(root, 'custom', '2026-09-03');
+    assert.equal(chartLayoutForCycleDirectory(adHoc).sourceDirectory, adHoc);
+    assert.equal(chartLayoutForCycleDirectory(adHoc).cacheDirectory, path.join(adHoc, 'mbtiles'));
+});
 
 async function fixture(t: TestContext, layout: 'flat' | 'nested' = 'nested') {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-delivery-layout-'));
@@ -17,6 +31,7 @@ async function fixture(t: TestContext, layout: 'flat' | 'nested' = 'nested') {
     const legacy = path.join(delivery, 'packages');
     await fs.mkdir(legacy, { recursive: true });
     const source = path.join(cycle, 'ifr-enroute-low-l13.tif');
+    const movedSource = path.join(chartSourceDirectory(cycle), path.basename(source));
     const sheet = 'ifr-enroute-low-l13.mbtiles';
     const oldDirectory = layout === 'flat' ? cycle : delivery;
     const oldSheet = path.join(oldDirectory, sheet);
@@ -34,7 +49,7 @@ async function fixture(t: TestContext, layout: 'flat' | 'nested' = 'nested') {
     await fs.rename(temporary, path.join(legacy, file));
     const manifest = { schemaVersion: 2, packagingVersion: 1, archives: [{ id, file, sha256, byteLength: bytes.length }] };
     await fs.writeFile(path.join(legacy, 'manifest.json'), JSON.stringify(manifest));
-    return { root, charts, cycle, delivery, cache, legacy, source, sheet, oldSheet, receipt, file, manifest };
+    return { root, charts, cycle, delivery, cache, legacy, source, movedSource, sheet, oldSheet, receipt, file, manifest };
 }
 
 const metadata = async () => ({ bounds: [-122, 40, -102, 49] as [number, number, number, number], minZoom: 4, maxZoom: 11 });
@@ -58,9 +73,10 @@ for (const layout of ['flat', 'nested'] as const) for (const interrupted of [fal
         assert.equal(build.charts[0].file, f.sheet);
         assert.equal(build.charts[0].sha256, f.receipt.output.sha256);
         assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.delivery, 'manifest.json'), 'utf8')), f.manifest);
-        assert.equal(await fs.readFile(f.source, 'utf8'), 'source TIFF');
+        assert.equal(await fs.readFile(f.movedSource, 'utf8'), 'source TIFF');
+        await assert.rejects(fs.access(f.source), /ENOENT/);
         assert.equal(await fs.readFile(path.join(f.cycle, 'original.pdf'), 'utf8'), 'original PDF');
-        assert.deepEqual((await fs.readdir(f.cycle)).sort(), [path.basename(f.source), 'mbtiles', 'original.pdf'].sort());
+        assert.deepEqual((await fs.readdir(f.cycle)).sort(), ['mbtiles', 'original.pdf'].sort());
         await writeChartManifests(f.charts, metadata);
         assert.deepEqual((await fs.readdir(f.delivery)).sort(), [f.file, 'manifest.json'].sort());
     });

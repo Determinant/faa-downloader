@@ -15,8 +15,10 @@ import { mapWithConcurrency } from './concurrency.ts';
 import { sha256File } from './fs-utils.ts';
 import { buildFingerprint, readCachedJson, writeCachedJson } from './build-cache.ts';
 import type { ChartKind } from './chart-definitions.ts';
+import { validateRegions, type OfflineRegionDefinition } from './offline-regions.ts';
 
-export type OfflineRegionDefinition = Omit<ChartOfflineRegion, 'archiveIds'>;
+export { validateRegions } from './offline-regions.ts';
+export type { OfflineRegionDefinition } from './offline-regions.ts';
 export type ChartPackageManifest = Omit<ChartManifest, 'schemaVersion'> & {
     schemaVersion: 2;
     packagingVersion: 1;
@@ -29,13 +31,22 @@ export const MAXIMUM_ARCHIVE_BYTES = 4 * 1024 * 1024;
 // Bump when packaging algorithms or encoding settings change.
 const PACKAGING_VERSION = 1;
 
+async function prunePackages(output: string, archives: ChartPackageArchive[]): Promise<void> {
+    const keep = new Set(archives.map(archive => archive.file));
+    for (const name of await fs.readdir(output)) {
+        if (/-[a-f0-9]{64}\.mbtiles$/.test(name) && !keep.has(name)) {
+            await fs.rm(path.join(output, name));
+        }
+    }
+}
+
 async function removeAbandonedPackageWork(directory: string): Promise<void> {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
         // Legacy directories have no owner, so their safety cannot be inferred.
         const match = entry.isDirectory() && entry.name.match(/^\.packages-work-([1-9]\d*)-[a-zA-Z0-9]{6}$/);
         if (!match) continue;
         const pid = Number(match[1]);
-        if (Number.isSafeInteger(pid) && !processIsRunning(pid)) {
+        if (Number.isSafeInteger(pid) && !processIsRunning(pid, (await fs.stat(path.join(directory, entry.name))).mtimeMs)) {
             // Names are unique to an invocation and never reused. Concurrent
             // packagers targeting other outputs may reap the same dead owner.
             await fs.rm(path.join(directory, entry.name), { recursive: true, force: true });
@@ -75,7 +86,8 @@ export async function packageChartCycle(
         const { generatedAt: _generatedAt, ...inputs } = manifest;
         const inputSha256 = buildFingerprint({ packagingVersion: PACKAGING_VERSION, inputs, regions, maximumBytes });
         const manifestFile = path.join(output, 'manifest.json');
-        const receiptFile = path.join(directory, `chart-packages-${buildFingerprint(path.resolve(output)).slice(0, 16)}.build.json`);
+        const receiptFile = path.join(directory,
+            `chart-packages-${buildFingerprint(path.relative(directory, path.resolve(output))).slice(0, 16)}.build.json`);
         // Publish ownership in the mkdir itself, before any SQLite files or
         // source hard links exist, so interruption cannot leave an ownerless pin.
         scratch = await fs.mkdtemp(path.join(directory, `.packages-work-${process.pid}-`));
@@ -98,8 +110,20 @@ export async function packageChartCycle(
             assert.equal(await sha256File(file), chart.sha256, `Stale chart: ${chart.id}`);
         }
         if (!options.force) {
-            const existing = await readCachedJson<ChartPackageManifest>(manifestFile, receiptFile, inputSha256);
+            let existing = await readCachedJson<ChartPackageManifest>(manifestFile, receiptFile, inputSha256);
+            let previousReceipt: string | undefined;
+            if (!existing) {
+                for (const name of await fs.readdir(directory)) {
+                    if (!/^chart-packages-[a-f0-9]{16}\.build\.json$/.test(name)) continue;
+                    const candidate = path.join(directory, name);
+                    if (candidate === receiptFile) continue;
+                    existing = await readCachedJson<ChartPackageManifest>(manifestFile, candidate, inputSha256);
+                    if (existing) { previousReceipt = candidate; break; }
+                }
+            }
             if (existing && await verifyPackages(output, existing.archives)) {
+                if (previousReceipt) await fs.copyFile(previousReceipt, receiptFile);
+                await prunePackages(output, existing.archives);
                 console.log(`Chart packages for ${manifest.effectiveDate} are already current`);
                 return existing;
             }
@@ -149,8 +173,8 @@ export async function packageChartCycle(
             regions: regions.map(region => ({ ...region, archiveIds: regionArchives(region.bounds, archives) }))
         };
         // Immutable, content-addressed files are present before the pointer changes.
-        // Previous files remain valid for open clients and previously saved regions.
         await writeCachedJson(manifestFile, receiptFile, inputSha256, result);
+        await prunePackages(output, archives);
         return result;
     } finally {
         for (const source of sources) source.close();
@@ -222,19 +246,4 @@ async function writeShard(
     let mask = 0n;
     for (const tile of tiles) mask |= 1n << BigInt((tile.y - root.y * span) * span + tile.x - root.x * span);
     archives.push({ id, kind, file, zoom, root, bounds, tileMask: mask.toString(16), byteLength, sha256 });
-}
-
-export function validateRegions(regions: readonly OfflineRegionDefinition[]): void {
-    if (!Array.isArray(regions)) throw new Error('Offline regions must be an array');
-    const ids = new Set<string>();
-    for (const region of regions) {
-        if (!region || typeof region.id !== 'string' || !region.id.trim() ||
-            typeof region.title !== 'string' || !region.title.trim() || ids.has(region.id) || !Array.isArray(region.bounds) ||
-            !region.bounds.length || region.bounds.some(bounds => !Array.isArray(bounds) || bounds.length !== 4 ||
-                !bounds.every(Number.isFinite) || bounds[0] < -180 || bounds[2] > 180 ||
-                bounds[1] < -90 || bounds[3] > 90 || bounds[0] >= bounds[2] || bounds[1] >= bounds[3])) {
-            throw new Error(`Invalid offline region: ${region?.id}`);
-        }
-        ids.add(region.id);
-    }
 }

@@ -257,7 +257,8 @@ test('main-branch receipts retain VFR caches and require the IFR cutline rebuild
             // Simulate the renderer replacing the relocated stale sheet. A retry
             // must recognize its new receipt and finish the interrupted migration.
             await fs.writeFile(relocated, 'rebuilt with Lambert cutline');
-            const rebuilt = await writeChartBuildReceipt(source, relocated);
+            const rebuilt = await writeChartBuildReceipt(
+                path.join(root, filename, 'sources', '2026-09-03', 'charts', filename), relocated);
             assert.notEqual(rebuilt.configurationSha256, receipt.configurationSha256);
         }
         await writeChartManifests(charts, readFixtureMetadata);

@@ -13,6 +13,7 @@ import {
     discoverCurrentNasrCycle,
     discoverNasrGroupUrls,
     downloadNasrFile,
+    parseArgs,
     pruneNasrCycles
 } from '../download-nasr.ts';
 import { parseCsvRecords, parseCsvRows } from '../lib/csv.ts';
@@ -98,36 +99,31 @@ test('navigation builds reject invalid options before fetching or creating outpu
     assert.deepEqual(await fs.readdir(root), []);
 });
 
-test('navigation CLI rejects an online cycle override before starting a build', async t => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nav-cli-'));
-    t.after(() => fs.rm(root, { recursive: true, force: true }));
-    await assert.rejects(promisify(execFile)(process.execPath, [
-        '--import=tsx', 'download-nasr.ts', `--output=${path.join(root, 'output')}`, '--cycle=2026-09-03'
-    ], { cwd: new URL('..', import.meta.url), timeout: 10_000 }), {
-        code: 1,
-        stderr: /--cycle requires --source-dir/
-    });
-    assert.deepEqual(await fs.readdir(root), []);
+test('navigation CLI rejects an online cycle override before starting a build', () => {
+    assert.throws(() => parseArgs([
+        '--output=/tmp/faa-nav-cli-output', '--cycle=2026-09-03'
+    ]), /--cycle requires --source-dir/);
 });
 
 test('NASR retention removes only stale nested data from chart cycle directories', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-retention-'));
+    const charts = path.join(root, 'charts');
     try {
         for (const cycle of ['2026-07-09', '2026-08-06', '2026-09-03']) {
-            await fs.mkdir(path.join(root, cycle, 'nav'), { recursive: true });
-            await fs.mkdir(path.join(root, cycle, 'nasr'));
-            await fs.writeFile(path.join(root, cycle, 'nav', 'manifest.json'), cycle);
-            await fs.writeFile(path.join(root, cycle, 'nasr', 'APT_CSV.zip'), cycle);
+            await fs.mkdir(path.join(charts, cycle, 'nav'), { recursive: true });
+            await fs.mkdir(path.join(root, 'sources', cycle, 'nav'), { recursive: true });
+            await fs.writeFile(path.join(charts, cycle, 'nav', 'manifest.json'), cycle);
+            await fs.writeFile(path.join(root, 'sources', cycle, 'nav', 'APT_CSV.zip'), cycle);
         }
-        await fs.writeFile(path.join(root, '2026-07-09', 'tpp-sw1.pdf'), '%PDF-test');
+        await fs.writeFile(path.join(charts, '2026-07-09', 'tpp-sw1.pdf'), '%PDF-test');
 
-        await pruneNasrCycles(root, 2);
+        await pruneNasrCycles(charts, 2);
 
-        await assert.rejects(fs.access(path.join(root, '2026-07-09', 'nav')), /ENOENT/);
-        await assert.rejects(fs.access(path.join(root, '2026-07-09', 'nasr')), /ENOENT/);
-        await fs.access(path.join(root, '2026-07-09', 'tpp-sw1.pdf'));
-        await fs.access(path.join(root, '2026-08-06', 'nav', 'manifest.json'));
-        await fs.access(path.join(root, '2026-09-03', 'nasr', 'APT_CSV.zip'));
+        await assert.rejects(fs.access(path.join(charts, '2026-07-09', 'nav')), /ENOENT/);
+        await assert.rejects(fs.access(path.join(root, 'sources', '2026-07-09', 'nav')), /ENOENT/);
+        await fs.access(path.join(charts, '2026-07-09', 'tpp-sw1.pdf'));
+        await fs.access(path.join(charts, '2026-08-06', 'nav', 'manifest.json'));
+        await fs.access(path.join(root, 'sources', '2026-09-03', 'nav', 'APT_CSV.zip'));
     } finally {
         await fs.rm(root, { recursive: true, force: true });
     }
@@ -135,17 +131,18 @@ test('NASR retention removes only stale nested data from chart cycle directories
 
 test('NASR retention preserves an explicitly built older cycle', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-retention-preserve-'));
+    const charts = path.join(root, 'charts');
     try {
         for (const cycle of ['2026-07-09', '2026-08-06', '2026-09-03']) {
-            await fs.mkdir(path.join(root, cycle, 'nav'), { recursive: true });
-            await fs.mkdir(path.join(root, cycle, 'nasr'));
+            await fs.mkdir(path.join(charts, cycle, 'nav'), { recursive: true });
+            await fs.mkdir(path.join(root, 'sources', cycle, 'nav'), { recursive: true });
         }
 
-        await pruneNasrCycles(root, 2, '2026-07-09');
+        await pruneNasrCycles(charts, 2, '2026-07-09');
 
-        await fs.access(path.join(root, '2026-07-09', 'nav'));
-        await assert.rejects(fs.access(path.join(root, '2026-08-06', 'nav')), /ENOENT/);
-        await fs.access(path.join(root, '2026-09-03', 'nasr'));
+        await fs.access(path.join(charts, '2026-07-09', 'nav'));
+        await assert.rejects(fs.access(path.join(charts, '2026-08-06', 'nav')), /ENOENT/);
+        await fs.access(path.join(root, 'sources', '2026-09-03', 'nav'));
     } finally {
         await fs.rm(root, { recursive: true, force: true });
     }
@@ -182,7 +179,7 @@ test('NASR downloader replaces a corrupt cache and removes an invalid response',
     }
 });
 
-test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway products', () => {
+test('NASR normalization classifies VFR waypoints within the complete fixes product', () => {
     const effective = '2026/09/03';
     const products = buildNasrProducts({
         ...preferredRouteInput(),
@@ -287,8 +284,8 @@ test('NASR normalization produces airport, fix, VFR waypoint, NAVAID, and airway
     }]);
     assert.equal(products.airports.features[0].properties.towered, true);
     assert.equal(products.fixes.features.length, 2);
-    assert.equal(products.vfrWaypoints.features.length, 1);
-    assert.equal(products.vfrWaypoints.features[0].properties.ident, 'VPABC');
+    assert.equal(products.fixes.features[0].properties.kind, 'vfr-waypoint');
+    assert.equal(products.fixes.features[0].properties.ident, 'VPABC');
     assert.equal(products.fixes.features[1].properties.kind, 'fix');
     assert.equal(products.navaids.features.length, 2);
     assert.equal(new Set(products.navaids.features.map(feature => feature.id)).size, 2);
@@ -555,6 +552,10 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
         [{ type: 'TOWER', frequencyMHz: 119.7, use: 'LCL/P' }], []
     ]);
     assert.equal(manifest.sourceArchives.find(source => source.group === 'FRQ').filename, 'FRQ_CSV.zip');
+    const fixesProduct = manifest.products.find(product => product.id === 'fixes');
+    const fixesData = JSON.parse(await fs.readFile(path.join(nav, fixesProduct.file), 'utf8'));
+    assert.equal(fixesProduct.vfrWaypointCount,
+        fixesData.features.filter((feature: any) => feature.properties.kind === 'vfr-waypoint').length);
     const magneticProduct = manifest.products.find(product => product.id === 'magnetic-model');
     assert.match(magneticProduct.file, /^magnetic-model\.[a-f0-9]{64}\.json$/);
     assert.equal(magneticProduct.count, 90);
@@ -617,7 +618,7 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     const source = manifest.sourceArchives.find(source => source.group === 'PFR');
     assert.equal(source.filename, 'PFR_CSV.zip');
     assert.match(source.url, /PFR_CSV\.zip$/);
-    const bytes = await fs.readFile(path.join(cycleDir, 'nasr', source.filename));
+    const bytes = await fs.readFile(path.join(options.output, 'sources', options.cycle, 'nav', source.filename));
     assert.equal(source.sha256, createHash('sha256').update(bytes).digest('hex'));
     const originalRoutes = await fs.readFile(path.join(nav, manifest.products.find(p => p.id === 'preferred-routes').file), 'utf8');
     assert.deepEqual(JSON.parse(originalRoutes), buildNasrProducts(input).preferredRoutes);
@@ -626,7 +627,7 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     const assertUnchanged = async () => {
         assert.deepEqual((await fs.readdir(nav)).sort(), [...snapshot.keys()].sort());
         for (const [name, bytes] of snapshot) assert.deepEqual(await fs.readFile(path.join(nav, name)), bytes, name);
-        assert.deepEqual((await fs.readdir(cycleDir)).sort(), ['nasr', 'nav']);
+        assert.deepEqual((await fs.readdir(cycleDir)).sort(), ['nav']);
     };
 
     const cifpFile = path.join(sourceDir, 'FAACIFP18'), cifp = await fs.readFile(cifpFile, 'utf8');

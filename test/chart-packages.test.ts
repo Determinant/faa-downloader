@@ -327,7 +327,11 @@ test('retries reclaim a killed packager\'s work and release its old source pins'
     assert.equal((await fs.stat(source)).nlink, 1);
     assert.equal((await fs.readdir(f.directory)).some(file => file.startsWith('.packages-work-')), false);
     assert.equal(retried.charts[0].sha256, replacement.manifest.charts[0].sha256);
-    for (const archive of original.archives) await fs.access(path.join(f.output, archive.file));
+    const current = new Set(retried.archives.map(archive => archive.file));
+    for (const archive of original.archives) {
+        if (current.has(archive.file)) await fs.access(path.join(f.output, archive.file));
+        else await assert.rejects(fs.access(path.join(f.output, archive.file)), /ENOENT/);
+    }
 });
 
 test('cleanup preserves live packagers sharing inputs and legacy work without an owner', { timeout: 10_000 }, async t => {

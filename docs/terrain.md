@@ -37,8 +37,7 @@ two sides of the date line. Custom region files use:
 The default envelopes produce **25,956 archive pairs**, containing about **25.3 GiB** of
 uncompressed maximum and surface grids before gzip (including all overviews). The earlier maximum-only national
 build verified on 2026-09-21 used **2.91 GB compressed**, including spatial indexes,
-provenance, and the manifest. Compression depends on the source data; retained older
-versions add to the deployment's disk usage. `--estimate` reports uncompressed grid
+provenance, and the manifest. Compression depends on the source data. `--estimate` reports uncompressed grid
 geometry, not compressed deployment size. Source GeoTIFF storage is additional; the 30-metre source has
 roughly one ninth as many samples as the previous 10-metre source. Online builds
 report the selected source inventory's total byte size before downloading. `--estimate`
@@ -72,14 +71,18 @@ no interval during which source freshness checks are silently skipped.
   A successful run still logs the freshness check and reuse counts.
 
 The object listing and small metadata requests consume network traffic. Verified,
-unchanged GeoTIFF bodies are not fetched again. Source versions and immutable
-published outputs are retained; old versions are not automatically pruned.
+unchanged GeoTIFF bodies are not fetched again. Published immutable outputs are
+compacted to the current manifest; downloaded source revisions remain in the local
+cache.
 
 `--rebuild` regenerates derived packages while still reusing verified, current
 GeoTIFFs. `--source-directory=DIR` imports local `.tif`/`.tiff` files with matching
 FGDC `.xml` sidecars and performs no network requests. Local imports require the
 same single-band, north-up NAD83 elevation-in-metres format as the USGS standard
 product; their content hashes detect changes. `--output=DIR` changes the build root.
+Use `--reuse-current-sources` to verify the source files named by the current
+terrain provenance and rebuild packages entirely from the local USGS cache.
+`--source-provenance=FILE` selects a saved provenance file explicitly.
 
 ## Elevation processing and provenance
 
@@ -151,7 +154,7 @@ files may use long-lived HTTP caching; the manifest must be revalidatable. Serve
 
 Running with fewer regions replaces the published coverage list with that
 selection. Use the full intended list when extending a deployment. Existing
-immutable files remain available to older saved selections. ZLayer discovers this
+immutable files outside the new selection are removed from local output. ZLayer discovers this
 product independently of FAA chart cycles; existing offline selections need
 **Verify / update** to acquire it. Its online PNG fallback remains independent.
 
@@ -188,9 +191,8 @@ float32/Mercator offline selections keep working at their saved resolution.
 4.9-arc-second manifests need the consumer update first.
 
 This resolution increase reuses the existing 1-arc-second USGS source cache;
-only derived grids need rebuilding. Retained immutable files are not automatically
-pruned: publishing a new manifest does not reclaim older delivery files or source
-caches. Include retained versions when checking the deployment's disk budget.
+only derived grids need rebuilding. The local builder removes old delivery files
+after publishing a new manifest; source caches retain downloaded revisions.
 
 Contours remain route-dependent and are generated in the browser. Changing the
 source does not establish an end-to-end rendering speedup.

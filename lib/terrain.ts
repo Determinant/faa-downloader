@@ -9,7 +9,7 @@ import { intersects, renderTerrainBatch, terrainBatchBounds, terrainBatches, ter
 import { sha256File, writeFileAtomic } from './fs-utils.ts';
 import { TERRAIN_MAX_ZOOM, TERRAIN_RESOLUTION_ARC_SECONDS, terrainGridSize, terrainRegionBlocks } from './terrain-grid.ts';
 import { missingTerrainGrid, reduceTerrainArchive } from './terrain-overviews.ts';
-import { validateRegions, type OfflineRegionDefinition } from './chart-packager.ts';
+import { validateRegions, type OfflineRegionDefinition } from './offline-regions.ts';
 
 // Bump when raster processing or packaging semantics change, independently of the delivery format.
 const TERRAIN_BUILD_VERSION = 7;
@@ -25,6 +25,14 @@ export type TerrainManifest = {
 const shardKey = (a: Pick<TerrainArchive, 'zoom' | 'x' | 'y'>) => `${a.zoom}/${Math.floor(a.x / 64) * 64}/${Math.floor(a.y / 64) * 64}`;
 const digest = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex');
 const archiveKey = (a: Pick<TerrainArchive, 'zoom' | 'x' | 'y'>) => `${a.zoom}/${a.x}/${a.y}`;
+
+async function pruneTerrainFiles(directory: string, files: ReadonlySet<string>): Promise<void> {
+    for (const name of await fs.readdir(directory)) {
+        if (/^[a-f0-9]{64}\.(?:dem|terrain|terrain-sources\.json)$/.test(name) && !files.has(name)) {
+            await fs.rm(path.join(directory, name));
+        }
+    }
+}
 
 export function terrainBlocks(regions: OfflineRegionDefinition[]): Array<{ zoom: number; x: number; y: number }> {
     validateRegions(regions);
@@ -67,7 +75,7 @@ async function verifyArchive(directory: string, archive: TerrainFile): Promise<b
 }
 
 export async function buildTerrain(output: string, regions: OfflineRegionDefinition[], options: {
-    sourceDirectory?: string; rebuild?: boolean; fetch?: typeof globalThis.fetch; logger?: Pick<Console, 'log' | 'warn'>;
+    sourceDirectory?: string; sourceProvenance?: string; rebuild?: boolean; fetch?: typeof globalThis.fetch; logger?: Pick<Console, 'log' | 'warn'>;
 } = {}): Promise<TerrainManifest> {
     const blocks = terrainBlocks(regions);
     if (!blocks.length) throw new Error('Terrain regions are empty');
@@ -182,6 +190,8 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
             attribution: '3DEP data courtesy of the U.S. Geological Survey',
             verticalDatum: 'Source-native orthometric datums; see per-source metadata in provenance',
             provenance: { file: provenanceFile, sha256: provenanceSha, byteLength: provenanceBytes.length }, shards };
+        const currentFiles = new Set([provenanceFile, ...shards.map(shard => shard.file),
+            ...archives.flatMap(archive => archive.surface ? [archive.file, archive.surface.file] : [archive.file])]);
         const manifestFile = path.join(directory, 'manifest.json');
         let previous: TerrainManifest | undefined;
         try { previous = JSON.parse(await fs.readFile(manifestFile, 'utf8')); }
@@ -189,6 +199,7 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
         if (previous && typeof previous.generatedAt === 'string' && Number.isFinite(Date.parse(previous.generatedAt))) {
             const { generatedAt, ...oldContent } = previous;
             if (JSON.stringify(oldContent) === JSON.stringify(content)) {
+                await pruneTerrainFiles(directory, currentFiles);
                 logger.log(`Terrain unchanged: ${batches.length - rebuilt} batches reused; ${rebuilt} repaired/rebuilt`);
                 return previous;
             }
@@ -196,6 +207,7 @@ export async function buildTerrain(output: string, regions: OfflineRegionDefinit
         const manifest: TerrainManifest = { ...content, generatedAt: new Date().toISOString() };
         // Switch the pointer only after every input, archive, index and provenance file is complete.
         await writeFileAtomic(manifestFile, JSON.stringify(manifest));
+        await pruneTerrainFiles(directory, currentFiles);
         logger.log(`Terrain ready: ${batches.length - rebuilt} batches reused; ${rebuilt} rebuilt`);
         return manifest;
     } finally {

@@ -6,7 +6,7 @@ import { buildFingerprint, readCachedJson, writeCachedJson } from './build-cache
 import { mapWithConcurrency } from './concurrency.ts';
 import { sha256File } from './fs-utils.ts';
 import { downloadFile } from './http-download.ts';
-import type { OfflineRegionDefinition } from './chart-packager.ts';
+import type { OfflineRegionDefinition } from './offline-regions.ts';
 import { TERRAIN_MAX_ZOOM, terrainGridBounds, terrainRegionBlocks } from './terrain-grid.ts';
 import { inspectTerrainRaster, intersects, type TerrainBounds } from './terrain-raster.ts';
 
@@ -184,34 +184,71 @@ async function cachedObject(object: TerrainObject, cache: string, extension: str
 }
 
 export async function loadTerrainInputs(regions: OfflineRegionDefinition[], cache: string, options: {
-    sourceDirectory?: string; fetch?: typeof globalThis.fetch; logger?: Logger;
+    sourceDirectory?: string; sourceProvenance?: string; fetch?: typeof globalThis.fetch; logger?: Logger;
 } = {}): Promise<TerrainInput[]> {
     const logger = options.logger ?? console;
-    if (options.sourceDirectory) {
-        const directory = path.resolve(options.sourceDirectory);
-        const names = (await fs.readdir(directory)).filter(name => /\.tiff?$/i.test(name)).sort();
-        if (!names.length) throw new Error('Local terrain directory contains no GeoTIFFs');
-        return mapWithConcurrency(names, 4, async name => {
-            const original = path.join(directory, name), sha256 = await sha256File(original);
-            const file = path.join(cache, 'local', `${sha256}.tif`);
-            await fs.mkdir(path.dirname(file), { recursive: true });
-            if (await sha256File(file).catch(error => { if (error.code !== 'ENOENT') throw error; return ''; }) !== sha256) {
-                const work = await fs.mkdtemp(path.join(cache, '.import-'));
-                try {
-                    const temporary = path.join(work, 'source.tif');
-                    await fs.copyFile(original, temporary);
-                    if (await sha256File(temporary) !== sha256) throw new Error(`Local terrain changed during import: ${name}`);
-                    await fs.rename(temporary, file);
-                } finally { await fs.rm(work, { recursive: true, force: true }); }
-            }
-            const bounds = await inspectTerrainRaster(file);
-            const xml = await fs.readFile(original.replace(/\.tiff?$/i, '.xml'), 'utf8');
-            return { id: name, url: `local:${name}`, sha256, file, bounds, byteLength: (await fs.stat(file)).size,
-                metadata: { url: `local:${name.replace(/\.tiff?$/i, '.xml')}`,
-                    sha256: createHash('sha256').update(xml).digest('hex'), ...parseTerrainMetadata(xml) } };
-        });
+    if (options.sourceDirectory && options.sourceProvenance) {
+        throw new Error('Choose either local terrain files or cached source provenance');
     }
-    const fetcher = options.fetch ?? globalThis.fetch;
+    if (options.sourceProvenance) return loadCachedTerrainSources(options.sourceProvenance, cache, logger);
+    if (options.sourceDirectory) return loadLocalTerrainSources(options.sourceDirectory, cache);
+    return loadRemoteTerrainSources(regions, cache, options.fetch ?? globalThis.fetch, logger);
+}
+
+async function loadCachedTerrainSources(provenance: string, cache: string, logger: Logger): Promise<TerrainInput[]> {
+    const record = JSON.parse(await fs.readFile(provenance, 'utf8'));
+    if (!Array.isArray(record.sources) || !record.sources.length) {
+        throw new Error('Terrain source provenance contains no sources');
+    }
+    let checked = 0;
+    return mapWithConcurrency(record.sources, 4, async (source: Omit<TerrainInput, 'file'>) => {
+        if (!source.url?.startsWith(USGS_TERRAIN_ROOT + USGS_TERRAIN_PREFIX) ||
+            !/^"[^"\r\n]+"$/.test(source.etag ?? '') ||
+            !Number.isSafeInteger(source.byteLength) || source.byteLength <= 0 ||
+            !isHash(source.sha256) || !Array.isArray(source.bounds) || source.bounds.length !== 4 ||
+            !source.bounds.every(Number.isFinite) || !isHash(source.metadata?.sha256)) {
+            throw new Error(`Invalid cached terrain source: ${source.id}`);
+        }
+        const identity = buildFingerprint({ url: source.url, etag: source.etag, byteLength: source.byteLength });
+        const file = path.join(cache, 'objects', `${identity}.tif`);
+        if ((await fs.stat(file)).size !== source.byteLength || await sha256File(file) !== source.sha256) {
+            throw new Error(`Cached terrain source changed: ${source.id}`);
+        }
+        checked++;
+        if (checked % 100 === 0 || checked === record.sources.length) {
+            logger.log(`Terrain: verified ${checked}/${record.sources.length} cached source rasters`);
+        }
+        return { ...source, file };
+    });
+}
+
+async function loadLocalTerrainSources(sourceDirectory: string, cache: string): Promise<TerrainInput[]> {
+    const directory = path.resolve(sourceDirectory);
+    const names = (await fs.readdir(directory)).filter(name => /\.tiff?$/i.test(name)).sort();
+    if (!names.length) throw new Error('Local terrain directory contains no GeoTIFFs');
+    return mapWithConcurrency(names, 4, async name => {
+        const original = path.join(directory, name), sha256 = await sha256File(original);
+        const file = path.join(cache, 'local', `${sha256}.tif`);
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        if (await sha256File(file).catch(error => { if (error.code !== 'ENOENT') throw error; return ''; }) !== sha256) {
+            const work = await fs.mkdtemp(path.join(cache, '.import-'));
+            try {
+                const temporary = path.join(work, 'source.tif');
+                await fs.copyFile(original, temporary);
+                if (await sha256File(temporary) !== sha256) throw new Error(`Local terrain changed during import: ${name}`);
+                await fs.rename(temporary, file);
+            } finally { await fs.rm(work, { recursive: true, force: true }); }
+        }
+        const bounds = await inspectTerrainRaster(file);
+        const xml = await fs.readFile(original.replace(/\.tiff?$/i, '.xml'), 'utf8');
+        return { id: name, url: `local:${name}`, sha256, file, bounds, byteLength: (await fs.stat(file)).size,
+            metadata: { url: `local:${name.replace(/\.tiff?$/i, '.xml')}`,
+                sha256: createHash('sha256').update(xml).digest('hex'), ...parseTerrainMetadata(xml) } };
+    });
+}
+
+async function loadRemoteTerrainSources(regions: OfflineRegionDefinition[], cache: string, fetcher: typeof fetch,
+    logger: Logger): Promise<TerrainInput[]> {
     const products = await discoverTerrainProducts(regions, fetcher);
     logger.log(`USGS terrain: checking ${products.length} current 1-arc-second GeoTIFFs against the local cache ` +
         `(${(products.reduce((total, p) => total + p.byteLength, 0) / 1024 ** 3).toFixed(1)} GiB of source files)`);

@@ -1,12 +1,21 @@
 import { randomUUID } from 'node:crypto';
+import { statSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const LEGACY_WRITE_GRACE_MS = 60_000;
 
-export function processIsRunning(pid: number): boolean {
+export function processIsRunning(pid: number, lockCreatedAtMs?: number): boolean {
     try {
         process.kill(pid, 0);
+        // A PID can be reused after a killed builder (or in a new process namespace).
+        // procfs ctime marks creation of the current process, unlike the reused PID.
+        if (lockCreatedAtMs !== undefined && process.platform === 'linux') {
+            try {
+                const startedAt = statSync(`/proc/${pid}`).ctimeMs;
+                if (startedAt > lockCreatedAtMs + 1000) return false;
+            } catch (error: any) { if (error.code === 'ENOENT') return false; }
+        }
         return true;
     } catch (error) {
         return error.code !== 'ESRCH';
@@ -49,7 +58,7 @@ async function recoverLegacyLock(lockPath: string, basePath: string): Promise<vo
     catch (error) { if (!(error instanceof SyntaxError)) throw error; }
     const valid = owner && Number.isSafeInteger(owner.pid) && owner.pid > 0 &&
         typeof owner.token === 'string' && owner.token.length > 0;
-    if (valid ? processIsRunning(owner.pid) : Date.now() - stat.mtimeMs < LEGACY_WRITE_GRACE_MS) {
+    if (valid ? processIsRunning(owner.pid, stat.mtimeMs) : Date.now() - stat.mtimeMs < LEGACY_WRITE_GRACE_MS) {
         throw busy(basePath, valid ? owner.pid : undefined);
     }
     try {
@@ -92,7 +101,7 @@ export async function acquireChartBuildLock(basePath: string): Promise<() => Pro
             const match = entries.length === 1 && entries[0].match(/^([1-9]\d*)-[a-f0-9-]{36}\.json$/);
             const pid = match ? Number(match[1]) : NaN;
             if (!Number.isSafeInteger(pid)) throw new Error(`Invalid chart build lock: ${lockPath}`);
-            if (processIsRunning(pid)) throw busy(basePath, pid);
+            if (processIsRunning(pid, (await fs.stat(lockPath)).mtimeMs)) throw busy(basePath, pid);
             await removeOwner(lockPath, entries[0]);
         }
         throw new Error(`Could not acquire chart build lock for ${path.basename(basePath)}`);

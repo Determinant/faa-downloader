@@ -16,7 +16,8 @@ import {
 } from './concurrency.ts';
 import { readChartMetadata, type ChartMetadata } from './chart-metadata.ts';
 import { sha256File, writeFileAtomic } from './fs-utils.ts';
-import { chartCacheDirectory, chartMbtilesPath } from './chart-paths.ts';
+import { chartLayoutForCycleDirectory, chartMbtilesPath, legacyChartCycleDirectory } from './chart-paths.ts';
+import { migrateChartSources } from './chart-source-layout.ts';
 import { flattenChartPackages } from './chart-package-layout.ts';
 import { acquireChartBuildLock } from './chart-build-lock.ts';
 
@@ -247,9 +248,14 @@ async function withChartOutput<T>(
         await removeStaleChartWork(sourceBasePath);
         await removeStaleChartWork(mbtilesPath.replace(/\.mbtiles$/i, ''));
         const moves: Array<[string, string]> = [];
+        const legacyCycle = legacyChartCycleDirectory(path.dirname(tifPath));
         const oldPaths = [
             `${sourceBasePath}.mbtiles`,
-            path.join(path.dirname(tifPath), 'mbtiles', path.basename(mbtilesPath))
+            path.join(path.dirname(tifPath), 'mbtiles', path.basename(mbtilesPath)),
+            ...(legacyCycle ? [
+                path.join(legacyCycle, path.basename(mbtilesPath)),
+                path.join(legacyCycle, 'mbtiles', path.basename(mbtilesPath))
+            ] : [])
         ].filter(file => path.resolve(file) !== path.resolve(mbtilesPath));
         const destinations = new Set<string>();
         for (const legacyPath of oldPaths) {
@@ -399,11 +405,11 @@ async function writeChartManifestsWithReceipts(
     verifiedReceipts: ReadonlyMap<string, ChartBuildReceipt>,
     readMetadata = readChartMetadata
 ): Promise<void> {
+    await migrateChartSources(chartRoot);
     const entries = await fs.readdir(chartRoot, { withFileTypes: true });
     for (const entry of entries) {
         if (!entry.isDirectory() || !isIsoDate(entry.name)) continue;
-        const cycleDirectory = path.join(chartRoot, entry.name);
-        const deliveryDirectory = path.join(cycleDirectory, 'mbtiles');
+        const { sourceDirectory, cacheDirectory, deliveryDirectory } = chartLayoutForCycleDirectory(path.join(chartRoot, entry.name));
         await fs.mkdir(deliveryDirectory, { recursive: true });
         const release = await acquireChartBuildLock(path.join(deliveryDirectory, 'packages'));
         try {
@@ -411,10 +417,10 @@ async function writeChartManifestsWithReceipts(
                 Object.entries(CHART_DEFINITIONS),
                 DEFAULT_TILE_CONCURRENCY,
                 ([tiff, definition]) => withChartOutput(
-                    path.join(cycleDirectory, tiff),
+                    path.join(sourceDirectory, tiff),
                     async filePath => {
                         const file = tiff.replace(/\.tif$/i, '.mbtiles');
-                        const tifPath = path.join(cycleDirectory, tiff);
+                        const tifPath = path.join(sourceDirectory, tiff);
                         if (!await fileExists(filePath)) {
                             await fs.rm(buildReceiptPath(filePath), { force: true });
                             return undefined;
@@ -447,9 +453,9 @@ async function writeChartManifestsWithReceipts(
             );
             const published = charts.filter(chart => chart !== undefined)
                 .sort((left, right) => left.id.localeCompare(right.id));
-            const manifestPath = path.join(chartCacheDirectory(cycleDirectory), 'chart-manifest.json');
+            const manifestPath = path.join(cacheDirectory, 'chart-manifest.json');
             const legacyManifests = [
-                path.join(cycleDirectory, 'chart-manifest.json'),
+                path.join(path.dirname(deliveryDirectory), 'chart-manifest.json'),
                 path.join(deliveryDirectory, 'chart-manifest.json')
             ].filter(file => path.resolve(file) !== path.resolve(manifestPath));
             if (published.length === 0) {
@@ -560,9 +566,12 @@ export async function tileCharts(
     concurrency = DEFAULT_TILE_CONCURRENCY
 ): Promise<void> {
     await verifyGdalTools();
-    const tiffs = await findTiffs(chartRoot);
+    await migrateChartSources(chartRoot);
+    const sources = path.join(path.dirname(chartRoot), 'sources');
+    await fs.mkdir(sources, { recursive: true });
+    const tiffs = await findTiffs(sources);
     if (tiffs.length === 0) {
-        console.log(`No chart TIFFs found under ${chartRoot}`);
+        console.log(`No chart TIFFs found under ${sources}`);
         await writeChartManifests(chartRoot);
         return;
     }

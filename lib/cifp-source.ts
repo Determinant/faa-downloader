@@ -33,6 +33,11 @@ export async function acquireCifp(effectiveDate: string, cacheDirectory: string,
             url = pathToFileURL(sourceFile).href;
             raw = await readArchive(sourceFile, cacheDirectory);
         }
+        await fs.mkdir(cacheDirectory, { recursive: true });
+        const cached = path.join(cacheDirectory, path.basename(sourceFile));
+        if (path.resolve(sourceFile) !== path.resolve(cached)) {
+            await fs.copyFile(sourceFile, cached);
+        }
     } else {
         sourceFile = path.join(cacheDirectory, filename);
         url = `https://aeronav.faa.gov/Upload_313-d/cifp/${filename}`;
@@ -40,6 +45,13 @@ export async function acquireCifp(effectiveDate: string, cacheDirectory: string,
         raw = await readArchive(sourceFile, cacheDirectory);
     }
     const sha256 = createHash('sha256').update(raw).digest('hex');
+    if (sourceFile.endsWith('.zip')) {
+        const cachedRaw = path.join(cacheDirectory, 'FAACIFP18');
+        try {
+            if (await sha256File(cachedRaw) !== sha256) throw new Error('Cached CIFP text conflicts with its ZIP');
+            await fs.rm(cachedRaw);
+        } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+    }
     const source: CifpSource = { group: 'CIFP', url, filename: path.basename(sourceFile),
         sha256: sourceFile.endsWith('.zip') ? await sha256File(sourceFile) : sha256,
         recordFile: { filename: 'FAACIFP18', bytes: raw.length, sha256 } };

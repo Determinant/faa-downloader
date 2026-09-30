@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { buildProcedureCatalog, selectDtppEdition } from '../build-procedures.ts';
+import { acquireChartBuildLock } from '../lib/chart-build-lock.ts';
 import {
     discoverDtppEditions,
     pageIndexEntry,
@@ -264,6 +265,20 @@ test('local procedure build does not access the network', async () => {
     }
 });
 
+test('procedure publication rejects a concurrent builder for the same cycle', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-lock-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const xmlPath = path.join(root, 'metafile.xml');
+    const cycle = path.join(root, 'charts', '2026-09-03');
+    await fs.mkdir(cycle, { recursive: true });
+    await fs.writeFile(xmlPath, XML);
+    const release = await acquireChartBuildLock(path.join(cycle, '.tpp'));
+    try {
+        await assert.rejects(buildProcedureCatalog({ output: root, sourceXml: xmlPath }),
+            /Chart build already in progress/);
+    } finally { await release(); }
+});
+
 test('procedure builds index Alaska and Pacific filenames and refresh older catalogs', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-volumes-'));
     try {
@@ -271,15 +286,16 @@ test('procedure builds index Alaska and Pacific filenames and refresh older cata
             const output = path.join(root, volumeId);
             const cycleDirectory = path.join(output, 'charts', '2026-09-03');
             const sourceXml = path.join(output, 'metafile.xml');
-            await fs.mkdir(cycleDirectory, { recursive: true });
+            const bookDirectory = path.join(cycleDirectory, filename.startsWith('tpp-') ? 'tpp' : 'cs');
+            await fs.mkdir(bookDirectory, { recursive: true });
             await fs.writeFile(sourceXml, XML.replace('volume="SW-2"', `volume="${volumeId}"`));
             await fs.copyFile(new URL('./fixtures/procedure-volume.pdf', import.meta.url),
-                path.join(cycleDirectory, filename));
+                path.join(bookDirectory, filename));
 
             const catalog = await buildProcedureCatalog({ output, sourceXml });
             assert.equal(catalog.volumes.length, 1);
             assert.equal(catalog.volumes[0].id, volumeId);
-            assert.equal(catalog.volumes[0].url, `../${filename}`);
+            assert.equal(catalog.volumes[0].url, filename.startsWith('tpp-') ? filename : `../cs/${filename}`);
             assert.equal(catalog.volumes[0].resolvedTargetCount, 3);
             assert.deepEqual(catalog.airports[0].procedures.map(p => p.volumeTarget?.pageIndex),
                 [0, 1, 2]);
@@ -287,6 +303,15 @@ test('procedure builds index Alaska and Pacific filenames and refresh older cata
             assert.equal(current.generatedAt, catalog.generatedAt);
 
             const manifestPath = path.join(cycleDirectory, 'tpp', 'manifest.json');
+            // A path-only migration reuses verified page indexes and republishes book URLs.
+            await fs.rm(manifestPath);
+            await fs.writeFile(path.join(cycleDirectory, 'tpp', 'catalog.json'), JSON.stringify({
+                ...catalog, volumes: catalog.volumes.map(volume => ({ ...volume, url: `../${filename}` }))
+            }));
+            const relocated = await buildProcedureCatalog({ output, sourceXml });
+            assert.equal(relocated.volumes[0].url, catalog.volumes[0].url);
+            assert.deepEqual(relocated.airports[0].procedures.map(p => p.volumeTarget?.pageIndex), [0, 1, 2]);
+
             // Old unversioned catalogs are rebuilt into immutable generations.
             await fs.rm(manifestPath);
             await fs.writeFile(path.join(cycleDirectory, 'tpp', 'catalog.json'), JSON.stringify({ ...catalog, builderVersion: 1 }));

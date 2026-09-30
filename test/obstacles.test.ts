@@ -192,6 +192,8 @@ test('online builds check freshness, reuse the current ZIP, recover corrupt cach
     assert.equal(second.dataset.count, 1);
     assert.notEqual(second.dataset.path, first.dataset.path);
     assert.equal(second.source.lastModified, '2026-09-19T03:32:01.000Z');
+    await assert.rejects(fs.access(path.join(options.output, 'charts', 'obstacles', first.dataset.path)),
+        { code: 'ENOENT' });
     assert.deepEqual(await fs.readdir(cache), [`${createHash('sha256').update(etag).digest('hex')}.zip`]);
     const data = await readExport(path.join(options.output, 'charts', 'obstacles', second.dataset.path));
     assert.deepEqual(data.features.map(feature => feature.id), ['06-000002']);

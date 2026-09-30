@@ -42,7 +42,6 @@ export type NasrProducts = {
     effectiveDate: string;
     airports: NasrFeatureCollection;
     fixes: NasrFeatureCollection;
-    vfrWaypoints: NasrFeatureCollection;
     navaids: NasrFeatureCollection;
     airways: {
         type: 'ZLayerAirways';
@@ -463,11 +462,6 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
         effectiveDate: effective,
         airports: collection(effective, airports, 'airports'),
         fixes: collection(effective, fixes, 'fixes'),
-        vfrWaypoints: collection(
-            effective,
-            fixes.filter(feature => feature.properties.kind === 'vfr-waypoint'),
-            'VFR waypoints'
-        ),
         navaids: collection(effective, navaids, 'NAVAIDs'),
         airways: normalizeAirways(airwayRows, segmentRows, effective),
         preferredRoutes: normalizePreferredRoutes(preferredRouteRows, preferredSegmentRows, effective)

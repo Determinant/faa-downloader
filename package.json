@@ -19,6 +19,7 @@
     "build:terrain": "node --import=tsx build-terrain.ts --output=dist",
     "build:procedures": "node --import=tsx build-procedures.ts --output=dist",
     "build:supplements": "node --import=tsx build-chart-supplements.ts --output=dist",
+    "clean:generated": "node --import=tsx clean-generated.ts --output=dist",
     "chart-cutlines": "node --import=tsx generate-chart-cutlines.ts",
     "check": "tsc --noEmit",
     "test": "node --import=tsx --test"

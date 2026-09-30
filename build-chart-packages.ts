@@ -2,8 +2,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { packageChartCycle, validateRegions, type OfflineRegionDefinition } from './lib/chart-packager.ts';
-import { chartCacheDirectory } from './lib/chart-paths.ts';
+import { packageChartCycle } from './lib/chart-packager.ts';
+import { validateRegions, type OfflineRegionDefinition } from './lib/offline-regions.ts';
+import { chartCyclePaths } from './lib/chart-paths.ts';
 
 export async function buildChartPackages(output = 'dist', regionsFile?: string, force = false): Promise<void> {
     const regions = await readOfflineRegions(regionsFile);
@@ -11,7 +12,7 @@ export async function buildChartPackages(output = 'dist', regionsFile?: string, 
     let cycles = 0;
     for (const entry of await fs.readdir(root, { withFileTypes: true })) {
         if (!entry.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(entry.name)) continue;
-        const directory = chartCacheDirectory(path.join(root, entry.name));
+        const directory = chartCyclePaths(path.dirname(root), entry.name).cacheDirectory;
         try { await fs.access(path.join(directory, 'chart-manifest.json')); }
         catch (error) { if (error.code === 'ENOENT') continue; throw error; }
         console.log(`Checking chart packages for ${entry.name}`);

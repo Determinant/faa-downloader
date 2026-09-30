@@ -3,6 +3,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { pdfBookFolder } from './lib/pdf-layout.ts';
+import { migratePdfBooks } from './clean-generated.ts';
 import { buildProcedureCatalog } from './build-procedures.ts';
 import { buildChartSupplements } from './build-chart-supplements.ts';
 import { buildChartPackages, readOfflineRegions } from './build-chart-packages.ts';
@@ -29,6 +31,8 @@ import {
 import { downloadFile } from './lib/http-download.ts';
 import { validatePdfFile } from './lib/pdf.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
+import { chartCyclePaths } from './lib/chart-paths.ts';
+import { migrateChartSources } from './lib/chart-source-layout.ts';
 
 export { chartCutlineForFilename, tileMbtilesFromTiff } from './lib/chart-tiler.ts';
 
@@ -110,13 +114,15 @@ Options:
   --help, -h            Show this help
 
 Output layout:
-  DIR/charts/      Original PDFs and GeoTIFFs grouped by publication date
+  DIR/charts/      Published PDFs and data grouped by publication date
+  DIR/sources/YYYY-MM-DD/charts/ Extracted source GeoTIFFs
   DIR/zips/        Downloaded source ZIP archives grouped by publication date
   DIR/mbtiles/YYYY-MM-DD/        Intermediate sheet MBTiles, receipts, and chart-manifest.json
   DIR/charts/YYYY-MM-DD/mbtiles/ Spatial/zoom delivery archives and manifest.json
   DIR/charts/YYYY-MM-DD/nav/   NASR map data, routes, and geographic magnetic model
-  DIR/charts/YYYY-MM-DD/nasr/  Downloaded NASR CSV ZIP archives
-  DIR/charts/YYYY-MM-DD/tpp/   Airport/procedure catalog and PDF page index
+  DIR/sources/YYYY-MM-DD/nav/  Reusable FAA navigation source inputs
+  DIR/charts/YYYY-MM-DD/tpp/   TPP books, airport/procedure catalog, and PDF page index
+  DIR/charts/YYYY-MM-DD/cs/    Chart Supplement books and airport page catalog
   DIR/charts/obstacles/       Daily obstacle GeoJSON and source metadata
 
 Example:
@@ -159,7 +165,7 @@ async function extractChart(
                 `${path.basename(archivePath)} contains ${matches.length} entries for ${sourceName}`
             );
         }
-        const chartFilePath = path.join(chartRoot, date, filename);
+        const chartFilePath = path.join(chartCyclePaths(path.dirname(chartRoot), date).sourceDirectory, filename);
         await extractZipEntry(archivePath, matches[0], chartFilePath);
     }
 }
@@ -179,12 +185,16 @@ function createDownloadPlan(
             }
             const extension = candidate.extractions ? 'zip' : 'pdf';
             const destinationRoot = candidate.extractions ? downloadRoot : chartRoot;
+            const filename = `${group.prefix}-${region.toLowerCase()}.${extension}`;
+            const folder = extension === 'pdf' ? pdfBookFolder(filename) : undefined;
+            if (extension === 'pdf' && !folder) throw new Error(`Unrecognized PDF chart family: ${filename}`);
             downloads.push({
                 candidate,
                 localPath: path.join(
                     destinationRoot,
                     candidate.date,
-                    `${group.prefix}-${region.toLowerCase()}.${extension}`
+                    ...(folder ? [folder] : []),
+                    filename
                 )
             });
         }
@@ -199,6 +209,8 @@ async function buildCharts(options: Options): Promise<void> {
 
     await fs.mkdir(chartRoot, { recursive: true });
     await fs.mkdir(downloadRoot, { recursive: true });
+    await migratePdfBooks(outputRoot);
+    await migrateChartSources(chartRoot);
 
     const downloads = createDownloadPlan(
         await discoverCharts(),

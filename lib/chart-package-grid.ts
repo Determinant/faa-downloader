@@ -1,6 +1,7 @@
 import type { ChartKind } from './chart-definitions.ts';
+import type { Bounds, OfflineRegionDefinition } from './offline-regions.ts';
 
-export type Bounds = [number, number, number, number];
+export type { Bounds } from './offline-regions.ts';
 export type Tile = { z: number; x: number; y: number };
 export type ChartPackageArchive = {
     id: string;
@@ -13,7 +14,7 @@ export type ChartPackageArchive = {
     byteLength: number;
     sha256: string;
 };
-export type ChartOfflineRegion = { id: string; title: string; bounds: Bounds[]; archiveIds: string[] };
+export type ChartOfflineRegion = OfflineRegionDefinition & { archiveIds: string[] };
 
 const MAX_LATITUDE = 85.0511287798066;
 

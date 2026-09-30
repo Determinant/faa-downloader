@@ -8,7 +8,9 @@ import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { toPosixPath } from './lib/fs-utils.ts';
-import { jsonArtifact, publishGeneration, stageJson } from './lib/publication.ts';
+import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
+import { tppBookFiles } from './lib/pdf-layout.ts';
+import { jsonArtifact, pruneGeneration, publishGeneration, stageJson } from './lib/publication.ts';
 import { publishedApproachAssociations } from './lib/approach-associations.ts';
 import {
     discoverDtppEditions,
@@ -80,71 +82,89 @@ export async function buildProcedureCatalog(options: BuildOptions): Promise<Proc
         catalog.effectiveDate,
         'tpp'
     );
-    const volumeCandidates = await findVolumeCandidates(
-        path.join(outputRoot, 'charts'),
-        catalog.effectiveDate,
-        catalogDirectory,
-        new Set(catalog.airports.map(airport => airport.volumeId))
-    );
-    const existingManifest = await readJson(path.join(catalogDirectory, 'manifest.json'));
-    const existingFile = isObject(existingManifest) && typeof existingManifest.file === 'string' &&
-        /^catalog\.[a-f0-9]{64}\.json$/.test(existingManifest.file) ? existingManifest.file : 'catalog.json';
-    const existing = await readExistingCatalog(path.join(catalogDirectory, existingFile));
-    const associations = await publishedApproachAssociations(catalog, path.join(path.dirname(catalogDirectory), 'nav'));
-    if (associations) catalog.associations = associations;
-    const reuse = existing && isSameBuild(existing, catalog, volumeCandidates);
-    if (reuse && isDeepStrictEqual(existing.associations, catalog.associations) &&
-        await manifestMatches(path.join(catalogDirectory, 'manifest.json'), existing)) {
-        console.log(`d-TPP catalog for ${catalog.effectiveDate} is already current`);
-        return existing;
-    }
-
-    if (reuse) { catalog.airports = existing.airports; catalog.volumes = existing.volumes; }
-    for (const volume of reuse ? [] : volumeCandidates) {
-        console.log(`indexing procedure pages in "${volume.filePath}"`);
-        const pages = await readPdfPages(volume.filePath);
-        assertVolumeCoversDate(pages, catalog.effectiveDate, volume.filePath);
-        const resolution = resolveVolumePageIndexes(catalog, volume.id, pages);
-        if (resolution.unresolved > 0) {
-            const targets = catalog.airports
-                .filter(airport => airport.volumeId === volume.id)
-                .flatMap(airport => airport.procedures
-                    .filter(procedure => procedure.volumeTarget?.pageIndex === null)
-                    .map(procedure => `${airport.id}: ${procedure.name} (${procedure.pdfName})`));
-            throw new Error(
-                `${volume.id}: ${resolution.unresolved} PDF page targets could not be resolved:\n` +
-                targets.join('\n')
-            );
-        }
-        catalog.volumes.push({
-            id: volume.id,
-            url: volume.url,
-            byteLength: volume.byteLength,
-            sha256: volume.sha256,
-            pageCount: pages.length,
-            resolvedTargetCount: resolution.resolved,
-            unresolvedTargetCount: resolution.unresolved
-        });
-    }
-    catalog.volumes.sort((left, right) => left.id.localeCompare(right.id));
-
-    const manifest = createManifest(catalog);
-
     const cycleDirectory = path.dirname(catalogDirectory);
     await fs.mkdir(cycleDirectory, { recursive: true });
-    const stagedDirectory = await fs.mkdtemp(path.join(cycleDirectory, '.tpp-'));
+    const release = await acquireChartBuildLock(path.join(cycleDirectory, '.tpp'));
     try {
-        await stageJson(stagedDirectory, 'catalog.json', catalog);
-        await publishGeneration(stagedDirectory, catalogDirectory, manifest);
-    } finally {
-        await fs.rm(stagedDirectory, { recursive: true, force: true });
-    }
+        const volumeCandidates = await findVolumeCandidates(
+            path.join(outputRoot, 'charts'),
+            catalog.effectiveDate,
+            catalogDirectory,
+            new Set(catalog.airports.map(airport => airport.volumeId))
+        );
+        const existingManifest = await readJson(path.join(catalogDirectory, 'manifest.json'));
+        const existingFile = isObject(existingManifest) && typeof existingManifest.file === 'string' &&
+            /^catalog\.[a-f0-9]{64}\.json$/.test(existingManifest.file) ? existingManifest.file : 'catalog.json';
+        const existing = await readExistingCatalog(path.join(catalogDirectory, existingFile));
+        const associations = await publishedApproachAssociations(catalog, path.join(path.dirname(catalogDirectory), 'nav'));
+        if (associations) catalog.associations = associations;
+        const reuse = existing && isSameBuild(existing, catalog, volumeCandidates);
+        if (reuse && volumeCandidates.every(volume =>
+            existing.volumes.find(current => current.id === volume.id)?.url === volume.url) &&
+            isDeepStrictEqual(existing.associations, catalog.associations) &&
+            await manifestMatches(path.join(catalogDirectory, 'manifest.json'), existing)) {
+            await pruneGeneration(catalogDirectory, [existingFile, ...await tppBookFiles(catalogDirectory)]);
+            console.log(`d-TPP catalog for ${catalog.effectiveDate} is already current`);
+            return existing;
+        }
 
-    console.log(
-        `Wrote ${manifest.procedureCount} procedures for ${catalog.airports.length} airports ` +
-        `to ${catalogDirectory}`
-    );
-    return catalog;
+        if (reuse) {
+            catalog.airports = existing.airports;
+            const byId = new Map(volumeCandidates.map(volume => [volume.id, volume]));
+            catalog.volumes = existing.volumes.map(volume => {
+                const source = byId.get(volume.id)!;
+                return { ...volume, url: source.url, byteLength: source.byteLength, sha256: source.sha256 };
+            });
+        }
+        for (const volume of reuse ? [] : volumeCandidates) {
+            console.log(`indexing procedure pages in "${volume.filePath}"`);
+            const pages = await readPdfPages(volume.filePath);
+            if ((await fs.stat(volume.filePath)).size !== volume.byteLength ||
+                await sha256File(volume.filePath) !== volume.sha256) {
+                throw new Error(`Procedure PDF changed while indexing: ${volume.filePath}`);
+            }
+            assertVolumeCoversDate(pages, catalog.effectiveDate, volume.filePath);
+            const resolution = resolveVolumePageIndexes(catalog, volume.id, pages);
+            if (resolution.unresolved > 0) {
+                const targets = catalog.airports
+                    .filter(airport => airport.volumeId === volume.id)
+                    .flatMap(airport => airport.procedures
+                        .filter(procedure => procedure.volumeTarget?.pageIndex === null)
+                        .map(procedure => `${airport.id}: ${procedure.name} (${procedure.pdfName})`));
+                throw new Error(
+                    `${volume.id}: ${resolution.unresolved} PDF page targets could not be resolved:\n` +
+                    targets.join('\n')
+                );
+            }
+            catalog.volumes.push({
+                id: volume.id,
+                url: volume.url,
+                byteLength: volume.byteLength,
+                sha256: volume.sha256,
+                pageCount: pages.length,
+                resolvedTargetCount: resolution.resolved,
+                unresolvedTargetCount: resolution.unresolved
+            });
+        }
+        catalog.volumes.sort((left, right) => left.id.localeCompare(right.id));
+
+        const manifest = createManifest(catalog);
+
+        const stagedDirectory = await fs.mkdtemp(path.join(cycleDirectory, '.tpp-'));
+        try {
+            await stageJson(stagedDirectory, 'catalog.json', catalog);
+            await publishGeneration(stagedDirectory, catalogDirectory, manifest);
+            await pruneGeneration(catalogDirectory, [manifest.file, ...await tppBookFiles(catalogDirectory)]);
+        } finally {
+            await fs.rm(stagedDirectory, { recursive: true, force: true });
+        }
+
+        console.log(
+            `Wrote ${manifest.procedureCount} procedures for ${catalog.airports.length} airports ` +
+            `to ${catalogDirectory}`
+        );
+        return catalog;
+    } finally { await release(); }
 }
 
 export function parseArgs(argv: string[]): Options {
@@ -246,14 +266,20 @@ async function findVolumeCandidates(
         .sort((left, right) => right.localeCompare(left));
     const candidates = new Map<string, string>();
     for (const cycle of cycles) {
-        const directory = path.join(chartsRoot, cycle);
-        for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-            if (!entry.isFile()) continue;
-            const match = entry.name.match(/^tpp-([a-z0-9]+)\.pdf$/i);
-            const name = match?.[1].toUpperCase();
-            const id = /^cs-pac\.pdf$/i.test(entry.name) ? 'PC1' : name === 'AK' ? 'AK1' : name;
-            if (id && requestedVolumes.has(id) && !candidates.has(id)) {
-                candidates.set(id, path.join(directory, entry.name));
+        for (const folder of ['tpp', 'cs'] as const) {
+            const directory = path.join(chartsRoot, cycle, folder);
+            let books;
+            try { books = await fs.readdir(directory, { withFileTypes: true }); }
+            catch (error: any) { if (error.code === 'ENOENT') continue; throw error; }
+            for (const entry of books) {
+                if (!entry.isFile()) continue;
+                const match = folder === 'tpp' ? entry.name.match(/^tpp-([a-z0-9]+)\.pdf$/i) : undefined;
+                const name = match?.[1].toUpperCase();
+                const id = folder === 'cs' && /^cs-pac\.pdf$/i.test(entry.name)
+                    ? 'PC1' : name === 'AK' ? 'AK1' : name;
+                if (id && requestedVolumes.has(id) && !candidates.has(id)) {
+                    candidates.set(id, path.join(directory, entry.name));
+                }
             }
         }
     }
@@ -393,7 +419,8 @@ function isSameBuild(
     if (existing.effectiveDate !== next.effectiveDate) return false;
     if (existing.volumes.length !== volumes.length) return false;
     const existingVolumes = new Map(existing.volumes.map(volume => [volume.id, volume]));
-    return volumes.every(volume => existingVolumes.get(volume.id)?.sha256 === volume.sha256);
+    return volumes.every(volume => existingVolumes.get(volume.id)?.sha256 === volume.sha256 &&
+        existingVolumes.get(volume.id)?.byteLength === volume.byteLength);
 }
 
 function sha256(contents: string): string {

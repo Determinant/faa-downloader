@@ -20,6 +20,7 @@
     "build-chart-manifests.ts",
     "build-chart-packages.ts",
     "build-chart-cycles.ts",
+    "clean-generated.ts",
     "build-procedures.ts",
     "build-obstacles.ts",
     "build-terrain.ts",

@@ -14,17 +14,18 @@ npm run build:procedures -- --source-xml=/path/to/d-TPP_Metafile.xml
 
 `build:charts` runs this stage automatically. A local source XML makes the standalone
 build network-free. The standalone stage indexes TPP books already present under
-`charts/`; it does not download them. Without local books, the catalog still includes
+`charts/<cycle>/tpp/` and the Pacific book under `charts/<cycle>/cs/`; it does not download them. Without local books, the catalog still includes
 individual plate URLs, and its manifest reports unindexed procedures.
 
-SID/STAR waypoint sequences belong to `build:nav` and its `nav/terminal-procedures.json`
-product. This stage owns the plate catalog and PDF page targets in `tpp/`.
+SID/STAR waypoint sequences belong to `build:nav` and its `terminal-procedures`
+manifest product in `nav/`. This stage owns the plate catalog and PDF page targets in `tpp/`.
 
 ## Output
 
 ```text
 dist/charts/<effective-date>/tpp/
-├── catalog.json
+├── tpp-*.pdf
+├── catalog.<sha256>.json
 └── manifest.json
 ```
 
@@ -38,9 +39,12 @@ all procedure-record fields, including unknown fields, and adds:
 - the exact named destination used by shared PDFs; and
 - a combined-volume ID and verified zero-based PDF page index when available.
 
-The manifest records cycle dates, source and volume SHA-256 hashes, counts, and schema
-and builder versions. Its indexed and unindexed counts make partial regional builds
-explicit. Outputs are staged and replaced atomically.
+The manifest names the current catalog and records cycle dates, source and volume
+SHA-256 hashes, counts, and schema and builder versions. Resolve the catalog through
+the manifest. Its indexed and unindexed counts make partial regional builds explicit.
+The builder publishes the immutable catalog before atomically replacing the manifest,
+then removes earlier same-cycle catalog files from local output. A per-cycle lock
+serializes publication and cleanup. PDF hashes are checked again after page indexing.
 
 ## Page targets
 
@@ -50,7 +54,7 @@ and publishes the zero-based index. It also locates each airport's first page in
 sections for takeoff minima, textual ODPs, DVAs, alternate/radar minima, hot spots, and
 LAHSO material.
 
-FAA metadata volume `AK-1` maps to `tpp-ak.pdf`, and `PC-1` maps to `cs-pac.pdf`.
+FAA metadata volume `AK-1` maps to `tpp/tpp-ak.pdf`, and `PC-1` maps to `cs/cs-pac.pdf`.
 Pacific procedures use the supplement's terminal-procedure section headers for page
 labels, so they cannot collide with the supplement's other numbered sections.
 
@@ -63,14 +67,14 @@ The combined PDFs are immutable inputs. The builder only reads and checksums the
 does not split, rewrite, or duplicate them. ZLayers can therefore open one original PDF
 at the indexed page and cache that source file on demand.
 
-Only combined volumes already present under `dist/charts/` are indexed. This keeps a
+Only combined volumes already present under `dist/charts/<cycle>/tpp/` or `cs/` are indexed. This keeps a
 partial regional chart build valid while the nationwide individual-PDF catalog remains
 complete.
 
 ## Chart Supplement airport pages
 
 `npm run build:supplements -- --effective-date=YYYY-MM-DD` builds
-`dist/charts/YYYY-MM-DD/cs/catalog.json` from the existing `cs-*.pdf` books and FAA's
+`dist/charts/YYYY-MM-DD/cs/catalog.json` from the existing `cs/cs-*.pdf` books and FAA's
 small `afd_<edition>.xml` airport index. `build:charts` runs it automatically after
 the TPP catalog. `--source-xml=PATH` supports offline builds; downloaded XML is cached
 under `dist/supplements/`, outside the published chart tree.
@@ -80,7 +84,8 @@ receipt before reusing it. Unchanged inputs skip directory-page scanning and lea
 the catalog untouched. Changes to the available books, their contents or paths, the
 XML, or the builder version require indexing again. Missing or modified catalogs
 are rebuilt. `--force` explicitly rescans the books. Receipts also live under
-`dist/supplements/` and do not need to be published.
+`dist/supplements/` and do not need to be published. A per-cycle lock protects the
+catalog and receipt from concurrent builders or cleanup.
 
 The exporter verifies the PDF cover and XML effective dates, resolves printed page
 numbers only inside the airport/facility-directory section, and fails on missing or
