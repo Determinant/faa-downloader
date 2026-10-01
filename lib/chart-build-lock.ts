@@ -70,6 +70,23 @@ async function recoverLegacyLock(lockPath: string, basePath: string): Promise<vo
     }
 }
 
+/** An interrupted acquisition can leave a pending directory outside the live lock. */
+export async function recoverPendingChartLock(lockPath: string): Promise<void> {
+    let entries: string[], stat: Awaited<ReturnType<typeof fs.stat>>;
+    try { entries = await fs.readdir(lockPath); stat = await fs.stat(lockPath); }
+    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    if (!entries.length) {
+        if (Date.now() - stat.mtimeMs < LEGACY_WRITE_GRACE_MS) throw busy(lockPath);
+        await fs.rmdir(lockPath);
+        return;
+    }
+    const match = entries.length === 1 && entries[0].match(/^([1-9]\d*)-[a-f0-9-]{36}\.json$/);
+    if (!match) throw new Error(`Invalid chart build lock: ${lockPath}`);
+    const pid = Number(match[1]);
+    if (processIsRunning(pid, stat.mtimeMs)) throw busy(lockPath, pid);
+    await removeOwner(lockPath, entries[0]);
+}
+
 export async function acquireChartBuildLock(basePath: string): Promise<() => Promise<void>> {
     const lockPath = `${basePath}.build.lock`;
     const owner = { pid: process.pid, token: randomUUID() };

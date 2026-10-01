@@ -11,9 +11,51 @@ import {
     parseConcurrency
 } from '../lib/concurrency.ts';
 import { downloadFile } from '../lib/http-download.ts';
+import { InvalidDownloadError } from '../lib/download-validation.ts';
 import { validatePdfFile } from '../lib/pdf.ts';
 
 const silentLogger = { log() {}, warn() {} };
+
+test('operational validation failures preserve cached bytes and do not start a replacement', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-validator-failure-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const file = path.join(directory, 'source.zip');
+    await fs.writeFile(file, 'good cache');
+    await assert.rejects(downloadFile('https://example.test/source.zip', file, {
+        userAgent: 'test', revalidate: true, logger: silentLogger,
+        validate: async () => { throw Object.assign(new Error('spawn unzip EAGAIN'), { code: 'EAGAIN' }); },
+        fetch: async () => { assert.fail('An operational failure must not trigger a download'); }
+    }), /EAGAIN/);
+    assert.equal(await fs.readFile(file, 'utf8'), 'good cache');
+});
+
+test('invalid caches survive failed replacement and pure validation receipts detect same-size corruption', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-validation-receipt-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const file = path.join(directory, 'source.zip');
+    let validations = 0, requests = 0, failed = false;
+    const options = { userAgent: 'test', validationKey: 'fixture-v1', logger: silentLogger, maxAttempts: 1,
+        validate: async (candidate: string) => {
+            validations++;
+            if (await fs.readFile(candidate, 'utf8') !== 'good') throw new InvalidDownloadError('invalid fixture');
+        },
+        fetch: async () => { requests++; return failed ? new Response(null, { status: 503 }) : new Response('good'); }
+    };
+    const first = await downloadFile('https://example.test/source.zip', file, options);
+    assert.equal(first.available && first.changed, true);
+    const unchanged = await downloadFile('https://example.test/source.zip', file, options);
+    assert.equal(unchanged.available && unchanged.changed, false);
+    assert.equal(validations, 1);
+    assert.equal(requests, 1);
+    await fs.writeFile(file, 'bad!');
+    failed = true;
+    await assert.rejects(downloadFile('https://example.test/source.zip', file, options), /503/);
+    assert.equal(await fs.readFile(file, 'utf8'), 'bad!');
+    failed = false;
+    await downloadFile('https://example.test/source.zip', file, options);
+    assert.equal(await fs.readFile(file, 'utf8'), 'good');
+    assert.equal(validations, 4);
+});
 
 test('dated downloads revalidate, replace corrections, and preserve good bytes on failed replacement', async t => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-revalidate-'));
@@ -224,11 +266,11 @@ test('downloads resume a partial file with an HTTP range request', async () => {
     const partialSize = 9;
     try {
         await fs.writeFile(`${destination}.part`, contents.subarray(0, partialSize));
-        assert.equal(await downloadFile('https://example.test/chart.pdf', destination, {
+        assert.equal((await downloadFile('https://example.test/chart.pdf', destination, {
             userAgent: 'test',
             fetch,
             logger: silentLogger
-        }), true);
+        })).available, true);
         assert.equal(receivedRange, `bytes=${partialSize}-`);
         assert.deepEqual(await fs.readFile(destination), contents);
         await assert.rejects(fs.access(`${destination}.part`), /ENOENT/);
@@ -325,13 +367,13 @@ test('optional downloads treat 404 as unavailable and discard stale partials', a
     const destination = path.join(directory, 'missing.zip');
     try {
         await fs.writeFile(`${destination}.part`, 'stale partial');
-        assert.equal(await downloadFile('https://example.test/missing.zip', destination, {
+        assert.equal((await downloadFile('https://example.test/missing.zip', destination, {
             userAgent: 'test',
             skipNotFound: true,
             maxAttempts: 1,
             fetch: (async () => new Response(null, { status: 404 })) as typeof globalThis.fetch,
             logger: silentLogger
-        }), false);
+        })).available, false);
         await assert.rejects(fs.access(`${destination}.part`), /ENOENT/);
     } finally {
         await fs.rm(directory, { recursive: true, force: true });

@@ -54,6 +54,31 @@ async function fixture(t: TestContext, layout: 'flat' | 'nested' = 'nested') {
 
 const metadata = async () => ({ bounds: [-122, 40, -102, 49] as [number, number, number, number], minZoom: 4, maxZoom: 11 });
 
+test('publishes a verified source/cache cycle before any publication directory exists', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-fresh-chart-layout-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const charts = path.join(root, 'charts');
+    const cycle = path.join(charts, '2026-09-03');
+    const { sourceDirectory, cacheDirectory } = chartLayoutForCycleDirectory(cycle);
+    const source = path.join(sourceDirectory, 'vfr-sectional-san_francisco.tif');
+    const sheet = chartMbtilesPath(source);
+    await fs.mkdir(sourceDirectory, { recursive: true });
+    await fs.mkdir(cacheDirectory, { recursive: true });
+    await fs.writeFile(source, 'source TIFF');
+    await fs.writeFile(sheet, 'verified sheet');
+    const receipt = await writeChartBuildReceipt(source, sheet);
+    await assert.rejects(fs.access(charts), { code: 'ENOENT' });
+
+    await writeChartManifests(charts, metadata);
+
+    const manifest = JSON.parse(await fs.readFile(path.join(cacheDirectory, 'chart-manifest.json'), 'utf8'));
+    assert.equal(manifest.effectiveDate, '2026-09-03');
+    assert.equal(manifest.charts.length, 1);
+    assert.equal(manifest.charts[0].sha256, receipt.output.sha256);
+    assert.equal(manifest.charts[0].sourceSha256, receipt.source.sha256);
+    await fs.access(path.join(cycle, 'mbtiles'));
+});
+
 test('reconciles a new cycle without raster sources alongside an existing chart cycle', async t => {
     const f = await fixture(t);
     const cycle = path.join(f.charts, '2026-10-01');

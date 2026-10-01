@@ -7,8 +7,12 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createZstdDecompress } from 'node:zlib';
 import { acquireChartBuildLock } from './chart-build-lock.ts';
-import { sha256File } from './fs-utils.ts';
+import { copyFileAtomic, sha256File } from './fs-utils.ts';
+import { buildFingerprint, matchesFile, readCachedJson, writeCachedJson } from './build-cache.ts';
+import { InvalidDownloadError } from './download-validation.ts';
 import { downloadFile } from './http-download.ts';
+
+const HISTORY_BUILDER_VERSION = 1;
 
 export const ROUTE_HISTORY_URL = 'https://aeronautiql.s3.amazonaws.com/databases/routes.sqlite.zst';
 
@@ -109,24 +113,25 @@ export async function buildRouteHistory(options: BuildOptions) {
     const extracted = path.join(work, 'routes.sqlite');
     let history: ReturnType<typeof readRouteHistory>;
     const readCompressedSource = async (file: string) => {
-        await pipeline(createReadStream(file), createZstdDecompress(), createWriteStream(extracted));
-        history = readRouteHistory(extracted);
+        try {
+            await pipeline(createReadStream(file), createZstdDecompress(), createWriteStream(extracted));
+            history = readRouteHistory(extracted);
+        } catch (error) {
+            // Node exposes filesystem/resource errors as E* codes. Keep those distinct
+            // from zstd/SQLite format failures and semantic source validation errors.
+            if (typeof error.code === 'string' && /^E[A-Z]+$/.test(error.code)) throw error;
+            throw new InvalidDownloadError(error.message, { cause: error });
+        }
     };
     const source: Record<string, string> = { name: 'Aeronautic AQ', url: 'https://aq.aeronautic.ai/',
         downloadUrl: ROUTE_HISTORY_URL };
     let cachedDownload: string;
     let releaseCache: (() => Promise<void>) | undefined;
     try {
-        let database: string;
+        let input: string;
         if (options.sourceFile) {
-            database = path.resolve(options.sourceFile);
-            source.filename = path.basename(database);
-            if (database.endsWith('.zst')) {
-                await readCompressedSource(database);
-                database = extracted;
-            } else {
-                history = readRouteHistory(database);
-            }
+            input = path.resolve(options.sourceFile);
+            source.filename = path.basename(input);
         } else {
             // Hold the shared cache lock through download, validation and partial cleanup.
             releaseCache = await acquireChartBuildLock(path.join(options.outputRoot, 'route-history'));
@@ -136,7 +141,7 @@ export async function buildRouteHistory(options: BuildOptions) {
             if (!response.ok) throw new Error(`Route history source request failed (${response.status})`);
             const etag = response.headers.get('etag');
             const modified = response.headers.get('last-modified');
-            if (!etag || !modified || !Number.isFinite(Date.parse(modified))) {
+            if (!/^"[^"]*"$/.test(etag ?? '') || !modified || !Number.isFinite(Date.parse(modified))) {
                 throw new Error('Route history source is missing valid ETag/Last-Modified metadata');
             }
             source.etag = etag;
@@ -152,11 +157,32 @@ export async function buildRouteHistory(options: BuildOptions) {
                     headers.set('if-match', etag);
                     return fetcher(url, { ...init, headers });
                 },
-                validate: readCompressedSource
+                validate: readCompressedSource, validationKey: `route-history-${HISTORY_BUILDER_VERSION}`
             });
-            database = extracted;
+            input = cachedDownload;
         }
 
+        const inputSha256 = buildFingerprint({ builder: HISTORY_BUILDER_VERSION,
+            effectiveDate: options.effectiveDate, source, sha256: await sha256File(input) });
+        const cache = path.join(options.outputRoot, 'sources', options.effectiveDate, 'nav');
+        const resultFile = path.join(cache, 'route-history.result.json');
+        const receipt = `${resultFile}.build.json`;
+        const exportFile = path.join(cache, 'route-history.json.gz');
+        type CachedHistory = { artifact: { sha256: string; bytes: number }; result: {
+            count: number; routeCount: number; bytes: number; jsonSha256: string; uncompressedBytes: number;
+            source: Record<string, string>; observationRange: { firstSeen: string; lastSeen: string }
+        } };
+        const cached = await readCachedJson<CachedHistory>(resultFile, receipt, inputSha256);
+        if (cached && await matchesFile(exportFile, cached.artifact)) {
+            await copyFileAtomic(exportFile, options.destination);
+            console.log('Historical filed routes are already current');
+            return cached.result;
+        }
+        const database = input.endsWith('.zst') ? extracted : input;
+        if (!history) {
+            if (input.endsWith('.zst')) await readCompressedSource(input);
+            else history = readRouteHistory(input);
+        }
         source.sha256 = await sha256File(database);
         const document = {
             type: 'ZLayerRouteHistory', version: 1, effectiveDate: options.effectiveDate,
@@ -164,9 +190,9 @@ export async function buildRouteHistory(options: BuildOptions) {
             observationRange: history.observationRange, pairs: history.pairs
         };
         const json = `${JSON.stringify(document)}\n`;
-        await fs.mkdir(path.dirname(options.destination), { recursive: true });
-        await pipeline(Readable.from([json]), createGzip({ level: 9 }), createWriteStream(options.destination));
-        const bytes = (await fs.stat(options.destination)).size;
+        const compressed = path.join(work, 'route-history.json.gz');
+        await pipeline(Readable.from([json]), createGzip({ level: 9 }), createWriteStream(compressed));
+        const bytes = (await fs.stat(compressed)).size;
         // Preserve completed source snapshots: newer AQ exports can contain less
         // history. Only obsolete partial downloads are disposable after success.
         if (cachedDownload) {
@@ -181,10 +207,16 @@ export async function buildRouteHistory(options: BuildOptions) {
         console.log(`Historical filed routes: ${history.pairs.length} pairs, ${history.routeCount} routes, `
             + `${(bytes / 1_000_000).toFixed(1)} MB gzip; observed ${history.observationRange.firstSeen}`
             + ` through ${history.observationRange.lastSeen}`);
-        return { count: history.pairs.length, routeCount: history.routeCount, bytes,
+        const result = { count: history.pairs.length, routeCount: history.routeCount, bytes,
             jsonSha256: createHash('sha256').update(JSON.stringify(document)).digest('hex'),
             uncompressedBytes: Buffer.byteLength(json), source,
             observationRange: history.observationRange };
+        await copyFileAtomic(compressed, exportFile);
+        await writeCachedJson(resultFile, receipt, inputSha256, {
+            artifact: { bytes, sha256: await sha256File(compressed) }, result
+        });
+        await copyFileAtomic(compressed, options.destination);
+        return result;
     } finally {
         await Promise.all([fs.rm(work, { recursive: true, force: true }), releaseCache?.()]);
     }

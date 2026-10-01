@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { downloadFile } from './lib/http-download.ts';
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { sha256File } from './lib/fs-utils.ts';
+import { cachedPdfIndex } from './lib/pdf-index-cache.ts';
+import { InvalidDownloadError } from './lib/download-validation.ts';
 import { pdfBookCycles, pdfBookSources, publishPdfBook } from './lib/pdf-books.ts';
 import { buildFingerprint, readCachedJson, writeCachedJson } from './lib/build-cache.ts';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
@@ -47,72 +48,43 @@ export async function buildChartSupplements(options: Options): Promise<Supplemen
         let inputSha256: string;
         for (const { file, ...volume } of volumes) {
             const region = volume.id;
-            const task = getDocument({ url: file, verbosity: VerbosityLevel.ERRORS, useSystemFonts: true });
-            try {
-                const pdf = await task.promise;
-                const cover = await pdf.getPage(1);
-                const text = (await cover.getTextContent()).items.map(item => 'str' in item ? item.str : '').join(' ');
-                const interval = parseVolumeEffectiveInterval(text);
-                if (!interval || revision < interval.effectiveDate || revision >= interval.expirationDate) {
-                    throw new Error(`${region}: Chart Supplement does not cover ${revision}`);
-                }
-                if (!index) {
-                    const code = supplementDateCode(interval.effectiveDate);
-                    const url = `https://aeronav.faa.gov/afd/${code}/afd_${code}.xml`;
-                    const xml = await loadIndex(options, code, url);
-                    index = parseSupplementIndex(xml.toString('latin1'));
-                    catalog.effectiveDate = index.effectiveDate;
-                    catalog.expirationDate = index.expirationDate;
-                    catalog.sourceXml = { url, sha256: createHash('sha256').update(xml).digest('hex') };
-                    inputSha256 = buildFingerprint({
-                        schemaVersion: catalog.schemaVersion, builderVersion: SUPPLEMENT_BUILDER_VERSION,
-                        revision, sourceXml: catalog.sourceXml,
-                        volumes: volumes.map(({ file: _file, ...identity }) => identity)
-                    });
-                }
-                if (index.effectiveDate !== interval.effectiveDate || index.expirationDate !== interval.expirationDate) {
-                    throw new Error(`${region}: Chart Supplement PDF and XML editions differ`);
-                }
-                if (!options.force && catalog.volumes.length === 0) {
-                    const existing = await readCachedJson<SupplementCatalog>(catalogFile, receiptFile, inputSha256);
-                    if (existing) {
-                        console.log(`Chart Supplement catalog for ${revision} is already current`);
-                        return existing;
-                    }
-                }
-                console.log(`indexing Chart Supplement ${region}`);
-                // Restrict labels to the directory section; Pacific restarts numbering in TPP.
-                const outline = await pdf.getOutline();
-                const sectionStart = async (number: number) => {
-                    const entry = outline?.find(item => item.title.startsWith(`SECTION ${number}:`));
-                    const destination = typeof entry?.dest === 'string' ? await pdf.getDestination(entry.dest) : entry?.dest;
-                    if (!destination) throw new Error(`${region}: missing directory section ${number}`);
-                    return typeof destination[0] === 'number' ? destination[0] : pdf.getPageIndex(destination[0]);
-                };
-                const start = await sectionStart(2);
-                const end = await sectionStart(3);
-                if (end <= start) throw new Error(`${region}: invalid directory section bounds`);
-                const pages = new Map<string, number>();
-                for (let pageIndex = start; pageIndex < end; pageIndex++) {
-                    const page = await pdf.getPage(pageIndex + 1);
-                    const content = await page.getTextContent();
-                    const items = content.items.flatMap(item => 'str' in item
-                        ? [{ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width }] : []);
-                    const label = supplementPageLabel(items, page.view[2] - page.view[0], page.view[3] - page.view[1]);
-                    if (label) {
-                        if (pages.has(label)) throw new Error(`${region}: ambiguous printed page ${label}`);
-                        pages.set(label, pageIndex);
-                    }
-                    page.cleanup();
-                }
-                for (const airport of index.airports.filter(airport => airport.volumeId === region)) {
-                    const pageIndex = pages.get(airport.printedPage);
-                    if (pageIndex === undefined) throw new Error(`${region}: missing page ${airport.printedPage} for ${airport.faaId}`);
-                    catalog.airports.push({ ...airport, pageIndex });
-                }
-                if (await sha256File(file) !== volume.sha256) throw new Error(`${region}: PDF changed while indexing`);
-                catalog.volumes.push({ ...volume, pageCount: pdf.numPages });
-            } finally { await task.destroy(); }
+            const book = await cachedPdfIndex(options.output, { file, sha256: volume.sha256 }, 'cs',
+                SUPPLEMENT_BUILDER_VERSION, () => indexSupplementBook(file, region), options.force);
+            const { interval } = book;
+            if (revision < interval.effectiveDate || revision >= interval.expirationDate) {
+                throw new Error(`${region}: Chart Supplement does not cover ${revision}`);
+            }
+            if (!index) {
+                const code = supplementDateCode(interval.effectiveDate);
+                const url = `https://aeronav.faa.gov/afd/${code}/afd_${code}.xml`;
+                const xml = await loadIndex(options, code, url);
+                index = parseSupplementIndex(xml.toString('latin1'));
+                catalog.effectiveDate = index.effectiveDate;
+                catalog.expirationDate = index.expirationDate;
+                catalog.sourceXml = { url, sha256: createHash('sha256').update(xml).digest('hex') };
+                inputSha256 = buildFingerprint({
+                    schemaVersion: catalog.schemaVersion, builderVersion: SUPPLEMENT_BUILDER_VERSION,
+                    revision, sourceXml: catalog.sourceXml,
+                    volumes: volumes.map(({ file: _file, ...identity }) => identity)
+                });
+            }
+            if (index.effectiveDate !== interval.effectiveDate || index.expirationDate !== interval.expirationDate) {
+                throw new Error(`${region}: Chart Supplement PDF and XML editions differ`);
+            }
+            const pages = new Map(book.pages);
+            for (const airport of index.airports.filter(airport => airport.volumeId === region)) {
+                const pageIndex = pages.get(airport.printedPage);
+                if (pageIndex === undefined) throw new Error(`${region}: missing page ${airport.printedPage} for ${airport.faaId}`);
+                catalog.airports.push({ ...airport, pageIndex });
+            }
+            catalog.volumes.push({ ...volume, pageCount: book.pageCount });
+        }
+        if (!options.force) {
+            const existing = await readCachedJson<SupplementCatalog>(catalogFile, receiptFile, inputSha256);
+            if (existing) {
+                console.log(`Chart Supplement catalog for ${revision} is already current`);
+                return existing;
+            }
         }
         if (!catalog.volumes.length || !catalog.airports.length) throw new Error(`No Chart Supplements available for ${revision}`);
         catalog.airports.sort((a, b) => a.faaId.localeCompare(b.faaId) || a.volumeId.localeCompare(b.volumeId));
@@ -124,11 +96,51 @@ export async function buildChartSupplements(options: Options): Promise<Supplemen
     } finally { await release(); }
 }
 
+async function indexSupplementBook(file: string, region: string) {
+    console.log(`indexing Chart Supplement ${region}`);
+    const task = getDocument({ url: file, verbosity: VerbosityLevel.ERRORS, useSystemFonts: true });
+    try {
+        const pdf = await task.promise;
+        const cover = await pdf.getPage(1);
+        const text = (await cover.getTextContent()).items.map(item => 'str' in item ? item.str : '').join(' ');
+        const interval = parseVolumeEffectiveInterval(text);
+        if (!interval) throw new Error(`${region}: missing Chart Supplement effective dates`);
+        // Restrict labels to the directory section; Pacific restarts numbering in TPP.
+        const outline = await pdf.getOutline();
+        const sectionStart = async (number: number) => {
+            const entry = outline?.find(item => item.title.startsWith(`SECTION ${number}:`));
+            const destination = typeof entry?.dest === 'string' ? await pdf.getDestination(entry.dest) : entry?.dest;
+            if (!destination) throw new Error(`${region}: missing directory section ${number}`);
+            return typeof destination[0] === 'number' ? destination[0] : pdf.getPageIndex(destination[0]);
+        };
+        const start = await sectionStart(2), end = await sectionStart(3);
+        if (end <= start) throw new Error(`${region}: invalid directory section bounds`);
+        const pages = new Map<string, number>();
+        for (let pageIndex = start; pageIndex < end; pageIndex++) {
+            const page = await pdf.getPage(pageIndex + 1);
+            const content = await page.getTextContent();
+            const items = content.items.flatMap(item => 'str' in item
+                ? [{ text: item.str, x: item.transform[4], y: item.transform[5], width: item.width }] : []);
+            const label = supplementPageLabel(items, page.view[2] - page.view[0], page.view[3] - page.view[1]);
+            if (label) {
+                if (pages.has(label)) throw new Error(`${region}: ambiguous printed page ${label}`);
+                pages.set(label, pageIndex);
+            }
+            page.cleanup();
+        }
+        return { interval, pageCount: pdf.numPages, pages: [...pages] };
+    } finally { await task.destroy(); }
+}
+
 async function loadIndex(options: Options, code: string, url: string): Promise<Buffer> {
     if (options.sourceXml) return fs.readFile(options.sourceXml);
     const file = path.resolve(options.output, 'supplements', `afd_${code}.xml`);
     await downloadFile(url, file, { userAgent: 'faa-regs-supplement-builder/1.0', revalidate: true,
-        validate: async candidate => { parseSupplementIndex((await fs.readFile(candidate)).toString('latin1')); } });
+        validate: async candidate => {
+            const contents = (await fs.readFile(candidate)).toString('latin1');
+            try { parseSupplementIndex(contents); }
+            catch (error) { throw new InvalidDownloadError(error.message, { cause: error }); }
+        } });
     return fs.readFile(file);
 }
 

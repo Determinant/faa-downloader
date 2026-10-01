@@ -5,13 +5,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
-import { sha256File, writeFileAtomic } from './lib/fs-utils.ts';
+import { sha256File } from './lib/fs-utils.ts';
+import { buildFingerprint, matchesFile, readCachedJson, writeCachedJson } from './lib/build-cache.ts';
+import { InvalidDownloadError } from './lib/download-validation.ts';
 import { downloadFile } from './lib/http-download.ts';
 import { writeObstacleGeoJson } from './lib/obstacles.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 
 export const DAILY_DOF_URL = 'https://aeronav.faa.gov/Obst_Data/DAILY_DOF_CSV.ZIP';
 const USER_AGENT = 'faa-regs-obstacle-builder/1.0';
+const OBSTACLE_BUILDER_VERSION = 1;
+type ObstacleManifest = {
+    schemaVersion: number; generatedAt: string; source: Record<string, string>; horizontalDatum: string;
+    dataset: Awaited<ReturnType<typeof writeObstacleGeoJson>> & {
+        path: string; format: string; compression: string; sha256: string; bytes: number
+    };
+};
 
 type BuildOptions = { output: string; sourceFile?: string; fetch?: typeof globalThis.fetch };
 
@@ -31,9 +40,8 @@ export async function buildObstacles(options: BuildOptions) {
             await validateZipArchive(file);
             const entries = await listZipEntries(file);
             if (entries.filter(entry => entry === 'DOF.CSV').length !== 1) {
-                throw new Error('Daily DOF ZIP must contain exactly one DOF.CSV');
+                throw new InvalidDownloadError('Daily DOF ZIP must contain exactly one DOF.CSV');
             }
-            await extractZipEntry(file, 'DOF.CSV', csv);
         };
         const source: Record<string, string> = {
             name: 'FAA Daily Digital Obstacle File',
@@ -45,7 +53,6 @@ export async function buildObstacles(options: BuildOptions) {
         if (options.sourceFile) {
             archive = path.resolve(options.sourceFile);
             source.filename = path.basename(archive);
-            await validate(archive);
         } else {
             const fetcher = options.fetch ?? globalThis.fetch;
             const response = await fetcher(DAILY_DOF_URL, { method: 'HEAD',
@@ -70,22 +77,33 @@ export async function buildObstacles(options: BuildOptions) {
                     headers.set('cache-control', 'no-cache');
                     return fetcher(url, { ...init, headers });
                 },
-                validate
+                validate, validationKey: 'daily-dof-zip-v1'
             });
         }
         source.sha256 = await sha256File(archive);
+        const published = path.join(chartRoot, 'obstacles');
+        const manifestFile = path.join(published, 'manifest.json');
+        const receipt = path.join(cache, 'manifest.build.json');
+        const inputSha256 = buildFingerprint({ builder: OBSTACLE_BUILDER_VERSION, source });
+        const cached = await readCachedJson<ObstacleManifest>(manifestFile, receipt, inputSha256);
+        if (cached && path.basename(cached.dataset.path) === cached.dataset.path &&
+            await matchesFile(path.join(published, cached.dataset.path), cached.dataset)) {
+            console.log('Daily obstacles are already current');
+            return cached;
+        }
+        if (options.sourceFile) await validate(archive);
+        await extractZipEntry(archive, 'DOF.CSV', csv);
         const compressed = path.join(staged, 'obstacles.geojson.gz');
         const stats = await writeObstacleGeoJson(csv, compressed);
         const sha256 = await sha256File(compressed);
         const filename = `obstacles-${sha256}.geojson.gz`;
         const bytes = (await fs.stat(compressed)).size;
         await fs.rename(compressed, path.join(staged, filename));
-        const manifest = {
+        const manifest: ObstacleManifest = {
             schemaVersion: 1, generatedAt: new Date().toISOString(), source,
             horizontalDatum: 'WGS84',
             dataset: { path: filename, format: 'geojson', compression: 'gzip', sha256, bytes, ...stats }
         };
-        const published = path.join(chartRoot, 'obstacles');
         await fs.mkdir(published, { recursive: true, mode: 0o755 });
         const destination = path.join(published, filename);
         try {
@@ -96,7 +114,7 @@ export async function buildObstacles(options: BuildOptions) {
                 throw new Error(`Published obstacle snapshot is corrupt: ${filename}`);
             }
         }
-        await writeFileAtomic(path.join(published, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
+        await writeCachedJson(manifestFile, receipt, inputSha256, manifest);
         for (const name of await fs.readdir(published)) {
             if (name !== filename && /^obstacles-[a-f0-9]{64}\.geojson\.gz$/.test(name)) {
                 await fs.rm(path.join(published, name));
@@ -106,7 +124,7 @@ export async function buildObstacles(options: BuildOptions) {
         // Keep the successful online snapshot; local builds leave the download cache alone.
         if (!options.sourceFile) {
             for (const name of await fs.readdir(cache)) {
-                const match = name.match(/^([a-f0-9]{64}\.zip)(?:\.part)?$/);
+                const match = name.match(/^([a-f0-9]{64}\.zip)(?:\.http\.json|\.part(?:\.http\.json)?)?$/);
                 if (match && match[1] !== path.basename(archive)) await fs.rm(path.join(cache, name));
             }
         }

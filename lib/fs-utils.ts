@@ -1,7 +1,16 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { constants, createReadStream } from 'node:fs';
+
+export async function copyFileAtomic(source: string, destination: string): Promise<void> {
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    const temporary = `${destination}.tmp-${process.pid}-${randomUUID()}`;
+    try {
+        await fs.copyFile(source, temporary, constants.COPYFILE_FICLONE);
+        await fs.rename(temporary, destination);
+    } finally { await fs.rm(temporary, { force: true }); }
+}
 
 export async function sha256File(filePath: string): Promise<string> {
     const hash = createHash('sha256');

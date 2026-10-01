@@ -14,6 +14,7 @@ import { buildChartPackages } from '../build-chart-packages.ts';
 import { buildChartCycles } from '../build-chart-cycles.ts';
 import { discoverCharts, type ChartGroup } from '../lib/chart-discovery.ts';
 import { chartMbtilesPath, chartSourceDirectory } from '../lib/chart-paths.ts';
+import { pruneChartCycles } from '../lib/chart-retention.ts';
 import { sha256File, writeChartBuildReceipt, writeChartManifests } from '../lib/chart-tiler.ts';
 import { editions, rolloverFeed, TPP_ROOT } from './helpers/rollover-fixtures.ts';
 
@@ -36,7 +37,7 @@ test('an interrupted same-edition correction preserves published books and recov
     f.feed.responses.set(url, Buffer.from(Buffer.from(bytes).toString('latin1').replace('Approach', 'Correct!'), 'latin1'));
     const rename = fs.rename.bind(fs);
     const interrupted = t.mock.method(fs, 'rename', async (from, to) => {
-        if (String(to) === f.file(first.date, 'nav/manifest.json')) throw new Error('Interrupted after PDF acquisition');
+        if (String(to) === f.file(first.date, 'tpp/manifest.json')) throw new Error('Interrupted after PDF acquisition');
         return rename(from, to);
     });
     try { await assert.rejects(f.run(first.date), /Interrupted after PDF acquisition/); }
@@ -92,7 +93,7 @@ async function fixture(t: TestContext) {
     const output = path.join(root, 'dist');
     const charts = path.join(output, 'charts');
     const file = (cycle: string, name: string) => path.join(charts, cycle, name);
-    async function run(today: string) {
+    async function run(today: string, retainCycles?: number) {
         const prepared = await prepareProcedureCatalog({ output, today });
         await fs.mkdir(charts, { recursive: true });
         await migratePdfBooks(output);
@@ -121,10 +122,12 @@ async function fixture(t: TestContext) {
         }
         await writeChartManifests(charts, async () => ({ bounds: [-180, -85, 180, 85], minZoom: 0, maxZoom: 0 }));
         await buildChartPackages(output);
-        await buildNasrData({ output, today, routeHistorySource: feed.history });
+        await buildNasrData({ output, today, routeHistorySource: feed.history, retainCycles,
+            prune: retainCycles === undefined });
         const procedures = await prepared.build();
         assert.ok(procedures.associations, 'current navigation must keep route-to-plate associations available');
         const supplements = await buildChartSupplements({ output, effectiveDate: procedures.effectiveDate });
+        if (retainCycles !== undefined) await pruneChartCycles(output, retainCycles, procedures.effectiveDate);
         const index = await buildChartCycles(output);
         return { groups, procedures, supplements, index };
     }
@@ -164,9 +167,13 @@ async function verifyPublished(charts: string) {
             }
         }
         const directory = path.join(charts, cycle, 'cs');
-        const catalog = await json(path.join(directory, 'catalog.json'));
-        for (const volume of catalog.volumes) await identity(directory, volume);
-        assert.ok(catalog.airports.length > 0);
+        const catalog = await json(path.join(directory, 'catalog.json')).catch(error => {
+            if (error.code !== 'ENOENT') throw error;
+        });
+        if (catalog) {
+            for (const volume of catalog.volumes) await identity(directory, volume);
+            assert.ok(catalog.airports.length > 0);
+        }
     }
     const files = await fs.readdir(path.dirname(charts), { recursive: true });
     assert.deepEqual(files.filter(file => /\.build\.lock|\.nav-build-|\.nasr-source-|\.tmp-/.test(file)), [], 'no abandoned locks or staging files');
@@ -260,4 +267,29 @@ test('fresh change-notice install acquires the preceding base books without a pr
     for (const product of nav.products) await identity(path.join(f.charts, editions[1].date, 'nav'), product);
     for (const volume of result.procedures.volumes) await identity(path.join(f.charts, editions[1].date, 'tpp'), volume);
     assert.ok(result.procedures.airports[0].procedures.every(procedure => procedure.volumeTarget?.pageIndex !== null));
+});
+
+test('retention after rollover keeps two raster editions and the previous notice base PDFs, then supports a repeat build', async t => {
+    const f = await fixture(t);
+    const [first, notice, next] = editions;
+    const start = await f.run(first.date, 2);
+    await f.run(notice.date, 2);
+    const rename = fs.rename.bind(fs);
+    const interrupted = t.mock.method(fs, 'rename', async (from, to) => {
+        if (String(to) === f.file(next.date, 'tpp/manifest.json')) throw new Error('Failed TPP publication');
+        return rename(from, to);
+    });
+    try { await assert.rejects(f.run(next.date, 2), /Failed TPP publication/); }
+    finally { interrupted.mock.restore(); }
+    await fs.access(f.file(first.date, 'tpp/manifest.json')); // No chart/PDF pruning after a failed build.
+    await fs.access(f.file(first.date, 'nav/manifest.json'));
+    await f.run(next.date, 2);
+    await assert.rejects(fs.access(f.file(first.date, 'nav/manifest.json')), { code: 'ENOENT' });
+    await assert.rejects(fs.access(f.file(first.date, 'tpp/manifest.json')), { code: 'ENOENT' });
+    await assert.rejects(fs.access(f.file(first.date, 'cs/catalog.json')), { code: 'ENOENT' });
+    await identity(f.file(first.date, 'tpp'), start.procedures.volumes[0]);
+    for (const cycle of [first.date, next.date]) await fs.access(f.file(cycle, 'mbtiles/manifest.json'));
+    await verifyPublished(f.charts);
+    await f.run(next.date, 2);
+    await verifyPublished(f.charts);
 });

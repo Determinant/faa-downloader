@@ -6,6 +6,7 @@ import path from 'node:path';
 import { buildProcedureCatalog, prepareProcedureCatalog } from '../build-procedures.ts';
 import { faaEffectiveDate } from '../lib/faa-effective-date.ts';
 import { acquireChartBuildLock } from '../lib/chart-build-lock.ts';
+import { sha256File } from '../lib/fs-utils.ts';
 import {
     pageIndexEntry,
     parseProcedureCatalog,
@@ -304,7 +305,10 @@ test('procedure builds index Alaska and Pacific filenames and refresh older cata
             const catalog = await buildProcedureCatalog({ output, sourceXml });
             assert.equal(catalog.volumes.length, 1);
             assert.equal(catalog.volumes[0].id, volumeId);
-            assert.equal(catalog.volumes[0].url, filename.startsWith('tpp-') ? filename : `../cs/${filename}`);
+            const digest = await sha256File(path.join(bookDirectory, filename));
+            const publishedName = filename.replace(/\.pdf$/, `.${digest}.pdf`);
+            assert.equal(catalog.volumes[0].url, filename.startsWith('tpp-') ? publishedName : `../cs/${publishedName}`);
+            assert.equal(await sha256File(path.resolve(cycleDirectory, 'tpp', catalog.volumes[0].url)), digest);
             assert.equal(catalog.volumes[0].resolvedTargetCount, 3);
             assert.deepEqual(catalog.airports[0].procedures.map(p => p.volumeTarget?.pageIndex),
                 [0, 1, 2]);

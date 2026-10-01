@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
+import { includesCycle, type CycleWindow } from './cycle-retention.ts';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -395,21 +396,39 @@ export async function writeChartBuildReceipt(
 
 export async function writeChartManifests(
     chartRoot: string,
-    readMetadata = readChartMetadata
+    readMetadata = readChartMetadata,
+    window?: CycleWindow
 ): Promise<void> {
-    await writeChartManifestsWithReceipts(chartRoot, new Map(), readMetadata);
+    await writeChartManifestsWithReceipts(chartRoot, new Map(), readMetadata, window);
 }
 
 async function writeChartManifestsWithReceipts(
     chartRoot: string,
     verifiedReceipts: ReadonlyMap<string, ChartBuildReceipt>,
-    readMetadata = readChartMetadata
+    readMetadata = readChartMetadata,
+    window?: CycleWindow
 ): Promise<void> {
+    await fs.mkdir(chartRoot, { recursive: true });
     await migrateChartSources(chartRoot);
-    const entries = await fs.readdir(chartRoot, { withFileTypes: true });
-    for (const entry of entries) {
-        if (!entry.isDirectory() || !isIsoDate(entry.name)) continue;
-        const { sourceDirectory, cacheDirectory, deliveryDirectory } = chartLayoutForCycleDirectory(path.join(chartRoot, entry.name));
+    // Fresh downloads and sheet builds live outside the publication tree. They
+    // must participate even before a PDF catalog creates charts/<cycle>/.
+    const roots = [chartRoot];
+    if (path.basename(path.resolve(chartRoot)) === 'charts') {
+        roots.push(path.join(path.dirname(chartRoot), 'sources'), path.join(path.dirname(chartRoot), 'mbtiles'));
+    }
+    const cycles = new Set<string>();
+    for (const root of roots) {
+        const entries = await fs.readdir(root, { withFileTypes: true }).catch(error => {
+            if (hasErrorCode(error, 'ENOENT')) return [];
+            throw error;
+        });
+        for (const entry of entries) {
+            if (entry.isDirectory() && isIsoDate(entry.name)) cycles.add(entry.name);
+        }
+    }
+    for (const cycle of [...cycles].sort()) {
+        if (window && !includesCycle(window, cycle)) continue;
+        const { sourceDirectory, cacheDirectory, deliveryDirectory } = chartLayoutForCycleDirectory(path.join(chartRoot, cycle));
         await fs.mkdir(deliveryDirectory, { recursive: true });
         const release = await acquireChartBuildLock(path.join(deliveryDirectory, 'packages'));
         try {
@@ -465,7 +484,7 @@ async function writeChartManifestsWithReceipts(
             }
             const manifest: ChartManifest = {
                 schemaVersion: 1,
-                effectiveDate: entry.name,
+                effectiveDate: cycle,
                 generatedAt: new Date().toISOString(),
                 charts: published
             };
@@ -563,16 +582,18 @@ export async function tileMbtilesFromTiff(
 export async function tileCharts(
     chartRoot: string,
     force = false,
-    concurrency = DEFAULT_TILE_CONCURRENCY
+    concurrency = DEFAULT_TILE_CONCURRENCY,
+    window?: CycleWindow
 ): Promise<void> {
     await verifyGdalTools();
     await migrateChartSources(chartRoot);
     const sources = path.join(path.dirname(chartRoot), 'sources');
     await fs.mkdir(sources, { recursive: true });
-    const tiffs = await findTiffs(sources);
+    const tiffs = (await findTiffs(sources)).filter(file => !window ||
+        includesCycle(window, path.relative(sources, file).split(path.sep)[0]));
     if (tiffs.length === 0) {
         console.log(`No chart TIFFs found under ${sources}`);
-        await writeChartManifests(chartRoot);
+        await writeChartManifestsWithReceipts(chartRoot, new Map(), undefined, window);
         return;
     }
     console.log(`Rendering ${tiffs.length} chart TIFFs with concurrency ${concurrency}`);
@@ -584,5 +605,5 @@ export async function tileCharts(
         ] as const;
     });
     const verifiedReceipts = new Map(builds);
-    await writeChartManifestsWithReceipts(chartRoot, verifiedReceipts);
+    await writeChartManifestsWithReceipts(chartRoot, verifiedReceipts, undefined, window);
 }

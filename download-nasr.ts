@@ -2,6 +2,8 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { buildFingerprint, matchesArtifacts, matchesFile, readCachedJson, recordCachedJson } from './lib/build-cache.ts';
 import { pathToFileURL } from 'node:url';
 import { airacCycleForDate, faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { JSDOM } from 'jsdom';
@@ -10,7 +12,7 @@ import {
     mapWithConcurrency,
     parseConcurrency
 } from './lib/concurrency.ts';
-import { sha256File, writeFileAtomic } from './lib/fs-utils.ts';
+import { copyFileAtomic, sha256File, writeFileAtomic } from './lib/fs-utils.ts';
 import { pruneGeneration, publishGeneration, stageArtifact, stageJson } from './lib/publication.ts';
 import { migrateNavSources, navSourceDirectory } from './lib/nav-source-layout.ts';
 import { downloadFile } from './lib/http-download.ts';
@@ -24,11 +26,13 @@ import { addCifpRunwayHeadings } from './lib/runway-headings.ts';
 import { acquireCifp } from './lib/cifp-source.ts';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
+import { DEFAULT_RETAIN_CYCLES, parseRetainCycles, productCycleWindow } from './lib/cycle-retention.ts';
 
 const NASR_INDEX_URL =
     'https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/';
+// Bump when navigation projection rules or bundled magnetic-model inputs change.
+const NAVIGATION_BUILDER_VERSION = 1;
 const GROUPS = ['APT', 'FRQ', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR'] as const;
-const DEFAULT_RETAIN_CYCLES = 2;
 const REQUIRED_FILES: Record<(typeof GROUPS)[number], string[]> = {
     APT: ['APT_BASE.csv', 'APT_RWY.csv', 'APT_RWY_END.csv'],
     FRQ: ['FRQ.csv'],
@@ -51,6 +55,7 @@ type Options = {
     routeHistorySource?: string;
     cycle?: string;
     today?: string;
+    prune?: boolean;
 };
 
 export function parseArgs(argv: string[]): Options {
@@ -105,15 +110,6 @@ function validateOptions(options: Options): void {
     if (options.sourceDir && !options.cycle) {
         throw new Error('--cycle is required with --source-dir');
     }
-}
-
-function parseRetainCycles(raw: string): number {
-    if (!/^\d+$/.test(raw)) throw new Error('--retain-cycles must be a positive integer');
-    const value = Number(raw);
-    if (!Number.isSafeInteger(value) || value < 1) {
-        throw new Error('--retain-cycles must be a positive integer');
-    }
-    return value;
 }
 
 function printHelp(): void {
@@ -200,6 +196,7 @@ export async function downloadNasrFile(url: string, destination: string): Promis
     await downloadFile(url, destination, {
         userAgent: 'faa-regs-nasr-builder/1.0',
         revalidate: true,
+        validationKey: 'zip-v1',
         validate: validateZipArchive
     });
 }
@@ -227,7 +224,8 @@ async function acquireArchives(
             const destination = path.join(rawDirectory, path.basename(source));
             urls[group] = pathToFileURL(source).href;
             if (path.resolve(source) !== path.resolve(destination)) {
-                await writeFileAtomic(destination, await fs.readFile(source));
+                const identity = { bytes: (await fs.stat(source)).size, sha256: await sha256File(source) };
+                if (!await matchesFile(destination, identity)) await copyFileAtomic(source, destination);
             }
             archives[group] = destination;
         }
@@ -343,14 +341,9 @@ export async function pruneNasrCycles(
         }
     } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
 
-    const ordered = [...cycles].sort((left, right) => right.localeCompare(left));
-    const retained = preserveCycle && cycles.has(preserveCycle)
-        ? new Set([
-            preserveCycle,
-            ...ordered.filter(cycle => cycle !== preserveCycle).slice(0, retainCycles - 1)
-        ])
-        : new Set(ordered.slice(0, retainCycles));
-    for (const cycle of ordered.filter(cycle => !retained.has(cycle))) {
+    const window = await productCycleWindow(path.dirname(chartRoot), 'nav', retainCycles, preserveCycle ?? faaEffectiveDate());
+    if (!window.oldest) return;
+    for (const cycle of [...cycles].filter(cycle => cycle < window.oldest!)) {
         const cycleDirectory = path.join(chartRoot, cycle);
         await Promise.all([
             fs.rm(path.join(cycleDirectory, 'nav'), { recursive: true, force: true }),
@@ -368,7 +361,7 @@ export async function pruneNasrCycles(
     }
 }
 
-type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle' | 'routeHistorySource' | 'today'> & {
+type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle' | 'routeHistorySource' | 'today' | 'prune'> & {
     retainCycles?: number;
     concurrency?: number;
 };
@@ -412,48 +405,65 @@ async function buildNavigationCycle(buildOptions: Options, outputRoot: string, c
     const sourceDirectory = await fs.mkdtemp(path.join(outputRoot, '.nasr-source-'));
     const stagingDirectory = await fs.mkdtemp(path.join(cycleDirectory, '.nav-build-'));
 
+    const navigationDirectory = path.join(cycleDirectory, 'nav');
+    const manifestFile = path.join(navigationDirectory, 'manifest.json');
+    const receipt = path.join(navSourceDirectory(outputRoot, acquired.cycle), 'navigation.build.json');
     try {
-        await extractRequiredFiles(acquired.archives, sourceDirectory);
-        const products = buildNasrProducts(await readNasrInput(sourceDirectory));
-        for (const [name, count] of [['airports', products.airports.features.length], ['fixes', products.fixes.features.length],
-            ['navaids', products.navaids.features.length], ['airways', products.airways.airways.length]] as const) {
-            if (!count) throw new Error(`NASR projection contains no ${name}; inspect source validation and exclusions before publishing`);
-        }
-        if (products.effectiveDate !== acquired.cycle) {
-            throw new Error(
-                `NASR page cycle ${acquired.cycle} does not match CSV effective date ${products.effectiveDate}`
-            );
-        }
-        const cifp = await acquireCifp(products.effectiveDate, navSourceDirectory(outputRoot, acquired.cycle), buildOptions.sourceDir);
-        const terminal = buildTerminalBundle(await readTerminalInput(sourceDirectory), cifp.text, products.effectiveDate, cifp.source);
-        addCifpRunwayHeadings(products.airports, cifp.text);
-        const magneticModel = await buildMagneticModel(products.effectiveDate);
-        const magneticModelFile = 'magnetic-model.json';
+        const cifp = await acquireCifp(acquired.cycle, navSourceDirectory(outputRoot, acquired.cycle), buildOptions.sourceDir);
+        const sourceArchives = [...await Promise.all(GROUPS.map(async group => ({
+            group, effectiveDate: nasrGroupEffectiveDate(acquired.cycle, group), url: acquired.urls[group],
+            filename: path.basename(acquired.archives[group]), sha256: await sha256File(acquired.archives[group])
+        }))), cifp.source];
+        const inputSha256 = buildFingerprint({ builder: NAVIGATION_BUILDER_VERSION, cycle: acquired.cycle, sourceArchives });
+        type Product = { id: string; file: string; bytes: number; sha256: string; [key: string]: unknown };
+        type Manifest = { schemaVersion: number; effectiveDate: string; generatedAt: string; source: string;
+            sourceArchives: typeof sourceArchives; products: Product[] };
+        const previous = await readCachedJson<Manifest>(manifestFile, receipt, inputSha256);
+        let artifacts = previous?.products.filter(product => product.id !== 'route-history');
+        if (!artifacts || !await matchesArtifacts(navigationDirectory, artifacts)) {
+            await extractRequiredFiles(acquired.archives, sourceDirectory);
+            const products = buildNasrProducts(await readNasrInput(sourceDirectory));
+            for (const [name, count] of [['airports', products.airports.features.length], ['fixes', products.fixes.features.length],
+                ['navaids', products.navaids.features.length], ['airways', products.airways.airways.length]] as const) {
+                if (!count) throw new Error(`NASR projection contains no ${name}; inspect source validation and exclusions before publishing`);
+            }
+            if (products.effectiveDate !== acquired.cycle) {
+                throw new Error(
+                    `NASR page cycle ${acquired.cycle} does not match CSV effective date ${products.effectiveDate}`
+                );
+            }
+            const terminal = buildTerminalBundle(await readTerminalInput(sourceDirectory), cifp.text, products.effectiveDate, cifp.source);
+            addCifpRunwayHeadings(products.airports, cifp.text);
+            const magneticModel = await buildMagneticModel(products.effectiveDate);
+            const magneticModelFile = 'magnetic-model.json';
 
-        const definitions = [
-            ['airports', 'airports.geojson', products.airports, products.airports.features.length],
-            ['fixes', 'fixes.geojson', products.fixes, products.fixes.features.length],
-            ['navaids', 'navaids.geojson', products.navaids, products.navaids.features.length],
-            ['airways', 'airways.json', products.airways, products.airways.airways.length],
-            ['preferred-routes', 'preferred-routes.json', products.preferredRoutes, products.preferredRoutes.routes.length],
-            ['terminal-procedures', 'terminal-procedures.json', terminal, terminal.procedures.length],
-            ['magnetic-model', magneticModelFile, magneticModel, magneticModel.coefficients.length],
-        ] as const;
-        const artifacts = await Promise.all(definitions.map(async ([id, name, data, count]) => ({
-            id, count, ...await stageJson(stagingDirectory, name, data),
-            ...(id === 'fixes' ? { vfrWaypointCount: products.fixes.features.filter(
-                feature => feature.properties.kind === 'vfr-waypoint').length } : {}),
-            ...(id === 'terminal-procedures' ? { schemaVersion: 2, coverage: terminal.coverage } : {}),
-            ...(id === 'magnetic-model' ? { model: magneticModel.model, validFrom: magneticModel.validFrom,
-                validUntil: magneticModel.validUntil, source: magneticModel.source } : {}),
-        })));
-        await writeFileAtomic(path.join(navSourceDirectory(outputRoot, acquired.cycle), 'coverage.json'),
-            `${JSON.stringify({ effectiveDate: products.effectiveDate,
-                tables: products.coverage, excluded: products.excluded })}\n`);
+            const definitions = [
+                ['airports', 'airports.geojson', products.airports, products.airports.features.length],
+                ['fixes', 'fixes.geojson', products.fixes, products.fixes.features.length],
+                ['navaids', 'navaids.geojson', products.navaids, products.navaids.features.length],
+                ['airways', 'airways.json', products.airways, products.airways.airways.length],
+                ['preferred-routes', 'preferred-routes.json', products.preferredRoutes, products.preferredRoutes.routes.length],
+                ['terminal-procedures', 'terminal-procedures.json', terminal, terminal.procedures.length],
+                ['magnetic-model', magneticModelFile, magneticModel, magneticModel.coefficients.length],
+            ] as const;
+            artifacts = await Promise.all(definitions.map(async ([id, name, data, count]) => ({
+                id, count, ...await stageJson(stagingDirectory, name, data),
+                ...(id === 'fixes' ? { vfrWaypointCount: products.fixes.features.filter(
+                    feature => feature.properties.kind === 'vfr-waypoint').length } : {}),
+                ...(id === 'terminal-procedures' ? { schemaVersion: 2, coverage: terminal.coverage } : {}),
+                ...(id === 'magnetic-model' ? { model: magneticModel.model, validFrom: magneticModel.validFrom,
+                    validUntil: magneticModel.validUntil, source: magneticModel.source } : {}),
+            })));
+            await writeFileAtomic(path.join(navSourceDirectory(outputRoot, acquired.cycle), 'coverage.json'),
+                `${JSON.stringify({ effectiveDate: products.effectiveDate,
+                    tables: products.coverage, excluded: products.excluded })}\n`);
+        } else {
+            console.log(`NASR navigation products for ${acquired.cycle} are already current`);
+        }
 
         const history = await buildRouteHistory({
             outputRoot,
-            effectiveDate: products.effectiveDate,
+            effectiveDate: acquired.cycle,
             destination: path.join(stagingDirectory, 'route-history.json.gz'),
             sourceFile: buildOptions.routeHistorySource,
             offline: Boolean(buildOptions.sourceDir)
@@ -465,16 +475,9 @@ async function buildNavigationCycle(buildOptions: Options, outputRoot: string, c
             await fs.rm(file);
         }
 
-        const sourceArchives = [...await Promise.all(GROUPS.map(async group => ({
-            group,
-            effectiveDate: nasrGroupEffectiveDate(acquired.cycle, group),
-            url: acquired.urls[group],
-            filename: path.basename(acquired.archives[group]),
-            sha256: await sha256File(acquired.archives[group])
-        }))), cifp.source];
-        const manifest = {
+        const manifest: Manifest = {
             schemaVersion: 3,
-            effectiveDate: products.effectiveDate,
+            effectiveDate: acquired.cycle,
             generatedAt: new Date().toISOString(),
             source: NASR_INDEX_URL,
             sourceArchives,
@@ -483,11 +486,15 @@ async function buildNavigationCycle(buildOptions: Options, outputRoot: string, c
                 ...(history ? [{ id: 'route-history', compression: 'gzip', ...history, ...historyArtifact }] : [])
             ]
         };
-        const navigationDirectory = path.join(cycleDirectory, 'nav');
-        await publishGeneration(stagingDirectory, navigationDirectory, manifest);
+        const unchanged = previous && isDeepStrictEqual({ ...previous, generatedAt: '' }, { ...manifest, generatedAt: '' }) &&
+            await matchesArtifacts(navigationDirectory, manifest.products);
+        if (!unchanged) {
+            await publishGeneration(stagingDirectory, navigationDirectory, manifest);
+            await recordCachedJson(manifestFile, receipt, inputSha256);
+        }
         await pruneGeneration(navigationDirectory, manifest.products.map(product => product.file));
-        await pruneNasrCycles(chartRoot, buildOptions.retainCycles, acquired.cycle);
-        console.log(`Terminal coverage: ${JSON.stringify(terminal.coverage)}`);
+        if (buildOptions.prune !== false) await pruneNasrCycles(chartRoot, buildOptions.retainCycles, acquired.cycle);
+
         console.log(`NASR navigation data is ready under ${navigationDirectory}`);
     } finally {
         await fs.rm(sourceDirectory, { recursive: true, force: true });

@@ -4,13 +4,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
+import { InvalidDownloadError } from './download-validation.ts';
 
 const execFileAsync = promisify(execFile);
 const MAX_COMMAND_OUTPUT = 16 * 1024 * 1024;
 
 function commandFailure(command: string, args: string[], error: any): Error {
     const detail = String(error.stderr || error.stdout || error.message || error).trim();
-    return new Error(`${command} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`);
+    return new Error(`${command} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`, { cause: error });
 }
 
 export function assertSafeZipEntry(entry: string): void {
@@ -34,6 +35,10 @@ export async function validateZipArchive(archivePath: string): Promise<void> {
     try {
         await execFileAsync('unzip', args, { maxBuffer: MAX_COMMAND_OUTPUT });
     } catch (error: any) {
+        // Numeric unzip status reports invalid bytes; spawn/I/O failures do not.
+        if (typeof error.code === 'number' && [1, 2, 3, 9, 51].includes(error.code)) {
+            throw new InvalidDownloadError(commandFailure('unzip', args, error).message, { cause: error });
+        }
         throw commandFailure('unzip', args, error);
     }
 }

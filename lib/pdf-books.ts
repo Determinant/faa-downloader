@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { sha256File, toPosixPath } from './fs-utils.ts';
 import { pdfBookFolder } from './pdf-layout.ts';
+import { matchesFile } from './build-cache.ts';
 
 type PdfBookSource = { cycle: string; name: string; file: string };
 
@@ -47,6 +48,13 @@ export async function pdfBookSources(output: string, through: string): Promise<P
 export async function publishPdfBook(output: string, source: PdfBookSource, catalogDirectory: string) {
     const directory = path.resolve(output, 'charts', source.cycle, pdfBookFolder(source.name)!);
     await fs.mkdir(directory, { recursive: true });
+    const sourceSha256 = await sha256File(source.file);
+    const sourceBytes = (await fs.stat(source.file)).size;
+    const published = path.join(directory, `${source.name.slice(0, -4)}.${sourceSha256}.pdf`);
+    if (await matchesFile(published, { bytes: sourceBytes, sha256: sourceSha256 })) {
+        return { filePath: published, url: toPosixPath(path.relative(catalogDirectory, published)),
+            byteLength: sourceBytes, sha256: sourceSha256 };
+    }
     const staging = await fs.mkdtemp(path.join(directory, '.pdf-'));
     const snapshot = path.join(staging, source.name);
     try {

@@ -5,13 +5,15 @@ import { pathToFileURL } from 'node:url';
 import { packageChartCycle } from './lib/chart-packager.ts';
 import { validateRegions, type OfflineRegionDefinition } from './lib/offline-regions.ts';
 import { chartCyclePaths } from './lib/chart-paths.ts';
+import { includesCycle, type CycleWindow } from './lib/cycle-retention.ts';
 
-export async function buildChartPackages(output = 'dist', regionsFile?: string, force = false): Promise<void> {
+export async function buildChartPackages(output = 'dist', regionsFile?: string, force = false, window?: CycleWindow): Promise<void> {
     const regions = await readOfflineRegions(regionsFile);
     const root = path.resolve(output, 'charts');
     let cycles = 0;
     for (const entry of await fs.readdir(root, { withFileTypes: true })) {
         if (!entry.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(entry.name)) continue;
+        if (window && !includesCycle(window, entry.name)) continue;
         const directory = chartCyclePaths(path.dirname(root), entry.name).cacheDirectory;
         try { await fs.access(path.join(directory, 'chart-manifest.json')); }
         catch (error) { if (error.code === 'ENOENT') continue; throw error; }

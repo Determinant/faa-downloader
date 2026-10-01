@@ -130,7 +130,7 @@ test('NASR retention removes only stale nested data from chart cycle directories
     }
 });
 
-test('NASR retention preserves an explicitly built older cycle', async () => {
+test('NASR retention of an explicitly built older cycle leaves newer and incomplete cycles alone', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-retention-preserve-'));
     const charts = path.join(root, 'charts');
     try {
@@ -142,11 +142,25 @@ test('NASR retention preserves an explicitly built older cycle', async () => {
         await pruneNasrCycles(charts, 2, '2026-07-09');
 
         await fs.access(path.join(charts, '2026-07-09', 'nav'));
-        await assert.rejects(fs.access(path.join(charts, '2026-08-06', 'nav')), /ENOENT/);
+        await fs.access(path.join(charts, '2026-08-06', 'nav'));
         await fs.access(path.join(root, 'sources', '2026-09-03', 'nav'));
     } finally {
         await fs.rm(root, { recursive: true, force: true });
     }
+});
+
+test('future or unfinished NASR sources cannot displace the previous completed cycle', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-nasr-future-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    for (const cycle of ['2026-09-03', '2026-10-01']) {
+        const directory = path.join(root, 'charts', cycle, 'nav');
+        await fs.mkdir(directory, { recursive: true });
+        await fs.writeFile(path.join(directory, 'manifest.json'), JSON.stringify({ effectiveDate: cycle }));
+    }
+    await fs.mkdir(path.join(root, 'sources/2026-10-29/nav'), { recursive: true });
+    await pruneNasrCycles(path.join(root, 'charts'), 2, '2026-10-01');
+    await fs.access(path.join(root, 'charts/2026-09-03/nav/manifest.json'));
+    await fs.access(path.join(root, 'sources/2026-10-29/nav'));
 });
 
 test('ZIP entry validation rejects traversal and pattern matching', () => {
@@ -173,7 +187,8 @@ test('NASR downloader replaces a corrupt cache and removes an invalid response',
             /unzip/
         );
         assert.equal(requests, 1);
-        await assert.rejects(fs.access(destination), /ENOENT/);
+        assert.equal(await fs.readFile(destination, 'utf8'), 'corrupt cached archive');
+        await assert.rejects(fs.access(`${destination}.part`), /ENOENT/);
     } finally {
         globalThis.fetch = originalFetch;
         await fs.rm(root, { recursive: true, force: true });

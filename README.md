@@ -229,6 +229,38 @@ when needed:
 npm run build:charts -- --concurrency=8 --tile-concurrency=4
 ~~~
 
+Successful full chart builds retain **two editions per product** by default.
+Use `npm run build:charts -- --retain-cycles=3` to change the limit for both
+navigation and charts. Raster delivery packages, intermediate sheet MBTiles,
+source GeoTIFFs and ZIPs age out together using completed raster editions;
+TPP and Chart Supplement catalogs use their own publication dates. Empty or
+incomplete newer directories do not displace completed editions.
+
+Navigation and chart/PDF cleanup runs after every full-build stage succeeds, before `cycles.json` is
+regenerated. It follows the retained TPP and supplement catalogs, preserving exact
+older PDF dependencies and their source PDFs, including Pacific supplement books
+used by TPP. Consequently more than two dated directories can remain: 28-day
+catalog revisions and 56-day raster/base-book editions are different products.
+Prior PDF snapshots within the retained dates remain available for saved URLs.
+Build planning excludes raster editions that will expire after the pending edition
+succeeds; it does not delete those editions early. Abandoned locks are recovered
+using their process owners. ZIP validators, obsolete supplement XML, and PDF page
+indexes age out with their products and references.
+Terrain, daily obstacles, and route-history source snapshots have independent
+lifetimes and are unaffected by this cycle limit.
+
+Full chart builds serialize through a build-root lock. Run standalone builders,
+cleanup, and uploads separately from full builds; CT109's automation already uses
+an external publish lock. This retention applies to the local output on the builder.
+The separate `faa-regs-ops` uploader preserves older destination files, so it does
+not enforce this limit on DO. Standalone builders and `clean:generated` do not run
+the chart-cycle cleanup. Standalone `build:nav` applies the completed-edition rule
+to navigation and its source cache after its own successful publication.
+
+Commit changes before deploying to CT109. Deploy the recorded commit from a clean
+checkout or a `git archive` of that commit, and verify the installed files against
+it. Do not deploy uncommitted working-tree changes.
+
 This repository is also the build and maintenance source for the chart artifacts
 published at `https://charts.tedyin.com/charts/`. Downstream applications such as
 ZLayer should consume those published artifacts together with explicit FAA edition and
@@ -290,6 +322,8 @@ dist/
 ├── supplements/                     # local XML and index-build cache; do not upload
 │   ├── afd_<edition>.xml
 │   └── YYYY-MM-DD.build.json
+├── pdf-indexes/                      # verified per-book page indexes; do not upload
+│   └── <pdf-sha256>.{tpp,cs}.json     # plus .build.json receipts
 ├── route-history/                   # local AQ snapshot cache; do not upload
 │   └── <etag-sha256>.sqlite.zst
 ├── obstacles/                       # local daily FAA ZIP cache; do not upload
@@ -301,7 +335,8 @@ dist/
 ~~~
 
 Resolve navigation and TPP filenames through their manifests. Builders keep only the
-current metadata generation in local output; published PDF versions are retained.
+current metadata generation in local output; PDF versions remain within the edition
+retention window or while referenced by a retained catalog.
 Run `npm run clean:generated` once to migrate and compact output from older builds;
 it does not download source data.
 
@@ -318,7 +353,26 @@ version. Failed downloads or invalid replacements retain the last good file and
 fail the build. HTTP validators stay in local build/source caches, outside published
 PDF directories. Explicit local-source builds remain offline.
 
-PDF indexing first snapshots a source into its hash-named publication. Corrections
+Downloads report whether the bytes changed. Pure format validators reuse checks
+only after verifying the cached file's SHA-256. Operational validation failures
+(such as an unavailable tool or an I/O error) stop the build without replacing the
+cache. An invalid cache also stays on disk until its replacement passes validation.
+
+Warm chart runs verify extraction receipts and keep unchanged GeoTIFFs in place.
+PDF page indexes are cached per book digest and parser version, independently of
+the XML/catalog revision, so notice cycles can reuse base-book indexes. Existing
+PDF snapshots are verified and reused without another copy. Procedure catalog
+reuse requires the published catalog bytes to match their manifest identity.
+
+Navigation receipts separate FAA projection inputs from daily route history;
+unchanged NASR/CIFP data skips CSV parsing and projection even when history changes.
+History and obstacles reuse verified compressed exports when their source identities
+and builder versions match. Navigation, obstacle, and cycle manifests retain their
+timestamps and bytes when their content is unchanged. These shortcuts still verify
+cached inputs/outputs and check online source freshness. Builders must bump their
+cache/parser version when changing projection rules or bundled model inputs.
+
+PDF indexing snapshots a new source into its hash-named publication. Corrections
 publish a new URL without replacing books referenced by earlier catalogs or saved
 regions; failed indexing leaves the previous publication usable. Legacy fixed-name
 books are preserved, and existing downloads seed the source cache before revalidation.

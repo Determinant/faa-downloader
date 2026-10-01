@@ -40,10 +40,21 @@ export function supplementDate(value: string): string {
     return value;
 }
 
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
 export function supplementDateCode(value: string): string {
     const date = new Date(`${supplementDate(value)}T00:00:00Z`);
-    const month = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][date.getUTCMonth()];
+    const month = MONTHS[date.getUTCMonth()];
     return `${value.slice(8)}${month}${value.slice(0, 4)}`;
+}
+
+export function parseSupplementDateCode(code: string): string | undefined {
+    const match = code.match(/^(\d{2})([A-Z]{3})(\d{4})$/);
+    if (!match) return;
+    const month = MONTHS.indexOf(match[2]) + 1;
+    if (!month) return;
+    const value = `${match[3]}-${String(month).padStart(2, '0')}-${match[1]}`;
+    try { return supplementDate(value); } catch { return; }
 }
 
 /** FAA's first numbered PDF is the directory page; later PDFs can be special notices. */

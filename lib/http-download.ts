@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { writeFileAtomic } from './fs-utils.ts';
+import { sha256File, writeFileAtomic } from './fs-utils.ts';
+import { InvalidDownloadError } from './download-validation.ts';
 
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 const DEFAULT_PROGRESS_INTERVAL_MS = 10_000;
@@ -15,6 +16,8 @@ export type DownloadOptions = {
     /** Keep validators outside published directories when their cleanup is strict. */
     metadataFile?: string;
     validate?: (filePath: string, destination: string) => Promise<void>;
+    /** Pure validators can reuse a previous successful check of the exact bytes. */
+    validationKey?: string;
     skipNotFound?: boolean;
     idleTimeoutMs?: number;
     progressIntervalMs?: number;
@@ -39,13 +42,15 @@ type TransferOptions = {
     cached?: DownloadIdentity;
 };
 
-type DownloadIdentity = { url: string; etag?: string; lastModified?: string; size?: number; mtimeMs?: number };
+type DownloadIdentity = { url: string; etag?: string; lastModified?: string; size?: number; mtimeMs?: number;
+    sha256?: string; validationKey?: string };
+export type DownloadResult = { available: false } | { available: true; changed: boolean; sha256: string };
 type TransferResult = { available: boolean; bytes: number; unchanged?: boolean; identity?: DownloadIdentity };
 
 async function readIdentity(file: string, url: string): Promise<DownloadIdentity | undefined> {
     try {
         const value = JSON.parse(await fs.readFile(file, 'utf8'));
-        if (value?.url === url && (typeof value.etag === 'string' || typeof value.lastModified === 'string')) return value;
+        if (value?.url === url) return value;
     } catch (error) {
         if (!hasErrorCode(error, 'ENOENT') && !(error instanceof SyntaxError)) throw error;
     }
@@ -332,7 +337,7 @@ export async function downloadFile(
     url: string,
     destination: string,
     options: DownloadOptions
-): Promise<boolean> {
+): Promise<DownloadResult> {
     const partialPath = `${destination}.part`;
     const metadataFile = options.metadataFile ?? `${destination}.http.json`;
     const logger = options.logger ?? console;
@@ -349,31 +354,39 @@ export async function downloadFile(
 
     let existing: Awaited<ReturnType<typeof fs.stat>> | undefined;
     let cached: DownloadIdentity | undefined;
+    let existingSha256: string | undefined;
+    const identity = await readIdentity(metadataFile, url);
     try {
         existing = await fs.stat(destination);
     } catch (error) {
         if (!hasErrorCode(error, 'ENOENT')) throw error;
     }
     if (existing) {
+        if (!existing.isFile()) throw new Error(`Download destination is not a regular file: ${destination}`);
         try {
-            if (!existing.isFile() || existing.size === 0) {
-                throw new Error('cached download is empty or is not a regular file');
+            if (existing.size === 0) {
+                throw new InvalidDownloadError('cached download is empty');
             }
-            await validate(destination, destination);
+            existingSha256 = await sha256File(destination);
+            if (!options.validationKey || identity?.validationKey !== options.validationKey ||
+                identity.sha256 !== existingSha256) await validate(destination, destination);
             if (!options.revalidate) {
                 await fs.rm(partialPath, { force: true });
                 logger.log(`file "${destination}" already exists`);
-                return true;
+                await writeFileAtomic(metadataFile, JSON.stringify({ ...identity, url,
+                    sha256: existingSha256, validationKey: options.validationKey, size: existing.size, mtimeMs: existing.mtimeMs }));
+                return { available: true, changed: false, sha256: existingSha256 };
             }
         } catch (error) {
+            if (!(error instanceof InvalidDownloadError)) throw error;
             logger.warn(`replacing invalid cached download "${destination}": ${errorMessage(error)}`);
-            await fs.rm(destination, { force: true });
+            // Keep the previous bytes until a validated replacement can be renamed.
             existing = undefined;
         }
     }
     if (existing && options.revalidate) {
-        const identity = await readIdentity(metadataFile, url);
-        if (identity?.size === existing.size && identity.mtimeMs === existing.mtimeMs) cached = identity;
+        if (identity?.size === existing.size && (identity.sha256 ? identity.sha256 === existingSha256
+            : identity.mtimeMs === existing.mtimeMs)) cached = identity;
     }
 
     await fs.mkdir(path.dirname(destination), { recursive: true });
@@ -400,29 +413,31 @@ export async function downloadFile(
         }
     }
 
-    if (!transfer?.available) return false;
+    if (!transfer?.available) return { available: false };
     if (transfer.unchanged) {
         await fs.rm(partialPath, { force: true });
         await fs.rm(`${partialPath}.http.json`, { force: true });
         logger.log(`source unchanged: "${destination}"`);
-        return true;
+        await writeFileAtomic(metadataFile, JSON.stringify({ ...cached, url, sha256: existingSha256,
+            validationKey: options.validationKey, size: existing.size, mtimeMs: existing.mtimeMs }));
+        return { available: true, changed: false, sha256: existingSha256! };
     }
+    let sha256: string;
     try {
         await validate(partialPath, destination);
+        sha256 = await sha256File(partialPath);
         // Invalidate the old validator before committing new bytes; a crash must
         // never associate an old ETag with a replacement file.
         await fs.rm(metadataFile, { force: true });
         await fs.rename(partialPath, destination);
-        if (options.revalidate) {
-            const stat = await fs.stat(destination);
-            await writeFileAtomic(metadataFile, JSON.stringify({ ...transfer.identity,
-                size: stat.size, mtimeMs: stat.mtimeMs }));
-            await fs.rm(`${partialPath}.http.json`, { force: true });
-        }
+        const stat = await fs.stat(destination);
+        await writeFileAtomic(metadataFile, JSON.stringify({ ...transfer.identity, url, sha256,
+            validationKey: options.validationKey, size: stat.size, mtimeMs: stat.mtimeMs }));
+        await fs.rm(`${partialPath}.http.json`, { force: true });
     } catch (error) {
         await fs.rm(partialPath, { force: true });
         throw error;
     }
     logger.log(`downloaded "${destination}" (${formatBytes(transfer.bytes)})`);
-    return true;
+    return { available: true, changed: sha256 !== existingSha256, sha256 };
 }

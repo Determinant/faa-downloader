@@ -4,6 +4,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { writeFileAtomic } from './lib/fs-utils.ts';
+import { readJson } from './lib/build-cache.ts';
+import { isDeepStrictEqual } from 'node:util';
 
 export async function buildChartCycles(output = 'dist') {
     const root = path.resolve(output, 'charts');
@@ -13,6 +15,9 @@ export async function buildChartCycles(output = 'dist') {
         const date = new Date(`${entry.name}T00:00:00Z`);
         return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === entry.name;
     }).map(entry => entry.name).sort().reverse();
+    const previous = await readJson<{ schemaVersion: number; generatedAt: string; cycles: string[] }>(path.join(root, 'cycles.json'));
+    if (previous?.schemaVersion === 1 && Number.isFinite(Date.parse(previous.generatedAt)) &&
+        isDeepStrictEqual(previous.cycles, cycles)) return previous;
     const index = { schemaVersion: 1, generatedAt: new Date().toISOString(), cycles };
     await writeFileAtomic(path.join(root, 'cycles.json'), `${JSON.stringify(index, null, 2)}\n`);
     return index;

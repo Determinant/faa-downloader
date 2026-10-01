@@ -93,7 +93,7 @@ test('local extracted and ZIP inputs are equivalent, require CIFP, and remain of
     assert.equal(archived.text, extracted.text);
     assert.deepEqual(archived.source.recordFile, extracted.source.recordFile);
     assert.equal(archived.source.filename, 'CIFP_260903.zip');
-    assert.deepEqual(await fs.readdir(cache), ['CIFP_260903.zip']);
+    assert.deepEqual(await fs.readdir(cache), ['CIFP_260903.zip', 'cifp-records.build.json', 'cifp-records.txt']);
     assert.throws(() => parseCifpProcedures(archived.text, '2026-10-01'), /header does not match/);
 });
 

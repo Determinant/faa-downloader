@@ -4,7 +4,8 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { downloadFile } from './http-download.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './zip.ts';
-import { sha256File } from './fs-utils.ts';
+import { copyFileAtomic, sha256File, writeFileAtomic } from './fs-utils.ts';
+import { matchesFile, readJson } from './build-cache.ts';
 
 export type CifpSource = {
     group: 'CIFP'; url: string; filename: string; sha256: string;
@@ -36,12 +37,14 @@ export async function acquireCifp(effectiveDate: string, cacheDirectory: string,
         await fs.mkdir(cacheDirectory, { recursive: true });
         const cached = path.join(cacheDirectory, path.basename(sourceFile));
         if (path.resolve(sourceFile) !== path.resolve(cached)) {
-            await fs.copyFile(sourceFile, cached);
+            const identity = { bytes: (await fs.stat(sourceFile)).size, sha256: await sha256File(sourceFile) };
+            if (!await matchesFile(cached, identity)) await copyFileAtomic(sourceFile, cached);
         }
     } else {
         sourceFile = path.join(cacheDirectory, filename);
         url = `https://aeronav.faa.gov/Upload_313-d/cifp/${filename}`;
-        await downloadFile(url, sourceFile, { userAgent: 'faa-regs-terminal-builder/1.0', validate: validateZipArchive, revalidate: true });
+        await downloadFile(url, sourceFile, { userAgent: 'faa-regs-terminal-builder/1.0',
+            validate: validateZipArchive, validationKey: 'zip-v1', revalidate: true });
         raw = await readArchive(sourceFile, cacheDirectory);
     }
     const sha256 = createHash('sha256').update(raw).digest('hex');
@@ -59,20 +62,24 @@ export async function acquireCifp(effectiveDate: string, cacheDirectory: string,
 }
 
 async function readArchive(archive: string, cacheDirectory: string): Promise<Buffer> {
+    const sourceSha256 = await sha256File(archive);
+    const file = path.join(cacheDirectory, 'cifp-records.txt');
+    const receiptFile = path.join(cacheDirectory, 'cifp-records.build.json');
+    const cached = await readJson<{ version: number; sourceSha256: string; record: { bytes: number; sha256: string } }>(receiptFile);
+    if (cached?.version === 1 && cached.sourceSha256 === sourceSha256 && await matchesFile(file, cached.record)) {
+        return fs.readFile(file);
+    }
     await validateZipArchive(archive);
     const entries = await listZipEntries(archive);
     if (entries.filter(entry => entry === 'FAACIFP18').length !== 1) {
         throw new Error(`${archive} must contain exactly one FAACIFP18 record file`);
     }
     await fs.mkdir(cacheDirectory, { recursive: true });
-    const temporary = await fs.mkdtemp(path.join(cacheDirectory, '.cifp-'));
-    try {
-        const file = path.join(temporary, 'FAACIFP18');
-        await extractZipEntry(archive, 'FAACIFP18', file);
-        return await fs.readFile(file);
-    } finally {
-        await fs.rm(temporary, { recursive: true, force: true });
-    }
+    await extractZipEntry(archive, 'FAACIFP18', file);
+    const raw = await fs.readFile(file);
+    await writeFileAtomic(receiptFile, JSON.stringify({ version: 1, sourceSha256,
+        record: { bytes: raw.length, sha256: createHash('sha256').update(raw).digest('hex') } }));
+    return raw;
 }
 
 function isMissing(error: unknown): boolean {

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,6 +13,10 @@ import { pdfBookFolder } from './lib/pdf-layout.ts';
 import { pdfBookSources, publishPdfBook } from './lib/pdf-books.ts';
 import { jsonArtifact, pruneGeneration, publishGeneration, stageJson } from './lib/publication.ts';
 import { publishedApproachAssociations } from './lib/approach-associations.ts';
+import { readJson, readVerifiedJson } from './lib/build-cache.ts';
+import { cachedPdfIndex } from './lib/pdf-index-cache.ts';
+import { sha256File } from './lib/fs-utils.ts';
+import { InvalidDownloadError } from './lib/download-validation.ts';
 import {
     FAA_DTPP_BASE_URL,
     pageIndexEntry,
@@ -87,14 +90,13 @@ async function publishCatalog(outputRoot: string, catalog: ProcedureCatalog): Pr
         const existingManifest = await readJson(path.join(catalogDirectory, 'manifest.json'));
         const existingFile = isObject(existingManifest) && typeof existingManifest.file === 'string' &&
             /^catalog\.[a-f0-9]{64}\.json$/.test(existingManifest.file) ? existingManifest.file : 'catalog.json';
-        const existing = await readExistingCatalog(path.join(catalogDirectory, existingFile));
+        const existing = await readExistingCatalog(path.join(catalogDirectory, existingFile), existingManifest);
         const associations = await publishedApproachAssociations(catalog, path.join(path.dirname(catalogDirectory), 'nav'));
         if (associations) catalog.associations = associations;
         const reuse = existing && isSameBuild(existing, catalog, volumeCandidates);
         if (reuse && volumeCandidates.every(volume =>
             existing.volumes.find(current => current.id === volume.id)?.url === volume.url) &&
-            isDeepStrictEqual(existing.associations, catalog.associations) &&
-            await manifestMatches(path.join(catalogDirectory, 'manifest.json'), existing)) {
+            isDeepStrictEqual(existing.associations, catalog.associations)) {
             await pruneGeneration(catalogDirectory, [existingFile], name => pdfBookFolder(name) === 'tpp');
             console.log(`d-TPP catalog for ${catalog.effectiveDate} is already current`);
             return existing;
@@ -109,8 +111,7 @@ async function publishCatalog(outputRoot: string, catalog: ProcedureCatalog): Pr
             });
         }
         for (const volume of reuse ? [] : volumeCandidates) {
-            console.log(`indexing procedure pages in "${volume.filePath}"`);
-            const pages = await readPdfPages(volume.filePath);
+            const pages = await indexedPdfPages(outputRoot, volume);
             if ((await fs.stat(volume.filePath)).size !== volume.byteLength ||
                 await sha256File(volume.filePath) !== volume.sha256) {
                 throw new Error(`Procedure PDF changed while indexing: ${volume.filePath}`);
@@ -188,18 +189,20 @@ async function loadCatalog(options: BuildOptions): Promise<ProcedureCatalog> {
     const readCatalog = async (file: string, url: string, expected?: ReturnType<typeof airacCycleForDate>) => {
         // Match Response.text()'s UTF-8 BOM decoding for local and downloaded XML.
         const contents = (await fs.readFile(file, 'utf8')).replace(/^\uFEFF/, '');
-        const catalog = parseProcedureCatalog(contents, url, sha256(contents));
+        let catalog: ProcedureCatalog;
+        try { catalog = parseProcedureCatalog(contents, url, sha256(contents)); }
+        catch (error) { throw new InvalidDownloadError(error.message, { cause: error }); }
         const edition = expected ?? airacCycleForDate(catalog.effectiveDate);
         if (catalog.cycle !== edition.cycle || catalog.effectiveDate !== edition.effectiveDate ||
             catalog.expirationDate !== edition.expirationDate) {
-            throw new Error(
+            throw new InvalidDownloadError(
                 `d-TPP XML edition mismatch: expected ${edition.cycle} ` +
                 `(${edition.effectiveDate} through ${edition.expirationDate}), got ${catalog.cycle} ` +
                 `(${catalog.effectiveDate} through ${catalog.expirationDate}): ${url}`
             );
         }
         if (!catalog.airports.length || !catalog.airports.some(airport => airport.procedures.length)) {
-            throw new Error(`d-TPP XML has no active procedures: ${url}`);
+            throw new InvalidDownloadError(`d-TPP XML has no active procedures: ${url}`);
         }
         return catalog;
     };
@@ -278,8 +281,18 @@ async function readPdfPages(filePath: string): Promise<IndexedPdfPage[]> {
     }
 }
 
-async function readExistingCatalog(filePath: string): Promise<ProcedureCatalog | null> {
-    const value = await readJson(filePath);
+/** Page discovery depends on book bytes and parser version, not catalog revision. */
+async function indexedPdfPages(outputRoot: string, volume: VolumeCandidate): Promise<IndexedPdfPage[]> {
+    return cachedPdfIndex(outputRoot, { file: volume.filePath, sha256: volume.sha256 }, 'tpp', PROCEDURE_BUILDER_VERSION, () => {
+        console.log(`indexing procedure pages in "${volume.filePath}"`);
+        return readPdfPages(volume.filePath);
+    });
+}
+
+async function readExistingCatalog(filePath: string, manifest: any): Promise<ProcedureCatalog | null> {
+    // Hash-named files are immutable identities, not proof that their current bytes are valid.
+    if (manifest?.file !== path.basename(filePath)) return null;
+    const value = await readVerifiedJson<unknown>(filePath, manifest);
     if (!isObject(value)) return null;
     const sourceXml = value.sourceXml;
     if (value.schemaVersion !== 1 || !isObject(sourceXml) ||
@@ -291,20 +304,7 @@ async function readExistingCatalog(filePath: string): Promise<ProcedureCatalog |
         !Array.isArray(value.volumes) || !value.volumes.every(isObject)) {
         return null;
     }
-    return value as ProcedureCatalog;
-}
-
-async function readJson(filePath: string): Promise<unknown | null> {
-    try {
-        return JSON.parse(await fs.readFile(filePath, 'utf8'));
-    } catch (error: any) {
-        if (error.code === 'ENOENT' || error instanceof SyntaxError) return null;
-        throw error;
-    }
-}
-
-async function manifestMatches(filePath: string, catalog: ProcedureCatalog): Promise<boolean> {
-    return isDeepStrictEqual(await readJson(filePath), createManifest(catalog));
+    return isDeepStrictEqual(manifest, createManifest(value as ProcedureCatalog)) ? value as ProcedureCatalog : null;
 }
 
 function createManifest(catalog: ProcedureCatalog) {
@@ -372,17 +372,6 @@ function isSameBuild(
 
 function sha256(contents: string): string {
     return createHash('sha256').update(contents).digest('hex');
-}
-
-async function sha256File(filePath: string): Promise<string> {
-    const hash = createHash('sha256');
-    await new Promise<void>((resolve, reject) => {
-        const stream = createReadStream(filePath);
-        stream.on('data', chunk => hash.update(chunk));
-        stream.on('error', reject);
-        stream.on('end', resolve);
-    });
-    return hash.digest('hex');
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

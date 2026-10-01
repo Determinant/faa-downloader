@@ -174,12 +174,12 @@ test('online builds check freshness, reuse the current ZIP, recover corrupt cach
     assert.equal(first.source.etag, etag);
     assert.equal(first.dataset.count, 2);
     assert.equal(gets, 1);
-    assert.deepEqual((await build()).dataset, first.dataset);
+    assert.deepEqual(await build(), first, 'an unchanged source preserves the complete manifest');
     assert.equal(heads, 2);
     assert.equal(gets, 1);
 
     const cache = path.join(options.output, 'obstacles');
-    const [cached] = await fs.readdir(cache);
+    const cached = (await fs.readdir(cache)).find(name => name.endsWith('.zip'))!;
     await fs.writeFile(path.join(cache, cached), 'damaged ZIP');
     assert.deepEqual((await build()).dataset, first.dataset);
     assert.equal(gets, 2);
@@ -194,7 +194,8 @@ test('online builds check freshness, reuse the current ZIP, recover corrupt cach
     assert.equal(second.source.lastModified, '2026-09-19T03:32:01.000Z');
     await assert.rejects(fs.access(path.join(options.output, 'charts', 'obstacles', first.dataset.path)),
         { code: 'ENOENT' });
-    assert.deepEqual(await fs.readdir(cache), [`${createHash('sha256').update(etag).digest('hex')}.zip`]);
+    const current = `${createHash('sha256').update(etag).digest('hex')}.zip`;
+    assert.deepEqual(await fs.readdir(cache), [current, `${current}.http.json`, 'manifest.build.json']);
     const data = await readExport(path.join(options.output, 'charts', 'obstacles', second.dataset.path));
     assert.deepEqual(data.features.map(feature => feature.id), ['06-000002']);
     assert.equal(data.features[0].properties.heightAglFt, 125);
@@ -259,7 +260,7 @@ test('resumed ZIP requests stay pinned to the source ETag', async t => {
                 'content-length': String(body.length - offset) } });
     };
     assert.equal((await buildObstacles({ output: options.output, fetch: fetcher })).dataset.count, 1);
-    assert.deepEqual(await fs.readdir(cache), [`${key}.zip`]);
+    assert.deepEqual(await fs.readdir(cache), [`${key}.zip`, `${key}.zip.http.json`, 'manifest.build.json']);
 });
 
 test('online and local builds cannot replace an active builder’s snapshot or cache', { timeout: 5000 }, async t => {

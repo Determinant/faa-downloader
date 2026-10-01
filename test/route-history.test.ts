@@ -126,7 +126,7 @@ test('source refresh accepts new filed labels, retains previous snapshots, and p
     await build();
     assert.equal(gets, 1);
     const cache = path.join(options.outputRoot, 'route-history');
-    const [cachedFile] = await fs.readdir(cache);
+    const cachedFile = (await fs.readdir(cache)).find(name => name.endsWith('.sqlite.zst'))!;
     await fs.writeFile(path.join(cache, cachedFile), zstdCompressSync(Buffer.from('corrupt cached SQLite')));
     await build();
     assert.equal(gets, 2, 'invalid cached databases are replaced in the same build');
@@ -141,7 +141,7 @@ test('source refresh accepts new filed labels, retains previous snapshots, and p
     etag = '"second-version"';
     await build();
     assert.equal(gets, 3);
-    assert.equal((await fs.readdir(cache)).length, 2);
+    assert.equal((await fs.readdir(cache)).filter(name => name.endsWith('.sqlite.zst')).length, 2);
     assert.deepEqual(await fs.readFile(path.join(cache, cachedFile)), previousSnapshot);
     const document = await readExport(options.destination);
     assert.equal(document.pairs[0].totalCount, 145);
@@ -157,7 +157,7 @@ test('source refresh accepts new filed labels, retains previous snapshots, and p
     invalidBody = true;
     await assert.rejects(build(), /not a database/);
     assert.deepEqual(await fs.readFile(options.destination), previous);
-    assert.equal((await fs.readdir(cache)).length, 2);
+    assert.equal((await fs.readdir(cache)).filter(name => name.endsWith('.sqlite.zst')).length, 2);
     assert.deepEqual(await fs.readFile(path.join(cache, cachedFile)), previousSnapshot);
     assert.ok(!(await fs.readdir(options.outputRoot)).some(name => name.startsWith('.route-history-')));
 });
@@ -198,7 +198,7 @@ test('history resumes the current version and only prunes obsolete partials afte
     await fs.access(path.join(cache, obsolete));
     fail = false;
     await build();
-    assert.deepEqual((await fs.readdir(cache)).sort(), [current, 'notes.txt'].sort());
+    assert.deepEqual((await fs.readdir(cache)).sort(), [current, `${current}.http.json`, 'notes.txt'].sort());
     assert.equal(await fs.readFile(path.join(cache, 'notes.txt'), 'utf8'), 'unrelated file');
     assert.equal((await readExport(options.destination)).pairs[0].totalCount, 144);
 });
