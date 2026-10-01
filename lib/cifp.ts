@@ -1,3 +1,5 @@
+import { airacCycleForDate } from './faa-effective-date.ts';
+
 export type Coordinate = [number, number];
 type Fix = { ident: string; coordinate: Coordinate; role?: 'IAF' | 'IF' | 'FAF' | 'MAP' };
 type Reference = { id: string; ident: string; type: 'navaid' | 'localizer'; coordinate?: Coordinate; dmeCoordinate?: Coordinate; declination?: number };
@@ -24,12 +26,8 @@ export function parseCifpProcedures(input: string, effectiveDate: string) {
     const diagnostics: CifpDiagnostic[] = [];
     const sourceRecords = { departure: 0, arrival: 0, approach: 0 };
     let continuationRecords = 0;
-    const epoch = Date.UTC(2020, 0, 2), period = 28 * 86400000;
-    const date = Date.parse(effectiveDate), year = new Date(date).getUTCFullYear();
-    const first = epoch + Math.ceil((Date.UTC(year, 0, 1) - epoch) / period) * period;
-    const index = (date - first) / period + 1;
-    const cycle = String(year).slice(-2) + String(index).padStart(2, '0');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) || !Number.isInteger(index) || !lines[0]?.startsWith('HDR01') || lines[0].slice(35, 39) !== cycle) {
+    const edition = airacCycleForDate(effectiveDate);
+    if (edition.effectiveDate !== effectiveDate || !lines[0]?.startsWith('HDR01') || lines[0].slice(35, 39) !== edition.cycle) {
         throw new Error(`CIFP header does not match effective date ${effectiveDate}`);
     }
     for (const [i, line] of lines.entries()) {

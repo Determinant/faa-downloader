@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -138,15 +139,19 @@ export async function rolloverFeed(root: string) {
     db.exec(await fixture('route-history.sql'));
     db.close();
     const requested: string[] = [];
+    const transferred: string[] = [];
     const unavailable = new Set<string>();
-    const fetcher: typeof fetch = async input => {
+    const fetcher: typeof fetch = async (input, init) => {
         const url = String(input);
         requested.push(url);
         if (unavailable.has(url)) return new Response('Fixture input unavailable', { status: 404 });
         const value = responses.get(url);
         if (value === undefined) throw new Error(`Unexpected network request in rollover test: ${url}`);
         const body = Buffer.from(value);
-        return new Response(new Uint8Array(body), { headers: { 'content-length': String(body.length) } });
+        const etag = `"${createHash('sha256').update(body).digest('hex')}"`;
+        if (new Headers(init?.headers).get('if-none-match') === etag) return new Response(null, { status: 304 });
+        transferred.push(url);
+        return new Response(new Uint8Array(body), { headers: { 'content-length': String(body.length), etag } });
     };
-    return { fetch: fetcher, history, requested, unavailable };
+    return { fetch: fetcher, history, requested, transferred, unavailable, responses };
 }

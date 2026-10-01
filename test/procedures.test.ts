@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { buildProcedureCatalog, selectDtppEdition } from '../build-procedures.ts';
+import { buildProcedureCatalog, prepareProcedureCatalog } from '../build-procedures.ts';
+import { faaEffectiveDate } from '../lib/faa-effective-date.ts';
 import { acquireChartBuildLock } from '../lib/chart-build-lock.ts';
 import {
-    discoverDtppEditions,
     pageIndexEntry,
     parseProcedureCatalog,
     parseVolumeEffectiveInterval,
@@ -197,25 +197,6 @@ test('section targets accept military K-prefixed identifiers missing from the XM
     assert.equal(catalog.airports[0].procedures[1].volumeTarget?.pageIndex, null);
 });
 
-test('d-TPP edition discovery selects current or requested metadata', () => {
-    const html = `
-      <a href="/d-tpp/2608/xml_data/d-tpp_Metafile.xml">Aug 6&ndash;Sep 3, 2026</a>
-      <a href="/d-tpp/2609/xml_data/d-tpp_Metafile.xml">Sep 3&ndash;Oct 1, 2026</a>
-      <a href="/d-tpp/2610/xml_data/d-tpp_Metafile.xml">Oct 1&ndash;Oct 29, 2026</a>`;
-    const baseUrl = 'https://aeronav.faa.gov/d-tpp/search/';
-    assert.equal(discoverDtppEditions(html, baseUrl).length, 3);
-    assert.deepEqual(selectDtppEdition(html, baseUrl, '2026-09-14'), {
-        cycle: '2609',
-        url: 'https://aeronav.faa.gov/d-tpp/2609/xml_data/d-tpp_Metafile.xml',
-        effectiveDate: '2026-09-03',
-        expirationDate: '2026-10-01'
-    });
-    assert.equal(
-        selectDtppEdition(html, baseUrl, '2026-09-14', '2026-10-01').effectiveDate,
-        '2026-10-01'
-    );
-});
-
 test('electronic TPP cover dates define the usable volume interval', () => {
     assert.deepEqual(parseVolumeEffectiveInterval(
         'Effective: 0901Z 03 SEP 2026 to: 0901Z 29 OCT 2026'
@@ -362,22 +343,119 @@ test('procedure builds index Alaska and Pacific filenames and refresh older cata
     }
 });
 
-test('network build rejects a catalog that disagrees with the selected edition', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-cycle-'));
-    const originalFetch = globalThis.fetch;
-    try {
-        globalThis.fetch = async url => String(url).includes('/search/')
-            ? new Response(
-                '<a href="https://aeronav.faa.gov/d-tpp/2609/xml_data/' +
-                'd-tpp_Metafile.xml">Sep 3&ndash;Oct 1, 2026</a>'
-            )
-            : new Response(XML.replace('cycle="2609"', 'cycle="2610"'));
-        await assert.rejects(
-            buildProcedureCatalog({ output: root, today: '2026-09-14' }),
-            /selected cycle 2609, XML has 2610/
-        );
-    } finally {
-        globalThis.fetch = originalFetch;
-        await fs.rm(root, { recursive: true, force: true });
+const xmlUrl = (cycle: string) => `https://aeronav.faa.gov/d-tpp/${cycle}/xml_data/d-tpp_Metafile.xml`;
+const nextXml = XML.replace('cycle="2609"', 'cycle="2610"')
+    .replace('09/03/26', '10/01/26').replace('to_edate="0901Z  10/01/26"', 'to_edate="0901Z  10/29/26"');
+
+test('online d-TPP builds honor 0901Z and explicit editions without the search page', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-dates-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const requests: string[] = [];
+    t.mock.method(globalThis, 'fetch', async input => {
+        const url = String(input);
+        requests.push(url);
+        if (url === xmlUrl('2609')) return new Response(XML);
+        if (url === xmlUrl('2610')) return new Response(nextXml);
+        throw new Error(`Unexpected request: ${url}`);
+    });
+    for (const [instant, cycle] of [
+        ['2026-10-01T00:00:00Z', '2609'],
+        ['2026-10-01T09:00:59.999Z', '2609'],
+        ['2026-10-01T09:01:00Z', '2610']
+    ]) {
+        const catalog = await buildProcedureCatalog({ output: root, today: faaEffectiveDate(new Date(instant)) });
+        assert.equal(catalog.cycle, cycle);
+        assert.equal(catalog.sourceXml.url, xmlUrl(cycle));
     }
+    // Explicit editions work even after their listing disappears or before they take effect.
+    assert.equal((await buildProcedureCatalog({ output: root, today: '2026-10-01', effectiveDate: '2026-09-03' })).cycle, '2609');
+    assert.equal((await buildProcedureCatalog({ output: root, today: '2026-09-30', effectiveDate: '2026-10-01' })).cycle, '2610');
+    assert.deepEqual(requests, ['2609', '2609', '2610', '2609', '2610'].map(xmlUrl));
+    for (const effectiveDate of ['2026-09-30', '2026-02-30', 'not-a-date']) {
+        await assert.rejects(prepareProcedureCatalog({ output: root, effectiveDate }), /AIRAC/);
+    }
+    assert.equal(requests.length, 5, 'invalid edition dates fail before any request');
+});
+
+test('prepared d-TPP input survives rollover and reads books only at publication', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-prepared-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-01T09:00:59Z') });
+    const fetch = t.mock.method(globalThis, 'fetch', async input => {
+        assert.equal(String(input), xmlUrl('2609'));
+        return new Response(XML);
+    });
+    const prepared = await prepareProcedureCatalog({ output: root });
+    assert.equal(prepared.effectiveDate, '2026-09-03');
+    await assert.rejects(fs.access(path.join(root, 'charts')), { code: 'ENOENT' });
+
+    // A long download crosses the boundary; neither the clock nor a changed source
+    // cache may change the validated input captured at startup.
+    t.mock.timers.setTime(new Date('2026-10-01T10:00:00Z').getTime());
+    await fs.writeFile(path.join(root, 'sources/2026-09-03/tpp/d-tpp_Metafile.xml'), nextXml);
+    const directory = path.join(root, 'charts/2026-09-03/tpp');
+    await fs.mkdir(directory, { recursive: true });
+    await fs.copyFile(new URL('./fixtures/procedure-volume.pdf', import.meta.url), path.join(directory, 'tpp-sw2.pdf'));
+    const catalog = await prepared.build();
+    assert.equal(catalog.cycle, '2609');
+    assert.deepEqual(catalog.airports[0].procedures.map(p => p.volumeTarget?.pageIndex), [0, 1, 2]);
+    assert.equal(catalog.generatedAt, '2026-10-01T10:00:00.000Z');
+    assert.deepEqual(await prepared.build(), catalog, 'a retry does not accumulate mutable page indexes or volumes');
+    assert.equal(fetch.mock.callCount(), 1, 'publication never re-fetches XML');
+});
+
+test('d-TPP corrections are revalidated and invalid inputs preserve the previous publication', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-revalidate-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const options = { output: root, today: '2026-09-30' };
+    let body = XML, status = 200, etag = '"first"';
+    const headers: Headers[] = [];
+    t.mock.method(globalThis, 'fetch', async (input, init) => {
+        assert.equal(String(input), xmlUrl('2609'));
+        headers.push(new Headers(init?.headers));
+        return new Response(status === 304 ? null : body, { status, headers: { etag } });
+    });
+    const first = await buildProcedureCatalog(options);
+    status = 304;
+    assert.deepEqual(await buildProcedureCatalog(options), first);
+    assert.equal(headers[1].get('if-none-match'), '"first"');
+    body = XML.replace('FUTURE PRODUCT', 'CORRECTED PRODUCT'); status = 200; etag = '"corrected"';
+    const corrected = await buildProcedureCatalog(options);
+    assert.notEqual(corrected.sourceXml.sha256, first.sourceXml.sha256);
+    const manifest = path.join(root, 'charts/2026-09-03/tpp/manifest.json');
+    const previous = await fs.readFile(manifest, 'utf8');
+    const source = path.join(root, 'sources/2026-09-03/tpp/d-tpp_Metafile.xml');
+    const previousSource = await fs.readFile(source, 'utf8');
+    for (const invalid of [
+        XML.replace('cycle="2609"', 'cycle="2610"'),
+        XML.replace('09/03/26', '09/04/26'),
+        XML.replace('10/01/26', '10/29/26'),
+        XML.replace('0901Z', '0000Z'),
+        nextXml,
+        '<html>Service unavailable</html>',
+        XML.slice(0, XML.indexOf('<state_code')) + '</digital_tpp>'
+    ]) {
+        body = invalid;
+        await assert.rejects(prepareProcedureCatalog(options), /d-TPP/);
+        assert.equal(await fs.readFile(manifest, 'utf8'), previous);
+        assert.equal(await fs.readFile(source, 'utf8'), previousSource);
+        await assert.rejects(fs.access(`${source}.part`), { code: 'ENOENT' });
+    }
+    status = 404;
+    await assert.rejects(prepareProcedureCatalog(options), /404.*2609/);
+    assert.equal(await fs.readFile(manifest, 'utf8'), previous);
+    assert.equal(await fs.readFile(source, 'utf8'), previousSource);
+    await assert.rejects(fs.access(path.join(root, 'sources/2026-09-03/tpp.build.lock')), { code: 'ENOENT' });
+});
+
+test('d-TPP preflight retries transient server failures for the same edition', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-retry-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    let attempts = 0;
+    t.mock.method(globalThis, 'fetch', async input => {
+        assert.equal(String(input), xmlUrl('2609'));
+        return ++attempts === 1 ? new Response('Unavailable', { status: 503 }) : new Response(XML);
+    });
+    assert.equal((await prepareProcedureCatalog({ output: root, today: '2026-09-30' })).effectiveDate, '2026-09-03');
+    assert.equal(attempts, 2);
 });

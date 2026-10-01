@@ -3,9 +3,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { pdfBookFolder } from './lib/pdf-layout.ts';
 import { migratePdfBooks } from './clean-generated.ts';
-import { buildProcedureCatalog } from './build-procedures.ts';
+import { prepareProcedureCatalog } from './build-procedures.ts';
 import { buildChartSupplements } from './build-chart-supplements.ts';
 import { buildChartPackages, readOfflineRegions } from './build-chart-packages.ts';
 import { buildNasrData } from './download-nasr.ts';
@@ -214,7 +215,8 @@ export async function downloadChartFiles(
     console.log(`Acquiring ${downloads.length} chart files with concurrency ${concurrency}`);
     await mapWithConcurrency(downloads, concurrency, async download => {
         await downloadFile(download.candidate.url, download.localPath, {
-            userAgent: 'faa-regs-chart-builder/1.0', validate: validateChartDownload
+            userAgent: 'faa-regs-chart-builder/1.0', validate: validateChartDownload, revalidate: true,
+            metadataFile: path.join(output, 'sources', download.candidate.date, `${path.basename(download.localPath)}.http.json`)
         });
         if (download.candidate.extractions) {
             await extractChart(download.localPath, chartRoot, download.candidate.date, download.candidate.extractions);
@@ -222,12 +224,15 @@ export async function downloadChartFiles(
     });
 }
 
-async function buildCharts(options: Options): Promise<void> {
-    // Select every cycle-dependent feed as of the same day, even across midnight.
-    const today = new Date().toISOString().slice(0, 10);
+export async function buildCharts(options: Options): Promise<void> {
+    // Select every cycle-dependent feed at the same 0901Z cutoff, even across a cycle boundary.
+    const today = faaEffectiveDate();
     const outputRoot = path.resolve(options.output);
     const chartRoot = path.join(outputRoot, 'charts');
     const downloadRoot = path.join(outputRoot, 'zips');
+
+    // Pin and validate the XML before downloads/tiling can span an FAA rollover.
+    const preparedProcedures = await prepareProcedureCatalog({ output: outputRoot, today });
 
     await fs.mkdir(chartRoot, { recursive: true });
     await fs.mkdir(downloadRoot, { recursive: true });
@@ -239,7 +244,7 @@ async function buildCharts(options: Options): Promise<void> {
     await tileCharts(chartRoot, options.force, options.tileConcurrency);
     await buildChartPackages(options.output, options.regions, options.force);
     await buildNasrData({ output: options.output, concurrency: options.concurrency, today });
-    const procedures = await buildProcedureCatalog({ output: options.output, today });
+    const procedures = await preparedProcedures.build();
     await buildChartSupplements({ output: options.output, effectiveDate: procedures.effectiveDate, force: options.force });
     await buildObstacles({ output: options.output });
     await buildChartCycles(options.output);

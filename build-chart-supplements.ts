@@ -4,8 +4,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { faaEffectiveDate } from './lib/faa-effective-date.ts';
+import { downloadFile } from './lib/http-download.ts';
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { sha256File, writeFileAtomic, toPosixPath } from './lib/fs-utils.ts';
+import { sha256File, toPosixPath } from './lib/fs-utils.ts';
 import { buildFingerprint, readCachedJson, writeCachedJson } from './lib/build-cache.ts';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { parseVolumeEffectiveInterval } from './lib/procedures.ts';
@@ -19,7 +21,7 @@ type Options = { output: string; effectiveDate?: string; sourceXml?: string; for
 /** Index the original regional books; no PDF splitting, rewriting, or browser scanning. */
 export async function buildChartSupplements(options: Options): Promise<SupplementCatalog> {
     const chartsRoot = path.resolve(options.output, 'charts');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = faaEffectiveDate();
     const cycles = (await fs.readdir(chartsRoot, { withFileTypes: true }))
         .filter(entry => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
         .map(entry => entry.name).sort().reverse();
@@ -131,15 +133,9 @@ export async function buildChartSupplements(options: Options): Promise<Supplemen
 async function loadIndex(options: Options, code: string, url: string): Promise<Buffer> {
     if (options.sourceXml) return fs.readFile(options.sourceXml);
     const file = path.resolve(options.output, 'supplements', `afd_${code}.xml`);
-    try { return await fs.readFile(file); }
-    catch (error: any) { if (error.code !== 'ENOENT') throw error; }
-    const response = await fetch(url, { signal: AbortSignal.timeout(120_000) });
-    if (!response.ok) throw new Error(`FAA Chart Supplement index: ${response.status}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    parseSupplementIndex(bytes.toString('latin1'));
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await writeFileAtomic(file, bytes);
-    return bytes;
+    await downloadFile(url, file, { userAgent: 'faa-regs-supplement-builder/1.0', revalidate: true,
+        validate: async candidate => { parseSupplementIndex((await fs.readFile(candidate)).toString('latin1')); } });
+    return fs.readFile(file);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {

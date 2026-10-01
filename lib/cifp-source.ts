@@ -41,7 +41,7 @@ export async function acquireCifp(effectiveDate: string, cacheDirectory: string,
     } else {
         sourceFile = path.join(cacheDirectory, filename);
         url = `https://aeronav.faa.gov/Upload_313-d/cifp/${filename}`;
-        await downloadFile(url, sourceFile, { userAgent: 'faa-regs-terminal-builder/1.0', validate: validateZipArchive });
+        await downloadFile(url, sourceFile, { userAgent: 'faa-regs-terminal-builder/1.0', validate: validateZipArchive, revalidate: true });
         raw = await readArchive(sourceFile, cacheDirectory);
     }
     const sha256 = createHash('sha256').update(raw).digest('hex');

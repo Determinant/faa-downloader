@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
+import { faaEffectiveDate } from './faa-effective-date.ts';
 
 const CS_URL = 'https://aeronav.faa.gov/upload_313-d/supplements/';
 const TPP_URL = 'https://aeronav.faa.gov/upload_313-d/terminal/';
@@ -450,7 +451,7 @@ export async function discoverCharts(options: {
     fetch?: typeof globalThis.fetch;
     today?: string;
 } = {}): Promise<ChartGroup[]> {
-    const today = options.today ?? new Date().toISOString().slice(0, 10);
+    const today = options.today ?? faaEffectiveDate();
     if (!parseDateKey(today)) throw new Error('today must use YYYY-MM-DD');
     const context: DiscoveryContext = {
         fetch: options.fetch ?? globalThis.fetch,

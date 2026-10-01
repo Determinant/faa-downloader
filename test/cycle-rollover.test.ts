@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import sharp from 'sharp';
 import { downloadChartFiles } from '../download-charts.ts';
 import { buildNasrData } from '../download-nasr.ts';
-import { buildProcedureCatalog } from '../build-procedures.ts';
+import { prepareProcedureCatalog } from '../build-procedures.ts';
 import { buildChartSupplements } from '../build-chart-supplements.ts';
 import { buildChartPackages } from '../build-chart-packages.ts';
 import { buildChartCycles } from '../build-chart-cycles.ts';
@@ -18,6 +18,22 @@ import { editions, rolloverFeed, TPP_ROOT } from './helpers/rollover-fixtures.ts
 
 const json = async (file: string) => JSON.parse(await fs.readFile(file, 'utf8'));
 const representative: Record<string, string[]> = { cs: ['SW'], tpp: ['SW2', 'CN'], 'vfr-sectional': ['San_Francisco'] };
+
+test('a same-edition book correction updates its published identity without retiling unchanged rasters', async t => {
+    const f = await fixture(t);
+    const first = editions[0];
+    const before = await f.run(first.date);
+    const book = before.procedures.volumes.find(volume => volume.id === 'SW2');
+    const url = `${TPP_ROOT}${first.date}/SW2.pdf`;
+    const bytes = f.feed.responses.get(url);
+    assert.ok(bytes);
+    // Same-size content edit preserves this tiny fixture's PDF stream/xref offsets.
+    f.feed.responses.set(url, Buffer.from(Buffer.from(bytes).toString('latin1').replace('Approach', 'Correct!'), 'latin1'));
+    const after = await f.run(first.date);
+    assert.notEqual(after.procedures.volumes.find(volume => volume.id === 'SW2').sha256, book.sha256);
+    assert.equal(f.feed.transferred.filter(url => url.endsWith('/San_Francisco.zip')).length, 1);
+    await verifyPublished(f.charts);
+});
 
 // Exercise real downloads, extraction, locks, receipts, packaging, source parsing,
 // PDF indexing and publication. Only GDAL rendering is replaced by one cached tile.
@@ -39,6 +55,7 @@ async function fixture(t: TestContext) {
     const charts = path.join(output, 'charts');
     const file = (cycle: string, name: string) => path.join(charts, cycle, name);
     async function run(today: string) {
+        const prepared = await prepareProcedureCatalog({ output, today });
         const groups = await discoverCharts({ today });
         for (const group of groups) for (const [region, listing] of Object.entries(group.files)) {
             assert.ok(listing.current, `discovery covers ${group.prefix}/${region} on ${today}`);
@@ -65,7 +82,7 @@ async function fixture(t: TestContext) {
         await writeChartManifests(charts, async () => ({ bounds: [-180, -85, 180, 85], minZoom: 0, maxZoom: 0 }));
         await buildChartPackages(output);
         await buildNasrData({ output, today, routeHistorySource: feed.history });
-        const procedures = await buildProcedureCatalog({ output, today });
+        const procedures = await prepared.build();
         assert.ok(procedures.associations, 'current navigation must keep route-to-plate associations available');
         const supplements = await buildChartSupplements({ output, effectiveDate: procedures.effectiveDate });
         const index = await buildChartCycles(output);
@@ -125,11 +142,16 @@ test('offline full edition → change notice → next full edition survives miss
     const originalNav = await fs.readFile(f.file(first.date, 'nav/manifest.json'), 'utf8');
     const originalBook = await sha256File(f.file(first.date, 'tpp/tpp-sw2.pdf'));
 
+    // FAA has already removed September's link while this run's pinned date is
+    // still September 30. The dated XML remains available independently.
+    f.feed.responses.set('https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/search/',
+        '<a href="https://aeronav.faa.gov/d-tpp/2610/xml_data/d-tpp_Metafile.xml">Oct 01&ndash;Oct 29, 2026</a>');
     const beforeBoundary = await f.run('2026-09-30');
     assert.equal(beforeBoundary.procedures.effectiveDate, first.date);
     assert.deepEqual(beforeBoundary.index.cycles, [first.date]);
     assert.deepEqual((await json(f.file(first.date, 'mbtiles/manifest.json'))).archives, originalTiles.archives);
-    assert.equal(f.feed.requested.filter(url => url.endsWith('/San_Francisco.zip')).length, 1, 'valid download cache is reused');
+    assert.equal(f.feed.requested.filter(url => url.endsWith('/San_Francisco.zip')).length, 2, 'dated sources are revalidated');
+    assert.equal(f.feed.transferred.filter(url => url.endsWith('/San_Francisco.zip')).length, 1, 'unchanged bytes are reused');
     const previousIndex = await fs.readFile(path.join(f.charts, 'cycles.json'), 'utf8');
     const previousNav = await fs.readFile(f.file(first.date, 'nav/manifest.json'), 'utf8');
     assert.deepEqual(JSON.parse(previousNav).products, JSON.parse(originalNav).products);

@@ -17,6 +17,32 @@ build network-free. The standalone stage indexes TPP books already present under
 `charts/<cycle>/tpp/` and the Pacific book under `charts/<cycle>/cs/`; it does not download them. Without local books, the catalog still includes
 individual plate URLs, and its manifest reports unindexed procedures.
 
+Online builds derive the dated XML URL from the 28-day AIRAC schedule and the
+0901Z effective-time cutoff. They do not depend on the FAA search page retaining
+the preceding edition's link during rollover. The XML's cycle, start date, end
+date, and 0901Z timestamps must match the selected edition; missing or invalid
+XML fails the build without substituting another cycle.
+
+XML is cached under `sources/<effective-date>/tpp/d-tpp_Metafile.xml`, with
+conditional revalidation for same-edition corrections and retries for transient
+download failures. `build:charts` validates and retains this input before chart
+downloads and tiling, then indexes the downloaded books after navigation finishes.
+A build crossing 0901Z keeps its startup edition and validated XML. Source-cache
+updates and catalog publication have separate per-cycle locks.
+
+To finish the metadata stages after an earlier run failed at procedures, use the
+effective date printed by that run's completed navigation stage:
+
+```bash
+npm run build:procedures -- --effective-date=2026-09-03
+npm run build:supplements -- --effective-date=2026-09-03
+npm run build:obstacles
+npm run build:chart-cycles
+```
+
+This reuses the existing books and navigation output. A normal `build:charts`
+rerun also reuses verified downloads and tiles, but selects the current edition.
+
 SID/STAR waypoint sequences belong to `build:nav` and its `terminal-procedures`
 manifest product in `nav/`. This stage owns the plate catalog and PDF page targets in `tpp/`.
 

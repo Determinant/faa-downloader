@@ -15,6 +15,77 @@ import { validatePdfFile } from '../lib/pdf.ts';
 
 const silentLogger = { log() {}, warn() {} };
 
+test('dated downloads revalidate, replace corrections, and preserve good bytes on failed replacement', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-revalidate-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const destination = path.join(directory, 'edition.zip');
+    let body = 'edition one', etag = '"one"', fail = false;
+    const conditions: (string | null)[] = [];
+    const options = { userAgent: 'test', revalidate: true, logger: silentLogger, maxAttempts: 1,
+        validate: async (file: string) => { assert.notEqual(await fs.readFile(file, 'utf8'), 'invalid'); },
+        fetch: (async (_url, init) => {
+            const condition = new Headers(init?.headers).get('if-none-match');
+            conditions.push(condition);
+            if (fail) throw new Error('offline');
+            return condition === etag ? new Response(null, { status: 304 })
+                : new Response(body, { headers: { etag } });
+        }) as typeof globalThis.fetch };
+    await fs.writeFile(destination, 'legacy cache without validators');
+    await downloadFile('https://example.test/edition.zip', destination, options);
+    await downloadFile('https://example.test/edition.zip', destination, options);
+    body = 'corrected edition'; etag = '"two"';
+    await downloadFile('https://example.test/edition.zip', destination, options);
+    assert.equal(await fs.readFile(destination, 'utf8'), body);
+    assert.deepEqual(conditions, [null, '"one"', '"one"']);
+    fail = true;
+    await assert.rejects(downloadFile('https://example.test/edition.zip', destination, options), /offline/);
+    fail = false; body = 'invalid'; etag = '"three"';
+    await assert.rejects(downloadFile('https://example.test/edition.zip', destination, options));
+    assert.equal(await fs.readFile(destination, 'utf8'), 'corrected edition');
+    body = 'repaired edition';
+    await downloadFile('https://example.test/edition.zip', destination, options);
+    assert.equal(await fs.readFile(destination, 'utf8'), body);
+    assert.equal(conditions.at(-1), '"two"', 'a rejected download cannot replace the cached validator');
+});
+
+test('revalidation uses Last-Modified or downloads anew when the server supplies no validator', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-modified-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const destination = path.join(directory, 'edition.pdf');
+    const modified = 'Thu, 01 Oct 2026 09:01:00 GMT';
+    let requests = 0;
+    const options = { userAgent: 'test', revalidate: true, logger: silentLogger,
+        fetch: (async (_url, init) => {
+            const condition = new Headers(init?.headers).get('if-modified-since');
+            requests++;
+            if (requests === 2) {
+                assert.equal(condition, modified);
+                return new Response(null, { status: 304 });
+            }
+            return new Response(`revision ${requests}`, { headers: requests === 1 ? { 'last-modified': modified } : {} });
+        }) as typeof globalThis.fetch };
+    for (let i = 0; i < 4; i++) await downloadFile('https://example.test/edition.pdf', destination, options);
+    assert.equal(await fs.readFile(destination, 'utf8'), 'revision 4');
+});
+
+test('a changed source restarts a versioned partial instead of mixing editions', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-versioned-partial-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const destination = path.join(directory, 'edition.zip');
+    const url = 'https://example.test/edition.zip';
+    let requests = 0;
+    await downloadFile(url, destination, { userAgent: 'test', revalidate: true, logger: silentLogger,
+        fetch: (async (_url, init) => {
+            requests++;
+            const headers = new Headers(init?.headers);
+            if (requests === 1) return new Response('old', { headers: { etag: '"old"', 'content-length': '20' } });
+            assert.equal(headers.get('range'), 'bytes=3-');
+            assert.equal(headers.get('if-range'), '"old"');
+            return new Response('complete new source', { headers: { etag: '"new"' } });
+        }) as typeof globalThis.fetch });
+    assert.equal(await fs.readFile(destination, 'utf8'), 'complete new source');
+});
+
 function minimalPdf(): Buffer {
     const header = '%PDF-1.7\n';
     return Buffer.from(

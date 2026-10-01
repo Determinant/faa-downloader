@@ -5,29 +5,27 @@ import { createReadStream } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { airacCycleForDate, faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { toPosixPath } from './lib/fs-utils.ts';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
+import { downloadFile } from './lib/http-download.ts';
 import { tppBookFiles } from './lib/pdf-layout.ts';
 import { jsonArtifact, pruneGeneration, publishGeneration, stageJson } from './lib/publication.ts';
 import { publishedApproachAssociations } from './lib/approach-associations.ts';
 import {
-    discoverDtppEditions,
+    FAA_DTPP_BASE_URL,
     pageIndexEntry,
     parseProcedureCatalog,
     parseVolumeEffectiveInterval,
     PROCEDURE_BUILDER_VERSION,
     resolveVolumePageIndexes,
-    type DtppEdition,
     type IndexedPdfPage,
     type ProcedureCatalog
 } from './lib/procedures.ts';
 
-const DTPP_SEARCH_URL =
-    'https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dtpp/search/';
 const DEFAULT_OUTPUT = 'dist';
-const REQUEST_TIMEOUT_MS = 120_000;
 
 type Options = {
     output: string;
@@ -40,13 +38,6 @@ type BuildOptions = Omit<Options, 'help'> & {
     today?: string;
 };
 
-type XmlInput = {
-    contents: string;
-    url: string;
-    expectedCycle?: string;
-    expectedEffectiveDate?: string;
-};
-
 type VolumeCandidate = {
     id: string;
     filePath: string;
@@ -56,26 +47,26 @@ type VolumeCandidate = {
 };
 
 export async function buildProcedureCatalog(options: BuildOptions): Promise<ProcedureCatalog> {
-    const outputRoot = path.resolve(options.output);
-    const xml = await loadXml(options);
-    const xmlSha256 = sha256(xml.contents);
-    const generatedAt = new Date().toISOString();
-    const catalog = parseProcedureCatalog(xml.contents, xml.url, xmlSha256, generatedAt);
-    if (xml.expectedCycle && catalog.cycle !== xml.expectedCycle) {
-        throw new Error(`FAA d-TPP page selected cycle ${xml.expectedCycle}, XML has ${catalog.cycle}`);
-    }
-    if (xml.expectedEffectiveDate && catalog.effectiveDate !== xml.expectedEffectiveDate) {
-        throw new Error(
-            `FAA d-TPP page selected ${xml.expectedEffectiveDate}, ` +
-            `XML is effective ${catalog.effectiveDate}`
-        );
-    }
-    if (options.effectiveDate && catalog.effectiveDate !== options.effectiveDate) {
-        throw new Error(
-            `d-TPP XML is effective ${catalog.effectiveDate}, expected ${options.effectiveDate}`
-        );
-    }
+    return (await prepareProcedureCatalog(options)).build();
+}
 
+/** Validate and retain the XML before expensive chart work. Books and navigation
+ * associations are read only when build() runs, after those stages have finished.
+ */
+export async function prepareProcedureCatalog(options: BuildOptions): Promise<{
+    readonly effectiveDate: string;
+    build: () => Promise<ProcedureCatalog>;
+}> {
+    const outputRoot = path.resolve(options.output);
+    const catalog = await loadCatalog(options);
+    return {
+        effectiveDate: catalog.effectiveDate,
+        build: () => publishCatalog(outputRoot, structuredClone(catalog))
+    };
+}
+
+async function publishCatalog(outputRoot: string, catalog: ProcedureCatalog): Promise<ProcedureCatalog> {
+    catalog.generatedAt = new Date().toISOString();
     const catalogDirectory = path.join(
         outputRoot,
         'charts',
@@ -189,61 +180,48 @@ export function parseArgs(argv: string[]): Options {
     return options;
 }
 
-export function selectDtppEdition(
-    html: string,
-    baseUrl: string,
-    today: string,
-    effectiveDate?: string
-): DtppEdition {
-    const editions = discoverDtppEditions(html, baseUrl);
-    const selected = effectiveDate
-        ? editions.find(edition => edition.effectiveDate === effectiveDate)
-        : editions.find(edition => edition.effectiveDate <= today && today < edition.expirationDate);
-    if (!selected) {
-        throw new Error(
-            effectiveDate
-                ? `FAA d-TPP page has no XML edition for ${effectiveDate}`
-                : `FAA d-TPP page has no current XML edition for ${today}`
-        );
+async function loadCatalog(options: BuildOptions): Promise<ProcedureCatalog> {
+    const requested = options.effectiveDate === undefined ? undefined : airacCycleForDate(options.effectiveDate);
+    if (requested && requested.effectiveDate !== options.effectiveDate) {
+        throw new Error(`d-TPP effective date must be an AIRAC edition date: ${options.effectiveDate}`);
     }
-    return selected;
-}
-
-async function loadXml(options: BuildOptions): Promise<XmlInput> {
+    const readCatalog = async (file: string, url: string, expected?: ReturnType<typeof airacCycleForDate>) => {
+        // Match Response.text()'s UTF-8 BOM decoding for local and downloaded XML.
+        const contents = (await fs.readFile(file, 'utf8')).replace(/^\uFEFF/, '');
+        const catalog = parseProcedureCatalog(contents, url, sha256(contents));
+        const edition = expected ?? airacCycleForDate(catalog.effectiveDate);
+        if (catalog.cycle !== edition.cycle || catalog.effectiveDate !== edition.effectiveDate ||
+            catalog.expirationDate !== edition.expirationDate) {
+            throw new Error(
+                `d-TPP XML edition mismatch: expected ${edition.cycle} ` +
+                `(${edition.effectiveDate} through ${edition.expirationDate}), got ${catalog.cycle} ` +
+                `(${catalog.effectiveDate} through ${catalog.expirationDate}): ${url}`
+            );
+        }
+        if (!catalog.airports.length || !catalog.airports.some(airport => airport.procedures.length)) {
+            throw new Error(`d-TPP XML has no active procedures: ${url}`);
+        }
+        return catalog;
+    };
     if (options.sourceXml) {
         const filePath = path.resolve(options.sourceXml);
-        return {
-            // Response.text() strips the UTF-8 BOM; local input has the same identity.
-            contents: (await fs.readFile(filePath, 'utf8')).replace(/^\uFEFF/, ''),
-            url: pathToFileURL(filePath).href
-        };
+        return readCatalog(filePath, pathToFileURL(filePath).href, requested);
     }
 
-    const today = options.today ?? new Date().toISOString().slice(0, 10);
-    const searchHtml = await fetchText(DTPP_SEARCH_URL);
-    const edition = selectDtppEdition(
-        searchHtml,
-        DTPP_SEARCH_URL,
-        today,
-        options.effectiveDate
-    );
-    return {
-        contents: await fetchText(edition.url),
-        url: edition.url,
-        expectedCycle: edition.cycle,
-        expectedEffectiveDate: edition.effectiveDate
-    };
-}
-
-async function fetchText(url: string): Promise<string> {
-    const response = await fetch(url, {
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        headers: { 'user-agent': 'faa-regs-procedure-builder/1.0' }
-    });
-    if (!response.ok) {
-        throw new Error(`FAA request failed (${response.status} ${response.statusText}): ${url}`);
-    }
-    return response.text();
+    // The search page can drop the preceding edition before 0901Z. Dated XML
+    // remains available; its own header, not the page's "Current" label, is authoritative.
+    const edition = requested ?? airacCycleForDate(options.today ?? faaEffectiveDate());
+    const url = `${FAA_DTPP_BASE_URL}${edition.cycle}/xml_data/d-tpp_Metafile.xml`;
+    const directory = path.resolve(options.output, 'sources', edition.effectiveDate, 'tpp');
+    const file = path.join(directory, 'd-tpp_Metafile.xml');
+    const release = await acquireChartBuildLock(directory);
+    try {
+        await downloadFile(url, file, {
+            userAgent: 'faa-regs-procedure-builder/1.0', revalidate: true,
+            validate: async candidate => { await readCatalog(candidate, url, edition); }
+        });
+        return await readCatalog(file, url, edition);
+    } finally { await release(); }
 }
 
 async function findVolumeCandidates(

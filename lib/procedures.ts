@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { DOMParser, type Element as XmlElement } from '@xmldom/xmldom';
-import { JSDOM } from 'jsdom';
 
 export const FAA_DTPP_BASE_URL = 'https://aeronav.faa.gov/d-tpp/';
 // PDF page-index version; publication and association contracts version separately.
@@ -111,21 +110,13 @@ export type PageResolution = {
     unresolved: number;
 };
 
-export type DtppEdition = {
-    cycle: string;
-    effectiveDate: string;
-    expirationDate: string;
-    url: string;
-};
-
 export type EffectiveInterval = {
     effectiveDate: string;
     expirationDate: string;
 };
 
 const XML_PDF_NAME = /^[A-Z0-9][A-Z0-9_.-]*\.PDF$/i;
-const XML_DATE = /\b(\d{2})\/(\d{2})\/(\d{2})\b/;
-const EDITION_DATE = /([A-Z]{3})\s+(\d{1,2})\s*[^A-Z0-9]+\s*([A-Z]{3})\s+(\d{1,2}),\s*(\d{4})/i;
+const XML_DATE = /^0901Z\s+(\d{2})\/(\d{2})\/(\d{2})$/;
 const MONTHS = new Map([
     ['Jan', 1], ['Feb', 2], ['Mar', 3], ['Apr', 4], ['May', 5], ['Jun', 6],
     ['Jul', 7], ['Aug', 8], ['Sep', 9], ['Oct', 10], ['Nov', 11], ['Dec', 12]
@@ -143,7 +134,7 @@ export function parseProcedureCatalog(
             if (level !== 'warning') errors.push(message);
         }
     }).parseFromString(xmlSource.replace(/^\uFEFF/, ''), 'text/xml');
-    if (errors.length > 0 || document.documentElement.tagName !== 'digital_tpp') {
+    if (errors.length > 0 || document.documentElement?.tagName !== 'digital_tpp') {
         throw new Error(`Invalid d-TPP XML${errors[0] ? `: ${errors[0]}` : ''}`);
     }
 
@@ -343,21 +334,6 @@ function mergeAdjacentItems(items: PdfTextItem[]): PdfTextItem[] {
     return merged;
 }
 
-export function discoverDtppEditions(html: string, baseUrl: string): DtppEdition[] {
-    const dom = new JSDOM(html, { url: baseUrl });
-    const anchors = Array.from(dom.window.document.querySelectorAll('a')) as any[];
-    const editions: DtppEdition[] = [];
-    for (const anchor of anchors) {
-        const url = new URL(String(anchor.getAttribute('href') || ''), baseUrl);
-        if (!/d-tpp_Metafile\.xml$/i.test(url.pathname)) continue;
-        const range = parseEditionRange(String(anchor.textContent || '').trim());
-        const cycle = url.pathname.match(/\/d-tpp\/(\d{4})\//i)?.[1];
-        if (!range || !cycle) continue;
-        editions.push({ cycle, ...range, url: url.href });
-    }
-    return editions;
-}
-
 export function parseVolumeEffectiveInterval(text: string): EffectiveInterval | null {
     const match = text.match(
         /Effective:?\s*\d{4}Z\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})\s+to:?\s*\d{4}Z\s+(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/i
@@ -369,20 +345,6 @@ export function parseVolumeEffectiveInterval(text: string): EffectiveInterval | 
     return {
         effectiveDate: isoDate(Number(match[3]), startMonth, Number(match[1])),
         expirationDate: isoDate(Number(match[6]), endMonth, Number(match[4]))
-    };
-}
-
-function parseEditionRange(label: string): Pick<DtppEdition, 'effectiveDate' | 'expirationDate'> | null {
-    const match = label.match(EDITION_DATE);
-    if (!match) return null;
-    const startMonth = MONTHS.get(titleCase(match[1]));
-    const endMonth = MONTHS.get(titleCase(match[3]));
-    if (!startMonth || !endMonth) return null;
-    const endYear = Number(match[5]);
-    const startYear = startMonth > endMonth ? endYear - 1 : endYear;
-    return {
-        effectiveDate: isoDate(startYear, startMonth, Number(match[2])),
-        expirationDate: isoDate(endYear, endMonth, Number(match[4]))
     };
 }
 

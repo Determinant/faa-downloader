@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { writeFileAtomic } from './fs-utils.ts';
 
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
 const DEFAULT_PROGRESS_INTERVAL_MS = 10_000;
@@ -9,6 +10,10 @@ type Logger = Pick<Console, 'log' | 'warn'>;
 
 export type DownloadOptions = {
     userAgent: string;
+    /** Dated FAA URLs can be corrected without changing their filename. */
+    revalidate?: boolean;
+    /** Keep validators outside published directories when their cleanup is strict. */
+    metadataFile?: string;
     validate?: (filePath: string, destination: string) => Promise<void>;
     skipNotFound?: boolean;
     idleTimeoutMs?: number;
@@ -30,7 +35,30 @@ type TransferOptions = {
     progressIntervalMs: number;
     fetch: typeof globalThis.fetch;
     logger: Logger;
+    revalidate: boolean;
+    cached?: DownloadIdentity;
 };
+
+type DownloadIdentity = { url: string; etag?: string; lastModified?: string; size?: number; mtimeMs?: number };
+type TransferResult = { available: boolean; bytes: number; unchanged?: boolean; identity?: DownloadIdentity };
+
+async function readIdentity(file: string, url: string): Promise<DownloadIdentity | undefined> {
+    try {
+        const value = JSON.parse(await fs.readFile(file, 'utf8'));
+        if (value?.url === url && (typeof value.etag === 'string' || typeof value.lastModified === 'string')) return value;
+    } catch (error) {
+        if (!hasErrorCode(error, 'ENOENT') && !(error instanceof SyntaxError)) throw error;
+    }
+}
+
+function responseIdentity(url: string, response: Response): DownloadIdentity {
+    return { url, etag: response.headers.get('etag') ?? undefined,
+        lastModified: response.headers.get('last-modified') ?? undefined };
+}
+
+function rangeValidator(identity?: DownloadIdentity): string | undefined {
+    return identity?.etag && !identity.etag.startsWith('W/') ? identity.etag : identity?.lastModified;
+}
 
 class RetryableDownloadError extends Error {}
 
@@ -171,9 +199,16 @@ async function transferOnce(
     url: string,
     destination: string,
     options: TransferOptions
-): Promise<{ available: boolean; bytes: number }> {
+): Promise<TransferResult> {
     const partialPath = `${destination}.part`;
     let offset = await fileSize(partialPath);
+    const partial = options.revalidate ? await readIdentity(`${partialPath}.http.json`, url) : undefined;
+    // Never splice a correction onto an unversioned or obsolete partial download.
+    if (options.revalidate && offset > 0 && !rangeValidator(partial)) {
+        await fs.rm(partialPath, { force: true });
+        offset = 0;
+    }
+    const cached = offset === 0 ? options.cached : undefined;
     const controller = new AbortController();
     const watchdog = createWatchdog(controller, options.idleTimeoutMs);
     watchdog.reset();
@@ -189,7 +224,10 @@ async function transferOnce(
                 headers: {
                     'user-agent': options.userAgent,
                     'accept-encoding': 'identity',
-                    ...(offset > 0 ? { range: `bytes=${offset}-` } : {})
+                    ...(offset > 0 ? { range: `bytes=${offset}-`,
+                        ...(rangeValidator(partial) ? { 'if-range': rangeValidator(partial)! } : {}) } : {}),
+                    ...(cached?.etag ? { 'if-none-match': cached.etag }
+                        : cached?.lastModified ? { 'if-modified-since': cached.lastModified } : {})
                 }
             });
         } catch (error) {
@@ -201,6 +239,10 @@ async function transferOnce(
         watchdog.reset();
 
         const discardResponse = () => response.body?.cancel().catch(() => {});
+        if (response.status === 304 && cached) {
+            await discardResponse();
+            return { available: true, bytes: cached.size!, unchanged: true };
+        }
         if (response.status === 404 && options.skipNotFound) {
             await discardResponse();
             await fs.rm(partialPath, { force: true });
@@ -209,8 +251,9 @@ async function transferOnce(
         }
         if (response.status === 416 && offset > 0) {
             await discardResponse();
-            if (unsatisfiedRangeSize(response) === offset) {
-                return { available: true, bytes: offset };
+            if (unsatisfiedRangeSize(response) === offset && (!options.revalidate ||
+                rangeValidator(responseIdentity(url, response)) === rangeValidator(partial))) {
+                return { available: true, bytes: offset, identity: partial };
             }
             await fs.rm(partialPath, { force: true });
             throw new RetryableDownloadError(`Saved partial is not valid for ${url}`);
@@ -237,6 +280,18 @@ async function transferOnce(
             offset = 0;
         }
 
+        const identity = responseIdentity(url, response);
+        if (options.revalidate) {
+            if (offset > 0 && rangeValidator(identity) !== rangeValidator(partial)) {
+                await discardResponse();
+                await fs.rm(partialPath, { force: true });
+                throw new RetryableDownloadError(`Source changed while resuming ${url}`);
+            }
+            // Truncate before replacing its identity, including across an interrupted restart.
+            if (offset === 0) await fs.writeFile(partialPath, '');
+            await writeFileAtomic(`${partialPath}.http.json`, JSON.stringify(identity));
+        }
+
         const length = responseLength(response);
         const expectedTotal = range?.total
             ?? (length === undefined ? undefined : offset + length);
@@ -254,7 +309,7 @@ async function transferOnce(
                 `Incomplete download for ${url}: received ${received} of ${expectedTotal} bytes`
             );
         }
-        return { available: true, bytes: received };
+        return { available: true, bytes: received, identity };
     } finally {
         watchdog.stop();
     }
@@ -266,6 +321,7 @@ export async function downloadFile(
     options: DownloadOptions
 ): Promise<boolean> {
     const partialPath = `${destination}.part`;
+    const metadataFile = options.metadataFile ?? `${destination}.http.json`;
     const logger = options.logger ?? console;
     const validate = options.validate ?? (async () => {});
     const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
@@ -279,6 +335,7 @@ export async function downloadFile(
     }
 
     let existing: Awaited<ReturnType<typeof fs.stat>> | undefined;
+    let cached: DownloadIdentity | undefined;
     try {
         existing = await fs.stat(destination);
     } catch (error) {
@@ -290,17 +347,24 @@ export async function downloadFile(
                 throw new Error('cached download is empty or is not a regular file');
             }
             await validate(destination, destination);
-            await fs.rm(partialPath, { force: true });
-            logger.log(`file "${destination}" already exists`);
-            return true;
+            if (!options.revalidate) {
+                await fs.rm(partialPath, { force: true });
+                logger.log(`file "${destination}" already exists`);
+                return true;
+            }
         } catch (error) {
             logger.warn(`replacing invalid cached download "${destination}": ${errorMessage(error)}`);
             await fs.rm(destination, { force: true });
+            existing = undefined;
         }
+    }
+    if (existing && options.revalidate) {
+        const identity = await readIdentity(metadataFile, url);
+        if (identity?.size === existing.size && identity.mtimeMs === existing.mtimeMs) cached = identity;
     }
 
     await fs.mkdir(path.dirname(destination), { recursive: true });
-    let transfer: { available: boolean; bytes: number } | undefined;
+    let transfer: TransferResult | undefined;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
             transfer = await transferOnce(url, destination, {
@@ -309,7 +373,9 @@ export async function downloadFile(
                 progressIntervalMs,
                 skipNotFound: options.skipNotFound ?? false,
                 fetch: options.fetch ?? globalThis.fetch,
-                logger
+                logger,
+                revalidate: options.revalidate ?? false,
+                cached
             });
             break;
         } catch (error) {
@@ -322,9 +388,22 @@ export async function downloadFile(
     }
 
     if (!transfer?.available) return false;
+    if (transfer.unchanged) {
+        logger.log(`source unchanged: "${destination}"`);
+        return true;
+    }
     try {
         await validate(partialPath, destination);
+        // Invalidate the old validator before committing new bytes; a crash must
+        // never associate an old ETag with a replacement file.
+        await fs.rm(metadataFile, { force: true });
         await fs.rename(partialPath, destination);
+        if (options.revalidate) {
+            const stat = await fs.stat(destination);
+            await writeFileAtomic(metadataFile, JSON.stringify({ ...transfer.identity,
+                size: stat.size, mtimeMs: stat.mtimeMs }));
+            await fs.rm(`${partialPath}.http.json`, { force: true });
+        }
     } catch (error) {
         await fs.rm(partialPath, { force: true });
         throw error;

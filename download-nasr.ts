@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { airacCycleForDate, faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { JSDOM } from 'jsdom';
 import {
     DEFAULT_DOWNLOAD_CONCURRENCY,
@@ -160,19 +161,19 @@ async function fetchText(url: string): Promise<string> {
 export function discoverCurrentNasrCycle(
     html: string,
     baseUrl = NASR_INDEX_URL,
-    today = new Date().toISOString().slice(0, 10)
+    today = faaEffectiveDate()
 ): { cycle: string; url: string } {
+    const expectedCycle = airacCycleForDate(today).effectiveDate;
     const dom = new JSDOM(html, { url: baseUrl });
     const anchors = Array.from(dom.window.document.querySelectorAll('a')) as any[];
     const candidates = anchors
         .map(anchor => new URL(String(anchor.getAttribute('href') || ''), baseUrl))
         .flatMap(url => {
             const match = url.pathname.match(/\/NASR_Subscription\/(\d{4}-\d{2}-\d{2})\/?$/);
-            return match && match[1] <= today ? [{ cycle: match[1], url: url.href }] : [];
-        })
-        .sort((left, right) => right.cycle.localeCompare(left.cycle));
+            return match && match[1] === expectedCycle ? [{ cycle: match[1], url: url.href }] : [];
+        });
 
-    if (!candidates[0]) throw new Error('FAA NASR page contains no current effective cycle');
+    if (!candidates[0]) throw new Error(`FAA NASR page contains no current effective cycle for ${today}: expected ${expectedCycle}`);
     return candidates[0];
 }
 
@@ -198,6 +199,7 @@ export function discoverNasrGroupUrls(
 export async function downloadNasrFile(url: string, destination: string): Promise<void> {
     await downloadFile(url, destination, {
         userAgent: 'faa-regs-nasr-builder/1.0',
+        revalidate: true,
         validate: validateZipArchive
     });
 }

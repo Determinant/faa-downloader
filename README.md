@@ -301,7 +301,24 @@ Resolve navigation and TPP filenames through their manifests. Builders keep only
 current generation in local output. Run `npm run clean:generated` once to migrate and
 compact output from older builds; it does not download source data.
 
-Downloaded cycle PDFs and ZIP files are reused on subsequent runs; rolling obstacle and route-history sources are checked for updates. Each MBTiles file has a build receipt containing source, output, and tiler-configuration hashes; cached tiles are reused only while that receipt still matches. Generated chart data is ignored by Git because a complete collection is several gigabytes. The chart builder currently produces the download and tile data; it does not provide a chart-viewer PWA.
+Online builds revalidate dated PDFs, ZIPs (including NASR and CIFP), and Chart
+Supplement XML with ETag or Last-Modified, so same-edition corrections are rebuilt.
+Unchanged responses reuse local bytes. Files cached before HTTP validators were
+recorded, or sources without validators, must be downloaded again to establish
+their current contents. Interrupted transfers resume only against the same source
+version. Failed downloads or invalid replacements retain the last good file and
+fail the build. HTTP validators stay in local build/source caches, outside published
+PDF directories. Explicit local-source builds remain offline.
+
+Automatic edition selection uses the FAA's 09:01 UTC changeover, with one cutoff
+pinned across the chart, navigation and procedure build. The 28/56-day NASR rules
+remain strict publication-schedule checks; arbitrary older rows are not accepted.
+Rolling obstacle and route-history sources are independently checked for updates.
+Each MBTiles file has a build receipt containing source, output, and
+tiler-configuration hashes; cached tiles are reused only while that receipt still
+matches. Generated chart data is ignored by Git because a complete collection is
+several gigabytes. The chart builder produces the data; it does not provide a
+chart-viewer PWA.
 
 Large per-sheet archives, receipts, build manifests, and GDAL/packaging work files live
 under `dist/mbtiles/YYYY-MM-DD/`, alongside the `dist/zips/` source cache. Only the small
@@ -704,6 +721,12 @@ including IAPs, airport diagrams, SIDs, charted and textual ODPs, STARs, takeoff
 alternate minima, DVAs, radar minima, hot spots, and uncommon FAA product codes.
 Deleted procedures and FAA deletion placeholders are excluded from the current feed.
 
+The chart build validates d-TPP XML before downloading or tiling charts, using the
+AIRAC edition effective at its startup 0901Z cutoff. It requests the dated XML
+directly, so early FAA search-page rollover cannot drop the selected edition.
+See [Procedure builds and recovery](docs/procedures.md#build) to resume the metadata
+stages from existing charts and navigation after an interrupted run.
+
 Each entry has its FAA individual-PDF URL. When a downloaded electronic TPP volume
 contains the product, it also has a verified zero-based page index. Shared products
 such as takeoff minima are resolved to the first page for that airport. The original
@@ -802,7 +825,7 @@ interruption before manifest publication, and successful retries. Every network
 request must match a fixture. A single prepared tile replaces GDAL rendering;
 the suite does not render nationwide rasters or rebuild daily obstacles/terrain.
 It is also included in `npm test`. The normal chart build pins one selection
-date at startup so its stages cannot switch cycles across midnight.
+cutoff at startup so its stages cannot switch cycles across 09:01 UTC.
 
 Build outputs, chart archives, and downloaded chart data are intentionally not committed. The source repository contains the builders, templates, tests, and configuration needed to reproduce them.
 
