@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { pdfBookFolder } from './lib/pdf-layout.ts';
+import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { migratePdfBooks } from './clean-generated.ts';
 import { prepareProcedureCatalog } from './build-procedures.ts';
 import { buildChartSupplements } from './build-chart-supplements.ts';
@@ -117,6 +118,7 @@ Options:
 Output layout:
   DIR/charts/      Published PDFs and data grouped by publication date
   DIR/sources/YYYY-MM-DD/charts/ Extracted source GeoTIFFs
+  DIR/sources/YYYY-MM-DD/{tpp,cs}/ Revalidated source PDFs
   DIR/zips/        Downloaded source ZIP archives grouped by publication date
   DIR/mbtiles/YYYY-MM-DD/        Intermediate sheet MBTiles, receipts, and chart-manifest.json
   DIR/charts/YYYY-MM-DD/mbtiles/ Spatial/zoom delivery archives and manifest.json
@@ -173,7 +175,7 @@ async function extractChart(
 
 function createDownloadPlan(
     groups: ChartGroup[],
-    chartRoot: string,
+    sourceRoot: string,
     downloadRoot: string
 ): ChartDownload[] {
     const downloads: ChartDownload[] = [];
@@ -185,7 +187,7 @@ function createDownloadPlan(
                 continue;
             }
             const extension = candidate.extractions ? 'zip' : 'pdf';
-            const destinationRoot = candidate.extractions ? downloadRoot : chartRoot;
+            const destinationRoot = candidate.extractions ? downloadRoot : sourceRoot;
             const filename = `${group.prefix}-${region.toLowerCase()}.${extension}`;
             const folder = extension === 'pdf' ? pdfBookFolder(filename) : undefined;
             if (extension === 'pdf' && !folder) throw new Error(`Unrecognized PDF chart family: ${filename}`);
@@ -211,16 +213,27 @@ export async function downloadChartFiles(
     const downloadRoot = path.join(outputRoot, 'zips');
     await fs.mkdir(chartRoot, { recursive: true });
     await fs.mkdir(downloadRoot, { recursive: true });
-    const downloads = createDownloadPlan(groups, chartRoot, downloadRoot);
+    const downloads = createDownloadPlan(groups, path.join(outputRoot, 'sources'), downloadRoot);
     console.log(`Acquiring ${downloads.length} chart files with concurrency ${concurrency}`);
     await mapWithConcurrency(downloads, concurrency, async download => {
-        await downloadFile(download.candidate.url, download.localPath, {
-            userAgent: 'faa-regs-chart-builder/1.0', validate: validateChartDownload, revalidate: true,
-            metadataFile: path.join(output, 'sources', download.candidate.date, `${path.basename(download.localPath)}.http.json`)
-        });
-        if (download.candidate.extractions) {
-            await extractChart(download.localPath, chartRoot, download.candidate.date, download.candidate.extractions);
-        }
+        const release = await acquireChartBuildLock(download.localPath);
+        try {
+            if (!download.candidate.extractions) {
+                const filename = path.basename(download.localPath);
+                const legacy = path.join(chartRoot, download.candidate.date, pdfBookFolder(filename)!, filename);
+                // Seed existing validators without another full transfer. downloadFile
+                // replaces sources by rename; it never writes through this legacy link.
+                try { await fs.link(legacy, download.localPath); }
+                catch (error: any) { if (!['EEXIST', 'ENOENT'].includes(error.code)) throw error; }
+            }
+            await downloadFile(download.candidate.url, download.localPath, {
+                userAgent: 'faa-regs-chart-builder/1.0', validate: validateChartDownload, revalidate: true,
+                metadataFile: path.join(outputRoot, 'sources', download.candidate.date, `${path.basename(download.localPath)}.http.json`)
+            });
+            if (download.candidate.extractions) {
+                await extractChart(download.localPath, chartRoot, download.candidate.date, download.candidate.extractions);
+            }
+        } finally { await release(); }
     });
 }
 

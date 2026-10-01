@@ -14,8 +14,11 @@ npm run build:procedures -- --source-xml=/path/to/d-TPP_Metafile.xml
 
 `build:charts` runs this stage automatically. A local source XML makes the standalone
 build network-free. The standalone stage indexes TPP books already present under
-`charts/<cycle>/tpp/` and the Pacific book under `charts/<cycle>/cs/`; it does not download them. Without local books, the catalog still includes
-individual plate URLs, and its manifest reports unindexed procedures.
+`sources/<cycle>/tpp/` and the Pacific book under `sources/<cycle>/cs/`; it does not
+download them. Legacy fixed-name books under the same `charts/` folders are also
+accepted, with downloaded sources taking precedence within each edition. Without
+local books, the catalog still includes individual plate URLs, and its manifest
+reports unindexed procedures.
 
 Online builds derive the dated XML URL from the 28-day AIRAC schedule and the
 0901Z effective-time cutoff. They do not depend on the FAA search page retaining
@@ -50,7 +53,7 @@ manifest product in `nav/`. This stage owns the plate catalog and PDF page targe
 
 ```text
 dist/charts/<effective-date>/tpp/
-├── tpp-*.pdf
+├── tpp-*.<sha256>.pdf
 ├── catalog.<sha256>.json
 └── manifest.json
 ```
@@ -80,12 +83,14 @@ and publishes the zero-based index. It also locates each airport's first page in
 sections for takeoff minima, textual ODPs, DVAs, alternate/radar minima, hot spots, and
 LAHSO material.
 
-FAA metadata volume `AK-1` maps to `tpp/tpp-ak.pdf`, and `PC-1` maps to `cs/cs-pac.pdf`.
+FAA metadata volume `AK-1` uses the `tpp-ak.pdf` source, and `PC-1` uses `cs-pac.pdf`.
+Published URLs include each book's content hash and resolve through `catalog.volumes`.
 Pacific procedures use the supplement's terminal-procedure section headers for page
 labels, so they cannot collide with the supplement's other numbered sections.
 
 At the intervening 28-day change notice, the downloader retains the regional base
-books and downloads `CN.pdf` as `tpp-cn.pdf` in the new cycle. When FAA XML supplies
+books and downloads `CN.pdf` into the new cycle's source cache, publishing it as
+`tpp-cn.<sha256>.pdf`. When FAA XML supplies
 `cnpage` or `cnsection`, the procedure's `volumeTarget.volumeId` is `CN`; its page
 index resolves against that cycle's notice. Unchanged procedures keep their base
 book targets. Resolve the target's volume ID through `catalog.volumes`, since one
@@ -103,18 +108,22 @@ page targets. Some military-only products have no combined-volume fields; those 
 their individual FAA PDF URL and have a null volume target. Any advertised target that
 cannot be resolved makes the build fail.
 
-The combined PDFs are immutable inputs. The builder only reads and checksums them; it
-does not split, rewrite, or duplicate them. ZLayers can therefore open one original PDF
-at the indexed page and cache that source file on demand.
+The builder copies each selected source into an independent snapshot before hashing
+and indexing it, using a filesystem reflink when available. Publication uses a
+hash-named PDF; an existing file must match that identity. The original PDF bytes
+are preserved without splitting or rewriting. Old snapshots remain available after
+same-edition corrections and failed builds, including books carried into a later
+catalog. Indexing never selects old hash-named snapshots as current source inputs.
+ZLayer opens the indexed page and caches the complete book on demand.
 
-Only combined volumes already present under `dist/charts/<cycle>/tpp/` or `cs/` are indexed. This keeps a
-partial regional chart build valid while the nationwide individual-PDF catalog remains
-complete.
+Only available source books (or legacy fixed-name published books) are indexed.
+This keeps a partial regional chart build valid while the nationwide individual-PDF
+catalog remains complete.
 
 ## Chart Supplement airport pages
 
 `npm run build:supplements -- --effective-date=YYYY-MM-DD` builds
-`dist/charts/YYYY-MM-DD/cs/catalog.json` from the existing `cs/cs-*.pdf` books and FAA's
+`dist/charts/YYYY-MM-DD/cs/catalog.json` from existing regional source books and FAA's
 small `afd_<edition>.xml` airport index. `build:charts` runs it automatically after
 the TPP catalog. `--source-xml=PATH` supports offline builds; downloaded XML is cached
 under `dist/supplements/`, outside the published chart tree.
@@ -135,6 +144,6 @@ are not airport entry points. Border airports may have an entry in two books.
 
 The catalog carries the CS edition's own 56-day interval, exact zero-based page
 indexes, and whole-book sizes and SHA-256 hashes. It includes airports without TPP
-procedures. Publish this one JSON file alongside the existing PDFs; no MBTiles or
-PDF rebuild is needed. ZLayer loads the small catalog when Plates opens, and only
-downloads a regional book when its Chart Supplement row is selected.
+procedures. Upload referenced hash-named PDF snapshots before replacing this JSON
+file; no MBTiles rebuild is needed. ZLayer loads the small catalog when Plates opens,
+and only downloads a regional book when its Chart Supplement row is selected.

@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 import { faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { downloadFile } from './lib/http-download.ts';
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { sha256File, toPosixPath } from './lib/fs-utils.ts';
+import { sha256File } from './lib/fs-utils.ts';
+import { pdfBookCycles, pdfBookSources, publishPdfBook } from './lib/pdf-books.ts';
 import { buildFingerprint, readCachedJson, writeCachedJson } from './lib/build-cache.ts';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { parseVolumeEffectiveInterval } from './lib/procedures.ts';
@@ -22,10 +23,8 @@ type Options = { output: string; effectiveDate?: string; sourceXml?: string; for
 export async function buildChartSupplements(options: Options): Promise<SupplementCatalog> {
     const chartsRoot = path.resolve(options.output, 'charts');
     const today = faaEffectiveDate();
-    const cycles = (await fs.readdir(chartsRoot, { withFileTypes: true }))
-        .filter(entry => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
-        .map(entry => entry.name).sort().reverse();
-    const revision = supplementDate(options.effectiveDate ?? cycles.find(cycle => cycle <= today) ?? today);
+    const revision = supplementDate(options.effectiveDate ?? (await pdfBookCycles(options.output, today))[0] ?? today);
+    const sources = await pdfBookSources(options.output, revision);
     const directory = path.join(chartsRoot, revision, 'cs');
     await fs.mkdir(path.dirname(directory), { recursive: true });
     const release = await acquireChartBuildLock(path.join(path.dirname(directory), '.cs'));
@@ -39,15 +38,10 @@ export async function buildChartSupplements(options: Options): Promise<Supplemen
         };
         const volumes: Array<Omit<SupplementVolume, 'pageCount'> & { file: string }> = [];
         for (const region of SUPPLEMENT_REGIONS) {
-            let file: string | undefined;
-            for (const cycle of cycles.filter(cycle => cycle <= revision)) {
-                const candidate = path.join(chartsRoot, cycle, 'cs', `cs-${region.toLowerCase()}.pdf`);
-                try { await fs.access(candidate); file = candidate; break; }
-                catch (error: any) { if (error.code !== 'ENOENT') throw error; }
-            }
-            if (!file) continue; // A partial regional build is valid.
-            volumes.push({ id: region, file, url: toPosixPath(path.relative(directory, file)),
-                byteLength: (await fs.stat(file)).size, sha256: await sha256File(file) });
+            const source = sources.find(source => source.name.toLowerCase() === `cs-${region.toLowerCase()}.pdf`);
+            if (!source) continue; // A partial regional build is valid.
+            const { filePath, ...identity } = await publishPdfBook(options.output, source, directory);
+            volumes.push({ id: region, file: filePath, ...identity });
         }
         let index: ReturnType<typeof parseSupplementIndex> | undefined;
         let inputSha256: string;

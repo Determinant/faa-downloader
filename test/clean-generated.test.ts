@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { cleanGenerated } from '../clean-generated.ts';
+import { cleanGenerated, migratePdfBooks } from '../clean-generated.ts';
 import { migrateChartSources } from '../lib/chart-source-layout.ts';
 import { migrateNavSources } from '../lib/nav-source-layout.ts';
 import { jsonArtifact } from '../lib/publication.ts';
@@ -118,6 +118,25 @@ test('source migration leaves conflicting old and new inputs untouched', async t
     assert.equal(await fs.readFile(newTiff, 'utf8'), 'new TIFF');
     assert.equal(await fs.readFile(oldZip, 'utf8'), 'old ZIP');
     assert.equal(await fs.readFile(newZip, 'utf8'), 'new ZIP');
+});
+
+test('automatic PDF migration leaves already-relocated catalogs for normal build recovery', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-pdf-recovery-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const cycle = path.join(root, 'charts', '2026-09-03');
+    const directory = path.join(cycle, 'cs');
+    await fs.mkdir(directory, { recursive: true });
+    const catalog = { schemaVersion: 3, builderVersion: 3, volumes: [{ id: 'SW', url: 'cs-sw.pdf',
+        byteLength: 3, sha256: createHash('sha256').update('old').digest('hex') }] };
+    await fs.writeFile(path.join(directory, 'cs-sw.pdf'), 'new');
+    const file = path.join(directory, 'catalog.json');
+    await fs.writeFile(file, JSON.stringify(catalog));
+    await migratePdfBooks(root);
+    // Even a genuine migration elsewhere must not turn startup into a full audit.
+    await fs.writeFile(path.join(cycle, 'tpp-sw2.pdf'), 'legacy');
+    await migratePdfBooks(root);
+    assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), catalog);
+    await assert.rejects(cleanGenerated(root), /PDF book identity mismatch/);
 });
 
 test('PDF migration updates both catalogs before removing root-level books', async t => {

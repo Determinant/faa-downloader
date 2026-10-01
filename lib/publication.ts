@@ -51,14 +51,19 @@ export async function publishGeneration(staging: string, target: string, manifes
     await writeFileAtomic(path.join(target, 'manifest.json'), `${JSON.stringify(manifest)}\n`);
 }
 
-/** Compact an owned publication directory after its new manifest is committed. */
-export async function pruneGeneration(target: string, files: Iterable<string>): Promise<void> {
+/** Compact an owned publication directory after its new manifest is committed.
+ * Shared artifacts must be retained by name, including files another cycle can
+ * publish between reading the keep list and enumerating the directory.
+ */
+export async function pruneGeneration(
+    target: string, files: Iterable<string>, retain: (name: string) => boolean = () => false
+): Promise<void> {
     const keep = new Set(['manifest.json', ...files]);
     for (const name of keep) {
         if (path.basename(name) !== name) throw new Error(`Invalid publication filename: ${name}`);
         await fs.access(path.join(target, name));
     }
     for (const entry of await fs.readdir(target, { withFileTypes: true })) {
-        if (entry.isFile() && !keep.has(entry.name)) await fs.rm(path.join(target, entry.name));
+        if (entry.isFile() && !keep.has(entry.name) && !retain(entry.name)) await fs.rm(path.join(target, entry.name));
     }
 }

@@ -8,7 +8,7 @@ import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { migrateChartSources } from './lib/chart-source-layout.ts';
 import { buildFingerprint } from './lib/build-cache.ts';
 import { sha256File, writeFileAtomic } from './lib/fs-utils.ts';
-import { linkLegacyPdfBooks, relocatedPdfVolumes, tppBookFiles } from './lib/pdf-layout.ts';
+import { linkLegacyPdfBooks, pdfBookFolder, pdfVolumesNeedRelocation, relocatedPdfVolumes } from './lib/pdf-layout.ts';
 import { migrateNavSources, navSourceDirectory } from './lib/nav-source-layout.ts';
 import { pruneGeneration, publishGeneration, stageJson } from './lib/publication.ts';
 import { SUPPLEMENT_BUILDER_VERSION } from './lib/chart-supplements.ts';
@@ -78,13 +78,14 @@ async function cleanNavigation(output: string, cycle: string): Promise<void> {
     }
 }
 
-async function cleanProcedures(output: string, cycle: string): Promise<void> {
+async function cleanProcedures(output: string, cycle: string, relocateOnly = false): Promise<void> {
     const directory = path.join(output, 'charts', cycle, 'tpp');
     const release = await acquireChartBuildLock(path.join(output, 'charts', cycle, '.tpp'));
     try {
         const manifest = await readJson(path.join(directory, 'manifest.json'));
-        await checkArtifact(directory, manifest, true);
         const catalog = await readJson(path.join(directory, manifest.file));
+        if (relocateOnly && !pdfVolumesNeedRelocation(directory, catalog.volumes)) return;
+        await checkArtifact(directory, manifest, true);
         const volumes = await relocatedPdfVolumes(directory, catalog.volumes);
         if (JSON.stringify(volumes) !== JSON.stringify(catalog.volumes)) {
             const updated = { ...catalog, volumes, generatedAt: new Date().toISOString() };
@@ -94,17 +95,18 @@ async function cleanProcedures(output: string, cycle: string): Promise<void> {
                 await publishGeneration(staging, directory, {
                     ...manifest, ...artifact, volumes, generatedAt: updated.generatedAt
                 });
-                await pruneGeneration(directory, [artifact.file, ...await tppBookFiles(directory)]);
+                await pruneGeneration(directory, [artifact.file], name => pdfBookFolder(name) === 'tpp');
             } finally { await fs.rm(staging, { recursive: true, force: true }); }
-        } else await pruneGeneration(directory, [manifest.file, ...await tppBookFiles(directory)]);
+        } else await pruneGeneration(directory, [manifest.file], name => pdfBookFolder(name) === 'tpp');
     } finally { await release(); }
 }
 
-async function cleanSupplements(output: string, cycle: string): Promise<void> {
+async function cleanSupplements(output: string, cycle: string, relocateOnly = false): Promise<void> {
     const file = path.join(output, 'charts', cycle, 'cs', 'catalog.json');
     const release = await acquireChartBuildLock(path.join(output, 'charts', cycle, '.cs'));
     try {
         const catalog = await readJson(file);
+        if (relocateOnly && !pdfVolumesNeedRelocation(path.dirname(file), catalog.volumes)) return;
         const volumes = await relocatedPdfVolumes(path.dirname(file), catalog.volumes);
         if (!('expected' in catalog) && catalog.builderVersion === SUPPLEMENT_BUILDER_VERSION &&
             catalog.schemaVersion === 3 && JSON.stringify(volumes) === JSON.stringify(catalog.volumes)) return;
@@ -212,6 +214,8 @@ export async function cleanGenerated(output = 'dist'): Promise<void> {
         for (const cycle of cycles) {
             const directory = path.join(charts, cycle);
             if (await exists(path.join(directory, 'nav', 'manifest.json'))) await cleanNavigation(root, cycle);
+            if (await exists(path.join(directory, 'tpp', 'manifest.json'))) await cleanProcedures(root, cycle);
+            if (await exists(path.join(directory, 'cs', 'catalog.json'))) await cleanSupplements(root, cycle);
             if (await exists(path.join(directory, 'mbtiles', 'manifest.json'))) await cleanPackages(root, cycle);
         }
         if (await exists(path.join(charts, 'terrain', 'manifest.json'))) await cleanTerrain(root);
@@ -225,13 +229,16 @@ export async function migratePdfBooks(output = 'dist'): Promise<void> {
     const charts = path.join(root, 'charts');
     if (!await exists(charts)) return;
     const oldPdfBooks = await linkLegacyPdfBooks(charts);
+    // Normal rebuilds repair current catalogs themselves. Migration must not
+    // audit unrelated old publications before that recovery can happen.
+    if (!oldPdfBooks.length) return;
     const cycles = (await fs.readdir(charts, { withFileTypes: true }))
         .filter(entry => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
         .map(entry => entry.name);
     for (const cycle of cycles) {
         const directory = path.join(charts, cycle);
-        if (await exists(path.join(directory, 'tpp', 'manifest.json'))) await cleanProcedures(root, cycle);
-        if (await exists(path.join(directory, 'cs', 'catalog.json'))) await cleanSupplements(root, cycle);
+        if (await exists(path.join(directory, 'tpp', 'manifest.json'))) await cleanProcedures(root, cycle, true);
+        if (await exists(path.join(directory, 'cs', 'catalog.json'))) await cleanSupplements(root, cycle, true);
     }
     for (const file of oldPdfBooks) await fs.rm(file);
 }

@@ -8,10 +8,10 @@ import { pathToFileURL } from 'node:url';
 import { airacCycleForDate, faaEffectiveDate } from './lib/faa-effective-date.ts';
 import { isDeepStrictEqual } from 'node:util';
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import { toPosixPath } from './lib/fs-utils.ts';
 import { acquireChartBuildLock } from './lib/chart-build-lock.ts';
 import { downloadFile } from './lib/http-download.ts';
-import { tppBookFiles } from './lib/pdf-layout.ts';
+import { pdfBookFolder } from './lib/pdf-layout.ts';
+import { pdfBookSources, publishPdfBook } from './lib/pdf-books.ts';
 import { jsonArtifact, pruneGeneration, publishGeneration, stageJson } from './lib/publication.ts';
 import { publishedApproachAssociations } from './lib/approach-associations.ts';
 import {
@@ -78,7 +78,7 @@ async function publishCatalog(outputRoot: string, catalog: ProcedureCatalog): Pr
     const release = await acquireChartBuildLock(path.join(cycleDirectory, '.tpp'));
     try {
         const volumeCandidates = await findVolumeCandidates(
-            path.join(outputRoot, 'charts'),
+            outputRoot,
             catalog.effectiveDate,
             catalogDirectory,
             new Set(catalog.airports.flatMap(airport => [airport.volumeId,
@@ -95,7 +95,7 @@ async function publishCatalog(outputRoot: string, catalog: ProcedureCatalog): Pr
             existing.volumes.find(current => current.id === volume.id)?.url === volume.url) &&
             isDeepStrictEqual(existing.associations, catalog.associations) &&
             await manifestMatches(path.join(catalogDirectory, 'manifest.json'), existing)) {
-            await pruneGeneration(catalogDirectory, [existingFile, ...await tppBookFiles(catalogDirectory)]);
+            await pruneGeneration(catalogDirectory, [existingFile], name => pdfBookFolder(name) === 'tpp');
             console.log(`d-TPP catalog for ${catalog.effectiveDate} is already current`);
             return existing;
         }
@@ -145,7 +145,7 @@ async function publishCatalog(outputRoot: string, catalog: ProcedureCatalog): Pr
         try {
             await stageJson(stagedDirectory, 'catalog.json', catalog);
             await publishGeneration(stagedDirectory, catalogDirectory, manifest);
-            await pruneGeneration(catalogDirectory, [manifest.file, ...await tppBookFiles(catalogDirectory)]);
+            await pruneGeneration(catalogDirectory, [manifest.file], name => pdfBookFolder(name) === 'tpp');
         } finally {
             await fs.rm(stagedDirectory, { recursive: true, force: true });
         }
@@ -225,55 +225,22 @@ async function loadCatalog(options: BuildOptions): Promise<ProcedureCatalog> {
 }
 
 async function findVolumeCandidates(
-    chartsRoot: string,
+    outputRoot: string,
     effectiveDate: string,
     catalogDirectory: string,
     requestedVolumes: ReadonlySet<string>
 ): Promise<VolumeCandidate[]> {
-    let entries;
-    try {
-        entries = await fs.readdir(chartsRoot, { withFileTypes: true });
-    } catch (error: any) {
-        if (error.code === 'ENOENT') return [];
-        throw error;
-    }
-    const cycles = entries
-        .filter(entry => entry.isDirectory() && /^\d{4}-\d{2}-\d{2}$/.test(entry.name))
-        .map(entry => entry.name)
-        .filter(cycle => cycle <= effectiveDate)
-        .sort((left, right) => right.localeCompare(left));
-    const candidates = new Map<string, string>();
-    for (const cycle of cycles) {
-        for (const folder of ['tpp', 'cs'] as const) {
-            const directory = path.join(chartsRoot, cycle, folder);
-            let books;
-            try { books = await fs.readdir(directory, { withFileTypes: true }); }
-            catch (error: any) { if (error.code === 'ENOENT') continue; throw error; }
-            for (const entry of books) {
-                if (!entry.isFile()) continue;
-                const match = folder === 'tpp' ? entry.name.match(/^tpp-([a-z0-9]+)\.pdf$/i) : undefined;
-                const name = match?.[1].toUpperCase();
-                const id = folder === 'cs' && /^cs-pac\.pdf$/i.test(entry.name)
-                    ? 'PC1' : name === 'AK' ? 'AK1' : name;
-                // A prior change notice never supplies pages for a new edition.
-                if (id === 'CN' && cycle !== effectiveDate) continue;
-                if (id && requestedVolumes.has(id) && !candidates.has(id)) {
-                    candidates.set(id, path.join(directory, entry.name));
-                }
-            }
+    const candidates = new Map<string, VolumeCandidate>();
+    for (const source of await pdfBookSources(outputRoot, effectiveDate)) {
+        const name = source.name.match(/^tpp-([a-z0-9]+)\.pdf$/i)?.[1].toUpperCase();
+        const id = /^cs-pac\.pdf$/i.test(source.name) ? 'PC1' : name === 'AK' ? 'AK1' : name;
+        // A prior change notice never supplies pages for a new edition.
+        if (id === 'CN' && source.cycle !== effectiveDate) continue;
+        if (id && requestedVolumes.has(id) && !candidates.has(id)) {
+            candidates.set(id, { id, ...await publishPdfBook(outputRoot, source, catalogDirectory) });
         }
     }
-
-    return Promise.all([...candidates].map(async ([id, filePath]) => {
-        const stat = await fs.stat(filePath);
-        return {
-            id,
-            filePath,
-            url: toPosixPath(path.relative(catalogDirectory, filePath)),
-            byteLength: stat.size,
-            sha256: await sha256File(filePath)
-        };
-    }));
+    return [...candidates.values()];
 }
 
 async function readPdfPages(filePath: string): Promise<IndexedPdfPage[]> {

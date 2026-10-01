@@ -203,9 +203,10 @@ See [Daily obstacles](docs/obstacles.md) for the schema and publication contract
 The selected PDF coverage includes all 25 TPP volumes: AK, EC1–EC3, NC1–NC3,
 NE1–NE4, NW1, SC1–SC5, SE1–SE4, and SW1–SW4. It also includes all nine
 Chart Supplements: AK, EC, NC, NE, NW, PAC, SC, SE, and SW. Pacific terminal
-procedures are included in Chart Supplement Pacific. PDFs retain the existing
-`tpp-<volume>.pdf` and `cs-<region>.pdf` filenames inside each cycle's `tpp/` and
-`cs/` directories respectively.
+procedures are included in Chart Supplement Pacific. Downloads use fixed names in
+`sources/<cycle>/tpp/` and `sources/<cycle>/cs/`. Published books use
+`tpp-<volume>.<sha256>.pdf` and `cs-<region>.<sha256>.pdf` in the corresponding
+`charts/<cycle>/` directories. Catalogs supply their exact relative URLs.
 
 The configured raster footprint includes every FAA Sectional, all 34 Terminal Area
 (TAC) sheets and 21 Flyway (FLY) sheets, and the main L01-L36 Low and H01-H12 High
@@ -239,7 +240,7 @@ Dated directories are not standalone copies of every product. On a 28-day change
 notice, navigation and the TPP catalog advance while raster charts and regional
 PDF books remain under their 56-day publication date. TPP and Chart Supplement
 catalogs use relative URLs to those books; retain the directories they reference.
-The downloader also saves the current TPP change notice as `tpp/tpp-cn.pdf`.
+The current TPP change notice publishes as `tpp/tpp-cn.<sha256>.pdf`.
 Changed procedure targets point into that notice instead of the older base book.
 Raster consumers must select the newest available MBTiles manifest independently
 of the navigation cycle; `cycles.json` lists publication dates, not complete bundles.
@@ -264,10 +265,10 @@ dist/
 │       │   ├── <manifest-listed product files>
 │       │   └── manifest.json
 │       ├── cs/
-│       │   ├── cs-*.pdf
+│       │   ├── cs-*.<sha256>.pdf
 │       │   └── catalog.json
 │       └── tpp/
-│           ├── tpp-*.pdf
+│           ├── tpp-*.<sha256>.pdf
 │           ├── catalog.<sha256>.json
 │           └── manifest.json
 ├── mbtiles/                         # local build cache; do not upload
@@ -276,10 +277,12 @@ dist/
 │       ├── <sheet>.mbtiles.build.json
 │       ├── chart-packages-<output-id>.build.json
 │       └── chart-manifest.json
-├── sources/                         # local extracted inputs; do not upload
+├── sources/                         # local downloaded/extracted inputs; do not upload
 │   └── YYYY-MM-DD/
 │       ├── charts/
 │       │   └── *.tif
+│       ├── tpp/                     # source PDFs, d-TPP XML
+│       ├── cs/                      # source PDFs
 │       └── nav/
 │           ├── *_CSV.zip
 │           ├── CIFP_*.zip (or local FAACIFP18)
@@ -298,8 +301,9 @@ dist/
 ~~~
 
 Resolve navigation and TPP filenames through their manifests. Builders keep only the
-current generation in local output. Run `npm run clean:generated` once to migrate and
-compact output from older builds; it does not download source data.
+current metadata generation in local output; published PDF versions are retained.
+Run `npm run clean:generated` once to migrate and compact output from older builds;
+it does not download source data.
 
 Online builds revalidate dated PDFs, ZIPs (including NASR and CIFP), and Chart
 Supplement XML with ETag or Last-Modified, so same-edition corrections are rebuilt.
@@ -309,6 +313,14 @@ their current contents. Interrupted transfers resume only against the same sourc
 version. Failed downloads or invalid replacements retain the last good file and
 fail the build. HTTP validators stay in local build/source caches, outside published
 PDF directories. Explicit local-source builds remain offline.
+
+PDF indexing first snapshots a source into its hash-named publication. Corrections
+publish a new URL without replacing books referenced by earlier catalogs or saved
+regions; failed indexing leaves the previous publication usable. Legacy fixed-name
+books are preserved, and existing downloads seed the source cache before revalidation.
+Automatic PDF migration only relocates legacy layout references; normal reruns can
+repair catalogs after an interrupted build. Explicit `clean:generated` still audits
+published identities. Retain older server files and upload books before catalogs.
 
 Automatic edition selection uses the FAA's 09:01 UTC changeover, with one cutoff
 pinned across the chart, navigation and procedure build. The 28/56-day NASR rules
@@ -323,7 +335,8 @@ chart-viewer PWA.
 Large per-sheet archives, receipts, build manifests, and GDAL/packaging work files live
 under `dist/mbtiles/YYYY-MM-DD/`, alongside the `dist/zips/` source cache. Only the small
 delivery archives and their `manifest.json` live in `dist/charts/YYYY-MM-DD/mbtiles/`.
-Original PDFs live in the cycle's `tpp/` and `cs/` folders; TIFFs are kept under `sources/`.
+Published PDF snapshots live in the cycle's `tpp/` and `cs/` folders; mutable source
+PDFs and TIFFs are kept under `sources/`.
 The per-chart lock directory remains beside the source TIFF during a build and is
 removed when the operation finishes. Its owner marker is published atomically;
 retries reclaim dead owners without deleting another builder's lock. Legacy empty

@@ -115,6 +115,8 @@ test('unchanged CS books and XML reuse the verified catalog; force rebuilds it',
 test('CS reuse invalidates changed XML, same-size PDF edits, and the available book set', async t => {
     const f = await supplementFixture(t);
     const original = await buildChartSupplements(f);
+    const originalBook = path.resolve(path.dirname(f.catalogFile), original.volumes[0].url);
+    const originalBytes = await fs.readFile(originalBook);
     await fs.writeFile(f.sourceXml, xml(airport('SQL', 'sw_174_03SEP2026.pdf')));
     const changed = await buildChartSupplements(f);
     assert.equal(changed.airports[0].faaId, 'SQL');
@@ -126,9 +128,13 @@ test('CS reuse invalidates changed XML, same-size PDF edits, and the available b
     await assert.rejects(buildChartSupplements(f), /missing page 174/);
     assert.deepEqual(JSON.parse(await fs.readFile(f.catalogFile, 'utf8')), changed,
         'failed reindexing retains the published catalog');
+    assert.deepEqual(await fs.readFile(originalBook), originalBytes,
+        'same-size source edits must not change a saved catalog\'s published book');
     await fs.writeFile(f.sourceXml, xml(airport('SQL', 'sw_175_03SEP2026.pdf') + airport('PUW', 'nw_175_03SEP2026.pdf')));
     const partial = await buildChartSupplements(f);
     assert.equal(partial.volumes.length, 1);
+    assert.notEqual(partial.volumes[0].url, original.volumes[0].url);
+    assert.deepEqual(await fs.readFile(originalBook), originalBytes);
     const northwest = path.join(f.directory, 'cs', 'cs-nw.pdf');
     await fs.copyFile(f.file, northwest);
     const expanded = await buildChartSupplements(f);

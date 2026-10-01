@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 import test, { type TestContext } from 'node:test';
 import sharp from 'sharp';
 import { downloadChartFiles } from '../download-charts.ts';
+import { migratePdfBooks } from '../clean-generated.ts';
 import { buildNasrData } from '../download-nasr.ts';
 import { prepareProcedureCatalog } from '../build-procedures.ts';
 import { buildChartSupplements } from '../build-chart-supplements.ts';
@@ -19,19 +20,56 @@ import { editions, rolloverFeed, TPP_ROOT } from './helpers/rollover-fixtures.ts
 const json = async (file: string) => JSON.parse(await fs.readFile(file, 'utf8'));
 const representative: Record<string, string[]> = { cs: ['SW'], tpp: ['SW2', 'CN'], 'vfr-sectional': ['San_Francisco'] };
 
-test('a same-edition book correction updates its published identity without retiling unchanged rasters', async t => {
+test('an interrupted same-edition correction preserves published books and recovers without retiling', async t => {
     const f = await fixture(t);
     const first = editions[0];
     const before = await f.run(first.date);
     const book = before.procedures.volumes.find(volume => volume.id === 'SW2');
+    // Upgrade from the old fixed-name layout without overwriting a saved URL.
+    const source = path.join(f.output, 'sources', first.date, 'tpp', 'tpp-sw2.pdf');
+    await fs.link(source, f.file(first.date, 'tpp/tpp-sw2.pdf'));
+    await fs.rm(source);
     const url = `${TPP_ROOT}${first.date}/SW2.pdf`;
     const bytes = f.feed.responses.get(url);
     assert.ok(bytes);
     // Same-size content edit preserves this tiny fixture's PDF stream/xref offsets.
     f.feed.responses.set(url, Buffer.from(Buffer.from(bytes).toString('latin1').replace('Approach', 'Correct!'), 'latin1'));
+    const rename = fs.rename.bind(fs);
+    const interrupted = t.mock.method(fs, 'rename', async (from, to) => {
+        if (String(to) === f.file(first.date, 'nav/manifest.json')) throw new Error('Interrupted after PDF acquisition');
+        return rename(from, to);
+    });
+    try { await assert.rejects(f.run(first.date), /Interrupted after PDF acquisition/); }
+    finally { interrupted.mock.restore(); }
+    await verifyPublished(f.charts);
+    await identity(f.file(first.date, 'tpp'), book);
+    await identity(f.file(first.date, 'tpp'), { ...book, url: 'tpp-sw2.pdf' });
     const after = await f.run(first.date);
-    assert.notEqual(after.procedures.volumes.find(volume => volume.id === 'SW2').sha256, book.sha256);
+    const corrected = after.procedures.volumes.find(volume => volume.id === 'SW2');
+    assert.notEqual(corrected.sha256, book.sha256);
+    assert.notEqual(corrected.url, book.url);
+    await identity(f.file(first.date, 'tpp'), book);
     assert.equal(f.feed.transferred.filter(url => url.endsWith('/San_Francisco.zip')).length, 1);
+    await verifyPublished(f.charts);
+});
+
+test('correcting a base book during a notice cycle retains both catalogs and their exact PDF bytes', async t => {
+    const f = await fixture(t);
+    const [first, notice] = editions;
+    const base = await f.run(first.date);
+    const before = await f.run(notice.date);
+    const url = `${TPP_ROOT}${first.date}/SW2.pdf`;
+    const bytes = f.feed.responses.get(url);
+    assert.ok(bytes);
+    f.feed.responses.set(url, Buffer.from(Buffer.from(bytes).toString('latin1').replace('Approach', 'Correct!'), 'latin1'));
+    const after = await f.run(notice.date);
+    const oldBook = before.procedures.volumes.find(volume => volume.id === 'SW2');
+    const newBook = after.procedures.volumes.find(volume => volume.id === 'SW2');
+    assert.notEqual(newBook.url, oldBook.url);
+    assert.equal(oldBook.sha256, base.procedures.volumes[0].sha256);
+    await identity(f.file(notice.date, 'tpp'), oldBook);
+    await verifyPublished(f.charts);
+    await f.run(notice.date); // Automatic migration must not audit/replace the older catalog.
     await verifyPublished(f.charts);
 });
 
@@ -56,6 +94,8 @@ async function fixture(t: TestContext) {
     const file = (cycle: string, name: string) => path.join(charts, cycle, name);
     async function run(today: string) {
         const prepared = await prepareProcedureCatalog({ output, today });
+        await fs.mkdir(charts, { recursive: true });
+        await migratePdfBooks(output);
         const groups = await discoverCharts({ today });
         for (const group of groups) for (const [region, listing] of Object.entries(group.files)) {
             assert.ok(listing.current, `discovery covers ${group.prefix}/${region} on ${today}`);
@@ -140,7 +180,7 @@ test('offline full edition → change notice → next full edition survives miss
     await verifyPublished(f.charts);
     const originalTiles = await json(f.file(first.date, 'mbtiles/manifest.json'));
     const originalNav = await fs.readFile(f.file(first.date, 'nav/manifest.json'), 'utf8');
-    const originalBook = await sha256File(f.file(first.date, 'tpp/tpp-sw2.pdf'));
+    const originalBook = start.procedures.volumes.find(volume => volume.id === 'SW2');
 
     // FAA has already removed September's link while this run's pinned date is
     // still September 30. The dated XML remains available independently.
@@ -178,8 +218,9 @@ test('offline full edition → change notice → next full edition survives miss
     assert.deepEqual(carried.index.cycles, [notice.date, first.date]);
     assert.equal(carried.procedures.effectiveDate, notice.date);
     assert.deepEqual(carried.procedures.volumes.map(volume => volume.id).sort(), ['CN', 'SW2']);
-    assert.equal(carried.procedures.volumes.find(volume => volume.id === 'CN').url, 'tpp-cn.pdf');
-    assert.equal(carried.procedures.volumes.find(volume => volume.id === 'SW2').url, '../../2026-09-03/tpp/tpp-sw2.pdf');
+    const noticeBook = carried.procedures.volumes.find(volume => volume.id === 'CN');
+    assert.equal(noticeBook.url, `tpp-cn.${noticeBook.sha256}.pdf`);
+    assert.equal(carried.procedures.volumes.find(volume => volume.id === 'SW2').url, `../../2026-09-03/tpp/${originalBook.url}`);
     assert.equal(carried.procedures.airports[0].procedures.find(procedure => procedure.kind === 'approach').volumeTarget.volumeId, 'CN');
     assert.equal(carried.supplements.effectiveDate, first.date);
     const nav = await json(f.file(notice.date, 'nav/manifest.json'));
@@ -196,13 +237,13 @@ test('offline full edition → change notice → next full edition survives miss
     const advanced = await f.run(next.date);
     assert.equal(advanced.procedures.effectiveDate, next.date);
     assert.deepEqual(advanced.procedures.volumes.map(volume => volume.id), ['SW2'], 'old change notice is not carried forward');
-    assert.equal(advanced.procedures.volumes[0].url, 'tpp-sw2.pdf');
+    assert.equal(advanced.procedures.volumes[0].url, `tpp-sw2.${advanced.procedures.volumes[0].sha256}.pdf`);
     assert.equal(advanced.supplements.effectiveDate, next.date);
     const nextNav = await json(f.file(next.date, 'nav/manifest.json'));
     for (const source of nextNav.sourceArchives.filter(source => source.group !== 'CIFP')) assert.equal(source.effectiveDate, next.date);
     assert.equal(nextNav.sourceArchives.find(source => source.group === 'CIFP').filename, 'CIFP_261029.zip');
     assert.notEqual((await json(f.file(next.date, 'mbtiles/manifest.json'))).archives[0].sha256, originalTiles.archives[0].sha256);
-    assert.equal(await sha256File(f.file(first.date, 'tpp/tpp-sw2.pdf')), originalBook, 'older books remain available to the notice catalog');
+    await identity(f.file(first.date, 'tpp'), originalBook);
     await verifyPublished(f.charts);
 });
 

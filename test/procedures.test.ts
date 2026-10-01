@@ -143,9 +143,9 @@ test('procedure builds index the current notice, include newly added plates, and
     assert.deepEqual(partial.airports[0].procedures.map(p => p.volumeTarget?.pageIndex), [0, null, null]);
     await fs.copyFile(fixture, path.join(current, 'tpp-cn.pdf'));
     const complete = await buildProcedureCatalog(options);
-    assert.deepEqual(complete.volumes.map(v => [v.id, v.url, v.resolvedTargetCount]), [
-        ['CN', 'tpp-cn.pdf', 2], ['SW2', '../../2026-09-03/tpp/tpp-sw2.pdf', 1]
-    ]);
+    assert.deepEqual(complete.volumes.map(v => [v.id, v.resolvedTargetCount]), [['CN', 2], ['SW2', 1]]);
+    for (const volume of complete.volumes) assert.equal(volume.url,
+        `${volume.id === 'CN' ? '' : '../../2026-09-03/tpp/'}tpp-${volume.id.toLowerCase()}.${volume.sha256}.pdf`);
     assert.deepEqual(complete.airports[0].procedures.map(p => p.volumeTarget?.pageIndex), [0, 1, 2]);
     assert.equal((await buildProcedureCatalog(options)).generatedAt, complete.generatedAt);
     await fs.access(path.join(current, 'tpp-cn.pdf'));

@@ -3,15 +3,9 @@ import path from 'node:path';
 import { sha256File, toPosixPath } from './fs-utils.ts';
 
 export function pdfBookFolder(filename: string): 'tpp' | 'cs' | undefined {
-    if (/^tpp-[a-z0-9]+\.pdf$/i.test(filename)) return 'tpp';
-    if (/^cs-[a-z0-9]+\.pdf$/i.test(filename)) return 'cs';
+    if (/^tpp-[a-z0-9]+(?:\.[a-f0-9]{64})?\.pdf$/i.test(filename)) return 'tpp';
+    if (/^cs-[a-z0-9]+(?:\.[a-f0-9]{64})?\.pdf$/i.test(filename)) return 'cs';
     return undefined;
-}
-
-export async function tppBookFiles(directory: string): Promise<string[]> {
-    return (await fs.readdir(directory, { withFileTypes: true }))
-        .filter(entry => entry.isFile() && pdfBookFolder(entry.name) === 'tpp')
-        .map(entry => entry.name);
 }
 
 export async function linkLegacyPdfBooks(chartsRoot: string): Promise<string[]> {
@@ -38,6 +32,14 @@ export async function linkLegacyPdfBooks(chartsRoot: string): Promise<string[]> 
         }
     }
     return originals;
+}
+
+export function pdfVolumesNeedRelocation(catalogDirectory: string, volumes: { url: string }[]): boolean {
+    return volumes.some(volume => {
+        const file = path.resolve(catalogDirectory, volume.url);
+        const folder = pdfBookFolder(path.basename(file));
+        return folder !== undefined && path.basename(path.dirname(file)) !== folder;
+    });
 }
 
 export async function relocatedPdfVolumes<T extends { url: string; byteLength: number; sha256: string }>(
