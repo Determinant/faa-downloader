@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
-import { includesCycle, type CycleWindow } from './cycle-retention.ts';
+import { includesCycle, isCycle, type CycleWindow } from './cycle-retention.ts';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -16,11 +16,14 @@ import {
     mapWithConcurrency
 } from './concurrency.ts';
 import { readChartMetadata, type ChartMetadata } from './chart-metadata.ts';
-import { sha256File, writeFileAtomic } from './fs-utils.ts';
-import { chartLayoutForCycleDirectory, chartMbtilesPath, legacyChartCycleDirectory } from './chart-paths.ts';
+import { fileExists, hasErrorCode, writeFileAtomic } from './fs-utils.ts';
+import { chartLayoutForCycleDirectory, chartMbtilesPath } from './chart-paths.ts';
 import { migrateChartSources } from './chart-source-layout.ts';
 import { flattenChartPackages } from './chart-package-layout.ts';
 import { acquireChartBuildLock } from './chart-build-lock.ts';
+import { buildReceiptPath, currentBuildReceipt, withChartOutput, writeBuildReceipt,
+    type ChartBuildConfiguration, type ChartBuildReceipt } from './chart-build-cache.ts';
+export type { ChartBuildReceipt } from './chart-build-cache.ts';
 
 export { sha256File } from './fs-utils.ts';
 export { acquireChartBuildLock } from './chart-build-lock.ts';
@@ -57,19 +60,6 @@ const execFileAsync = promisify(execFile);
 export type ChartCutline = {
     srs: string;
     wkt: string;
-};
-
-type FileIdentity = {
-    byteLength: number;
-    sha256: string;
-};
-
-export type ChartBuildReceipt = {
-    schemaVersion: 1;
-    tilerVersion: number;
-    configurationSha256: string;
-    source: FileIdentity;
-    output: FileIdentity;
 };
 
 export type ChartManifest = {
@@ -111,27 +101,6 @@ export async function verifyGdalTools(): Promise<void> {
             throw new Error(`GDAL does not provide the required ${format} driver`);
         }
     }
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-    try {
-        await fs.access(filePath);
-        return true;
-    } catch (error) {
-        if (hasErrorCode(error, 'ENOENT')) return false;
-        throw error;
-    }
-}
-
-function hasErrorCode(error: unknown, code: string): boolean {
-    return typeof error === 'object'
-        && error !== null
-        && 'code' in error
-        && error.code === code;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 async function findTiffs(directory: string): Promise<string[]> {
@@ -198,91 +167,7 @@ export function chartCutlineForFilename(filePath: string): ChartCutline | undefi
     return cutlineForDefinition(definition);
 }
 
-function buildReceiptPath(mbtilesPath: string): string {
-    return `${mbtilesPath}.build.json`;
-}
-
-function legacyTemporaryChartPaths(basePath: string): string[] {
-    const nextMbtilesPath = `${basePath}.next.mbtiles`;
-    const partialTilesPath = `${basePath}.next.partial_tiles.db`;
-    return [
-        `${basePath}-rgb.vrt`,
-        `${basePath}-alpha.vrt`,
-        nextMbtilesPath,
-        `${nextMbtilesPath}-journal`,
-        `${nextMbtilesPath}-shm`,
-        `${nextMbtilesPath}-wal`,
-        partialTilesPath,
-        `${partialTilesPath}-journal`,
-        `${partialTilesPath}-shm`,
-        `${partialTilesPath}-wal`
-    ];
-}
-
-async function removeStaleChartWork(basePath: string): Promise<void> {
-    const directory = path.dirname(basePath);
-    const prefix = `${path.basename(basePath)}.work-`;
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    await Promise.all(
-        entries
-            .filter(entry => entry.isDirectory() && entry.name.startsWith(prefix))
-            .map(entry => fs.rm(path.join(directory, entry.name), {
-                recursive: true,
-                force: true
-            }))
-    );
-    await Promise.all(
-        legacyTemporaryChartPaths(basePath).map(filePath => fs.rm(filePath, { force: true }))
-    );
-}
-
-async function withChartOutput<T>(
-    tifPath: string,
-    action: (mbtilesPath: string) => Promise<T>
-): Promise<T> {
-    const sourceBasePath = tifPath.replace(/\.tif$/i, '');
-    const mbtilesPath = chartMbtilesPath(tifPath);
-    // Keep the lock keyed to the source so old and new layout builds cannot race.
-    const releaseLock = await acquireChartBuildLock(sourceBasePath);
-    try {
-        await fs.mkdir(path.dirname(mbtilesPath), { recursive: true });
-        await removeStaleChartWork(sourceBasePath);
-        await removeStaleChartWork(mbtilesPath.replace(/\.mbtiles$/i, ''));
-        const moves: Array<[string, string]> = [];
-        const legacyCycle = legacyChartCycleDirectory(path.dirname(tifPath));
-        const oldPaths = [
-            `${sourceBasePath}.mbtiles`,
-            path.join(path.dirname(tifPath), 'mbtiles', path.basename(mbtilesPath)),
-            ...(legacyCycle ? [
-                path.join(legacyCycle, path.basename(mbtilesPath)),
-                path.join(legacyCycle, 'mbtiles', path.basename(mbtilesPath))
-            ] : [])
-        ].filter(file => path.resolve(file) !== path.resolve(mbtilesPath));
-        const destinations = new Set<string>();
-        for (const legacyPath of oldPaths) {
-            for (const suffix of ['', '.build.json']) {
-                const source = `${legacyPath}${suffix}`;
-                const destination = `${mbtilesPath}${suffix}`;
-                if (!await fileExists(source)) continue;
-                if (await fileExists(destination) || destinations.has(destination)) {
-                    throw new Error(`Chart layout conflict: both ${source} and ${destination} exist`);
-                }
-                moves.push([source, destination]);
-                destinations.add(destination);
-            }
-        }
-        // Receipts contain content identities, not paths: relocating does not
-        // invalidate a verified build or require rendering several GB again.
-        // Check both destinations first; resume safely if an earlier move stopped
-        // between the archive and its receipt. Never overwrite a destination.
-        for (const [source, destination] of moves) await fs.rename(source, destination);
-        return await action(mbtilesPath);
-    } finally {
-        await releaseLock();
-    }
-}
-
-function configurationSha256(tifPath: string): string {
+function buildConfiguration(tifPath: string): ChartBuildConfiguration {
     const filename = path.basename(tifPath).toLowerCase();
     const definition = CHART_DEFINITIONS[filename];
     const cutline = definition
@@ -307,91 +192,12 @@ function configurationSha256(tifPath: string): string {
         zoomLevelStrategy: 'UPPER',
         cutline
     };
-    return createHash('sha256').update(JSON.stringify(configuration)).digest('hex');
+    return { tilerVersion: TILER_VERSION,
+        configurationSha256: createHash('sha256').update(JSON.stringify(configuration)).digest('hex') };
 }
 
-async function fileIdentity(filePath: string): Promise<FileIdentity> {
-    const stat = await fs.stat(filePath);
-    if (!stat.isFile() || stat.size === 0) {
-        throw new Error(`Chart artifact is empty or is not a regular file: ${filePath}`);
-    }
-    return { byteLength: stat.size, sha256: await sha256File(filePath) };
-}
-
-function parseBuildReceipt(value: unknown): ChartBuildReceipt | null {
-    if (!isObject(value) || value.schemaVersion !== 1 ||
-        !Number.isSafeInteger(value.tilerVersion) ||
-        typeof value.configurationSha256 !== 'string' ||
-        !isObject(value.source) || !isObject(value.output)) {
-        return null;
-    }
-    const identities = [value.source, value.output];
-    if (!identities.every(identity =>
-        Number.isSafeInteger(identity.byteLength) && Number(identity.byteLength) > 0 &&
-        typeof identity.sha256 === 'string' && /^[a-f0-9]{64}$/.test(identity.sha256)
-    )) {
-        return null;
-    }
-    return value as ChartBuildReceipt;
-}
-
-async function readBuildReceipt(receiptPath: string): Promise<ChartBuildReceipt | null> {
-    try {
-        return parseBuildReceipt(JSON.parse(await fs.readFile(receiptPath, 'utf8')));
-    } catch (error) {
-        if (hasErrorCode(error, 'ENOENT') || error instanceof SyntaxError) return null;
-        throw error;
-    }
-}
-
-async function currentBuildReceipt(
-    tifPath: string,
-    mbtilesPath: string
-): Promise<ChartBuildReceipt | null> {
-    const receipt = await readBuildReceipt(buildReceiptPath(mbtilesPath));
-    if (!receipt || receipt.tilerVersion !== TILER_VERSION ||
-        receipt.configurationSha256 !== configurationSha256(tifPath)) {
-        return null;
-    }
-    let source: FileIdentity;
-    let output: FileIdentity;
-    try {
-        [source, output] = await Promise.all([
-            fileIdentity(tifPath),
-            fileIdentity(mbtilesPath)
-        ]);
-    } catch (error) {
-        if (hasErrorCode(error, 'ENOENT')) return null;
-        throw error;
-    }
-    return source.byteLength === receipt.source.byteLength &&
-        source.sha256 === receipt.source.sha256 &&
-        output.byteLength === receipt.output.byteLength &&
-        output.sha256 === receipt.output.sha256
-        ? receipt
-        : null;
-}
-
-export async function writeChartBuildReceipt(
-    tifPath: string,
-    mbtilesPath: string
-): Promise<ChartBuildReceipt> {
-    const [source, output] = await Promise.all([
-        fileIdentity(tifPath),
-        fileIdentity(mbtilesPath)
-    ]);
-    const receipt: ChartBuildReceipt = {
-        schemaVersion: 1,
-        tilerVersion: TILER_VERSION,
-        configurationSha256: configurationSha256(tifPath),
-        source,
-        output
-    };
-    await writeFileAtomic(
-        buildReceiptPath(mbtilesPath),
-        `${JSON.stringify(receipt, null, 2)}\n`
-    );
-    return receipt;
+export async function writeChartBuildReceipt(tifPath: string, mbtilesPath: string): Promise<ChartBuildReceipt> {
+    return writeBuildReceipt(tifPath, mbtilesPath, buildConfiguration(tifPath));
 }
 
 export async function writeChartManifests(
@@ -423,7 +229,7 @@ async function writeChartManifestsWithReceipts(
             throw error;
         });
         for (const entry of entries) {
-            if (entry.isDirectory() && isIsoDate(entry.name)) cycles.add(entry.name);
+            if (entry.isDirectory() && isCycle(entry.name)) cycles.add(entry.name);
         }
     }
     for (const cycle of [...cycles].sort()) {
@@ -445,7 +251,7 @@ async function writeChartManifestsWithReceipts(
                             return undefined;
                         }
                         const receipt = verifiedReceipts.get(path.resolve(filePath))
-                            ?? await currentBuildReceipt(tifPath, filePath);
+                            ?? await currentBuildReceipt(tifPath, filePath, buildConfiguration(tifPath));
                         if (!receipt) {
                             throw new Error(
                                 `Chart cache is stale or unverifiable: ${filePath}; rebuild the chart`
@@ -498,12 +304,6 @@ async function writeChartManifestsWithReceipts(
     }
 }
 
-function isIsoDate(value: string): boolean {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-    const parsed = new Date(`${value}T00:00:00Z`);
-    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
-}
-
 export async function tileMbtilesFromTiff(
     tifPath: string,
     force = false
@@ -515,7 +315,7 @@ export async function tileMbtilesFromTiff(
     return withChartOutput(tifPath, async mbtilesPath => {
         const basePath = mbtilesPath.replace(/\.mbtiles$/i, '');
         if (await fileExists(mbtilesPath) && !force) {
-            const receipt = await currentBuildReceipt(tifPath, mbtilesPath);
+            const receipt = await currentBuildReceipt(tifPath, mbtilesPath, buildConfiguration(tifPath));
             if (receipt) {
                 console.log(`file "${mbtilesPath}" is current`);
                 return receipt;

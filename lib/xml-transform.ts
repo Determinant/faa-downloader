@@ -1,4 +1,4 @@
-import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
+import { DOMParser, XMLSerializer, type Document, type Element } from '@xmldom/xmldom';
 import xpath from 'xpath';
 import { KEEP_PART_NUMBERS } from './config.ts';
 import { escapeRegExp, getElementChildren, normalizeWhitespace } from './xml-utils.ts';
@@ -249,24 +249,28 @@ function mapAppendixNode(appendixDiv, outDoc) {
     return appOut;
 }
 
+type ChildMapper = (source: Element, output: Document) => Element;
+
+/** Each container declares its recognized children; all other elements pass through. */
+function appendMappedChildren(source: Element, target: Element, output: Document, mappers: Record<string, ChildMapper>) {
+    for (const child of getElementChildren(source)) {
+        if (child.nodeName === 'HEAD') continue;
+        const type = (child.getAttribute('TYPE') || '').toUpperCase();
+        const mapper = Object.hasOwn(mappers, child.nodeName)
+            ? mappers[child.nodeName] : mappers[`${child.nodeName}:${type}`];
+        target.appendChild(mapper ? mapper(child, output) : child.cloneNode(true));
+    }
+}
+
 function mapSubjectGroupNode(subjgrpDiv, outDoc) {
     const groupOut = outDoc.createElement('SUBJGRP');
     const headText = normalizeWhitespace(xpath.select1('string(./HEAD)', subjgrpDiv));
     if (headText) appendTextElement(outDoc, groupOut, 'HD', headText, { SOURCE: 'HED' });
 
-    for (const child of getElementChildren(subjgrpDiv)) {
-        const childType = (child.getAttribute('TYPE') || '').toUpperCase();
-        if (child.nodeName === 'HEAD') continue;
-        if (child.nodeName === 'DIV8' && childType === 'SECTION') {
-            groupOut.appendChild(mapSectionNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV9' && childType === 'APPENDIX') {
-            groupOut.appendChild(mapAppendixNode(child, outDoc));
-            continue;
-        }
-        groupOut.appendChild(child.cloneNode(true));
-    }
+    appendMappedChildren(subjgrpDiv, groupOut, outDoc, {
+        'DIV8:SECTION': mapSectionNode,
+        'DIV9:APPENDIX': mapAppendixNode
+    });
 
     return groupOut;
 }
@@ -276,29 +280,13 @@ function mapSubpartNode(subpartDiv, outDoc) {
     const headText = normalizeWhitespace(xpath.select1('string(./HEAD)', subpartDiv));
     if (headText) appendTextElement(outDoc, subpartOut, 'HD', headText, { SOURCE: 'HED' });
 
-    for (const child of getElementChildren(subpartDiv)) {
-        const childType = (child.getAttribute('TYPE') || '').toUpperCase();
-        if (child.nodeName === 'HEAD') continue;
-
-        if (child.nodeName === 'AUTH' || child.nodeName === 'SOURCE') {
-            subpartOut.appendChild(mapAuthOrSourceNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV7' && childType === 'SUBJGRP') {
-            subpartOut.appendChild(mapSubjectGroupNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV8' && childType === 'SECTION') {
-            subpartOut.appendChild(mapSectionNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV9' && childType === 'APPENDIX') {
-            subpartOut.appendChild(mapAppendixNode(child, outDoc));
-            continue;
-        }
-
-        subpartOut.appendChild(child.cloneNode(true));
-    }
+    appendMappedChildren(subpartDiv, subpartOut, outDoc, {
+        AUTH: mapAuthOrSourceNode,
+        SOURCE: mapAuthOrSourceNode,
+        'DIV7:SUBJGRP': mapSubjectGroupNode,
+        'DIV8:SECTION': mapSectionNode,
+        'DIV9:APPENDIX': mapAppendixNode
+    });
 
     return subpartOut;
 }
@@ -373,33 +361,14 @@ function mapPartNode(partDiv, outDoc) {
 
     partOut.appendChild(buildPartContents(partDiv, outDoc));
 
-    for (const child of getElementChildren(partDiv)) {
-        const childType = (child.getAttribute('TYPE') || '').toUpperCase();
-        if (child.nodeName === 'HEAD') continue;
-
-        if (child.nodeName === 'AUTH' || child.nodeName === 'SOURCE') {
-            partOut.appendChild(mapAuthOrSourceNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV6' && childType === 'SUBPART') {
-            partOut.appendChild(mapSubpartNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV8' && childType === 'SECTION') {
-            partOut.appendChild(mapSectionNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV7' && childType === 'SUBJGRP') {
-            partOut.appendChild(mapSubjectGroupNode(child, outDoc));
-            continue;
-        }
-        if (child.nodeName === 'DIV9' && childType === 'APPENDIX') {
-            partOut.appendChild(mapAppendixNode(child, outDoc));
-            continue;
-        }
-
-        partOut.appendChild(child.cloneNode(true));
-    }
+    appendMappedChildren(partDiv, partOut, outDoc, {
+        AUTH: mapAuthOrSourceNode,
+        SOURCE: mapAuthOrSourceNode,
+        'DIV6:SUBPART': mapSubpartNode,
+        'DIV8:SECTION': mapSectionNode,
+        'DIV7:SUBJGRP': mapSubjectGroupNode,
+        'DIV9:APPENDIX': mapAppendixNode
+    });
 
     return partOut;
 }

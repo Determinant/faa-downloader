@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { downloadFile } from './http-download.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './zip.ts';
 import { copyFileAtomic, sha256File, writeFileAtomic } from './fs-utils.ts';
-import { matchesFile, readJson } from './build-cache.ts';
+import { isRecord, matchesFile, readJson } from './build-cache.ts';
 
 export type CifpSource = {
     group: 'CIFP'; url: string; filename: string; sha256: string;
@@ -65,8 +65,8 @@ async function readArchive(archive: string, cacheDirectory: string): Promise<Buf
     const sourceSha256 = await sha256File(archive);
     const file = path.join(cacheDirectory, 'cifp-records.txt');
     const receiptFile = path.join(cacheDirectory, 'cifp-records.build.json');
-    const cached = await readJson<{ version: number; sourceSha256: string; record: { bytes: number; sha256: string } }>(receiptFile);
-    if (cached?.version === 1 && cached.sourceSha256 === sourceSha256 && await matchesFile(file, cached.record)) {
+    const cached = await readJson(receiptFile);
+    if (isRecord(cached) && cached.version === 1 && cached.sourceSha256 === sourceSha256 && await matchesFile(file, cached.record)) {
         return fs.readFile(file);
     }
     await validateZipArchive(archive);

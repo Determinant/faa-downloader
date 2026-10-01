@@ -13,7 +13,7 @@ import { pdfBookFolder } from './lib/pdf-layout.ts';
 import { pdfBookSources, publishPdfBook } from './lib/pdf-books.ts';
 import { jsonArtifact, pruneGeneration, publishGeneration, stageJson } from './lib/publication.ts';
 import { publishedApproachAssociations } from './lib/approach-associations.ts';
-import { readJson, readVerifiedJson } from './lib/build-cache.ts';
+import { isRecord, readJson, readVerifiedJson } from './lib/build-cache.ts';
 import { cachedPdfIndex } from './lib/pdf-index-cache.ts';
 import { sha256File } from './lib/fs-utils.ts';
 import { InvalidDownloadError } from './lib/download-validation.ts';
@@ -88,7 +88,7 @@ async function publishCatalog(outputRoot: string, catalog: ProcedureCatalog): Pr
                 ...airport.procedures.flatMap(procedure => procedure.volumeTarget ? [procedure.volumeTarget.volumeId] : [])]))
         );
         const existingManifest = await readJson(path.join(catalogDirectory, 'manifest.json'));
-        const existingFile = isObject(existingManifest) && typeof existingManifest.file === 'string' &&
+        const existingFile = isRecord(existingManifest) && typeof existingManifest.file === 'string' &&
             /^catalog\.[a-f0-9]{64}\.json$/.test(existingManifest.file) ? existingManifest.file : 'catalog.json';
         const existing = await readExistingCatalog(path.join(catalogDirectory, existingFile), existingManifest);
         const associations = await publishedApproachAssociations(catalog, path.join(path.dirname(catalogDirectory), 'nav'));
@@ -289,19 +289,19 @@ async function indexedPdfPages(outputRoot: string, volume: VolumeCandidate): Pro
     });
 }
 
-async function readExistingCatalog(filePath: string, manifest: any): Promise<ProcedureCatalog | null> {
+async function readExistingCatalog(filePath: string, manifest: unknown): Promise<ProcedureCatalog | null> {
     // Hash-named files are immutable identities, not proof that their current bytes are valid.
-    if (manifest?.file !== path.basename(filePath)) return null;
-    const value = await readVerifiedJson<unknown>(filePath, manifest);
-    if (!isObject(value)) return null;
+    if (!isRecord(manifest) || manifest.file !== path.basename(filePath)) return null;
+    const value = await readVerifiedJson(filePath, manifest);
+    if (!isRecord(value)) return null;
     const sourceXml = value.sourceXml;
-    if (value.schemaVersion !== 1 || !isObject(sourceXml) ||
+    if (value.schemaVersion !== 1 || !isRecord(sourceXml) ||
         typeof sourceXml.url !== 'string' || typeof sourceXml.sha256 !== 'string' ||
         !Array.isArray(value.airports) || !value.airports.every(airport =>
-            isObject(airport) && Array.isArray(airport.procedures) &&
-            airport.procedures.every(isObject)
+            isRecord(airport) && Array.isArray(airport.procedures) &&
+            airport.procedures.every(isRecord)
         ) ||
-        !Array.isArray(value.volumes) || !value.volumes.every(isObject)) {
+        !Array.isArray(value.volumes) || !value.volumes.every(isRecord)) {
         return null;
     }
     return isDeepStrictEqual(manifest, createManifest(value as ProcedureCatalog)) ? value as ProcedureCatalog : null;
@@ -372,10 +372,6 @@ function isSameBuild(
 
 function sha256(contents: string): string {
     return createHash('sha256').update(contents).digest('hex');
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function parseDateKey(value: string): string {

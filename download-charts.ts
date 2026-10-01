@@ -35,7 +35,7 @@ import { validatePdfFile } from './lib/pdf.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 import { chartCyclePaths } from './lib/chart-paths.ts';
 import { migrateChartSources } from './lib/chart-source-layout.ts';
-import { buildFingerprint, matchesArtifacts, readJson } from './lib/build-cache.ts';
+import { buildFingerprint, isRecord, matchesArtifacts, readJson } from './lib/build-cache.ts';
 import { sha256File, writeFileAtomic } from './lib/fs-utils.ts';
 import { DEFAULT_RETAIN_CHART_CYCLES, parseRetainChartCycles, pruneChartCycles } from './lib/chart-retention.ts';
 import { productCycleWindow } from './lib/cycle-retention.ts';
@@ -168,9 +168,10 @@ async function extractChart(
     const directory = chartCyclePaths(path.dirname(chartRoot), date).sourceDirectory;
     const receiptFile = path.join(directory, `${path.basename(archivePath)}.extract.json`);
     const inputSha256 = buildFingerprint({ version: 1, sourceSha256, extractions });
-    const receipt = await readJson<{ inputSha256: string; files: Array<{ file: string; bytes: number; sha256: string }> }>(receiptFile);
-    if (receipt?.inputSha256 === inputSha256 && receipt.files?.length === extractions.length &&
-        receipt.files.every((file, index) => file.file === extractions[index].filename) &&
+    const receipt = await readJson(receiptFile);
+    if (isRecord(receipt) && receipt.inputSha256 === inputSha256 && Array.isArray(receipt.files) &&
+        receipt.files.length === extractions.length &&
+        receipt.files.every((file, index) => isRecord(file) && file.file === extractions[index].filename) &&
         await matchesArtifacts(directory, receipt.files)) return;
     console.log(`extracting "${archivePath}"`);
     const entries = await listZipEntries(archivePath);

@@ -48,7 +48,10 @@ export function parseCsvRows(source: string): string[][] {
 }
 
 export function parseCsvRecords(source: string, label = 'CSV input', requiredHeaders: readonly string[] = []): CsvRecord[] {
-    const rows = parseCsvRows(source);
+    return csvRecordsFromRows(parseCsvRows(source), label, requiredHeaders);
+}
+
+export function csvRecordsFromRows(rows: string[][], label = 'CSV input', requiredHeaders: readonly string[] = []): CsvRecord[] {
     if (rows.length === 0) throw new Error(`${label} is empty`);
 
     const headers = rows[0].map(value => value.trim());

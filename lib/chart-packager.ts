@@ -177,10 +177,11 @@ export async function packageChartCycle(
         await prunePackages(output, archives);
         return result;
     } finally {
-        for (const source of sources) source.close();
-        work?.close();
-        if (scratch) await fs.rm(scratch, { recursive: true, force: true });
-        await release();
+        try {
+            for (const source of sources) source.close();
+            work?.close();
+            if (scratch) await fs.rm(scratch, { recursive: true, force: true });
+        } finally { await release(); }
     }
 }
 

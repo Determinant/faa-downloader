@@ -1,4 +1,4 @@
-import { parseCsvRecords, parseCsvRows, type CsvRecord } from './csv.ts';
+import { csvRecordsFromRows, parseCsvRows, type CsvRecord } from './csv.ts';
 import { nasrGroupEffectiveDate } from './nasr-cycle.ts';
 
 export type TerminalProcedureInput = {
@@ -44,10 +44,11 @@ export function buildTerminalProcedures(input: TerminalProcedureInput, effective
                 ? [departure ? 'DP_NAME' : 'ARRIVAL_NAME', 'AMENDMENT_NO', 'SERVED_ARPT']
                 : table === 'APT' ? ['BODY_NAME', 'BODY_SEQ', 'ARPT_ID', 'RWY_END_ID']
                 : ['ROUTE_PORTION_TYPE', 'ROUTE_NAME', 'BODY_SEQ', 'TRANSITION_COMPUTER_CODE', 'POINT_SEQ', 'POINT', 'POINT_TYPE', 'ICAO_REGION_CODE', 'NEXT_POINT'])];
-            const headers = parseCsvRows(value)[0]?.map(field => field.trim()) ?? [];
+            const parsed = parseCsvRows(value);
+            const headers = parsed[0]?.map(field => field.trim()) ?? [];
             const missing = requiredHeaders.filter(field => !headers.includes(field));
             if (missing.length) throw new Error(`${label} missing columns: ${missing.join(', ')}`);
-            const rows = parseCsvRecords(value, label);
+            const rows = csvRecordsFromRows(parsed, label);
             sourceRows[`${group}_${table}`] = rows.length;
             if (table === 'BASE' && rows.length === 0) throw new Error(`${group}_BASE.csv contains no procedures`);
             for (const [index, row] of rows.entries()) {

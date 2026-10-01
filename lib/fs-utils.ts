@@ -3,6 +3,15 @@ import path from 'path';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 
+export async function fileExists(filePath: string): Promise<boolean> {
+    try { await fs.access(filePath); return true; }
+    catch (error) { if (hasErrorCode(error, 'ENOENT')) return false; throw error; }
+}
+
+export function hasErrorCode(error: unknown, code: string): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
+}
+
 export async function copyFileAtomic(source: string, destination: string): Promise<void> {
     await fs.mkdir(path.dirname(destination), { recursive: true });
     const temporary = `${destination}.tmp-${process.pid}-${randomUUID()}`;

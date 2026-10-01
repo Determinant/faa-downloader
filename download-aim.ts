@@ -7,6 +7,7 @@ import { fileURLToPath, URL } from 'node:url';
 import sharp from 'sharp';
 import { addLocalSearchSupport } from './lib/aim-search.ts';
 import { relativeOutputReference } from './lib/fs-utils.ts';
+import { mapWithConcurrency } from './lib/concurrency.ts';
 
 const DEFAULT_BASE_URL = 'https://www.faa.gov/air_traffic/publications/atpubs/aim_html/';
 const DEFAULT_OUTPUT = 'dist/aim';
@@ -159,11 +160,7 @@ function toLocalReference(raw, sourceUrl, sourceFile, baseUrl) {
     if (!targetUrl) return raw;
 
     const targetFile = relativeFilePath(targetUrl, baseUrl);
-    const sourceDir = path.posix.dirname(sourceFile);
-    let local = path.posix.relative(sourceDir, targetFile);
-    if (!local) local = path.posix.basename(targetFile);
-    if (!local.startsWith('.')) local = `./${local}`;
-    return `${local}${fragment}`;
+    return `${relativeOutputReference(sourceFile, targetFile)}${fragment}`;
 }
 
 function mapSrcsetCandidates(raw, mapper) {
@@ -409,6 +406,7 @@ async function downloadAim({ baseUrl, output, concurrency, clean }) {
         throw new Error(`Output directory already exists: ${outputPath}. Use --clean to replace it.`);
     }
 
+    await fs.mkdir(parentDir, { recursive: true });
     const stagingDir = await fs.mkdtemp(path.join(parentDir, `.${path.basename(outputPath)}-download-`));
     const seedUrl = new URL('index.html', baseUrl);
     const pending: string[] = [seedUrl.href];
@@ -417,8 +415,6 @@ async function downloadAim({ baseUrl, output, concurrency, clean }) {
     let totalBytes = 0;
     let backupPath = null;
     let installedOutput = false;
-
-    await fs.mkdir(stagingDir, { recursive: true });
 
     try {
         while (pending.length > 0) {
@@ -433,7 +429,7 @@ async function downloadAim({ baseUrl, output, concurrency, clean }) {
                 }
             }
 
-            const results: DownloadResult[] = await Promise.all(batch.map(async ({ url, filePath }): Promise<DownloadResult> => {
+            const results = await mapWithConcurrency(batch, concurrency, async ({ url, filePath }): Promise<DownloadResult> => {
                 const resource = await fetchResource(url);
                 const text = isTextResource(url, resource.contentType)
                     ? new TextDecoder().decode(resource.bytes)
@@ -451,7 +447,7 @@ async function downloadAim({ baseUrl, output, concurrency, clean }) {
                     bytes: outputBytes.byteLength,
                     links: text === null ? [] : [...findReferences(text, url, baseUrl)]
                 };
-            }));
+            });
 
             for (const result of results) {
                 downloaded += 1;

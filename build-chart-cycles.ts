@@ -4,20 +4,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { writeFileAtomic } from './lib/fs-utils.ts';
-import { readJson } from './lib/build-cache.ts';
+import { isRecord, readJson } from './lib/build-cache.ts';
+import { isCycle } from './lib/cycle-retention.ts';
 import { isDeepStrictEqual } from 'node:util';
 
-export async function buildChartCycles(output = 'dist') {
+type ChartCycleIndex = { schemaVersion: number; generatedAt: string; cycles: string[] };
+
+export async function buildChartCycles(output = 'dist'): Promise<ChartCycleIndex> {
     const root = path.resolve(output, 'charts');
     const entries = await fs.readdir(root, { withFileTypes: true });
-    const cycles = entries.filter(entry => {
-        if (!entry.isDirectory() || !/^\d{4}-\d{2}-\d{2}$/.test(entry.name)) return false;
-        const date = new Date(`${entry.name}T00:00:00Z`);
-        return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === entry.name;
-    }).map(entry => entry.name).sort().reverse();
-    const previous = await readJson<{ schemaVersion: number; generatedAt: string; cycles: string[] }>(path.join(root, 'cycles.json'));
-    if (previous?.schemaVersion === 1 && Number.isFinite(Date.parse(previous.generatedAt)) &&
-        isDeepStrictEqual(previous.cycles, cycles)) return previous;
+    const cycles = entries.filter(entry => entry.isDirectory() && isCycle(entry.name))
+        .map(entry => entry.name).sort().reverse();
+    const previous = await readJson(path.join(root, 'cycles.json'));
+    if (isRecord(previous) && previous.schemaVersion === 1 && typeof previous.generatedAt === 'string' &&
+        Number.isFinite(Date.parse(previous.generatedAt)) && isDeepStrictEqual(previous.cycles, cycles)) {
+        return previous as ChartCycleIndex;
+    }
     const index = { schemaVersion: 1, generatedAt: new Date().toISOString(), cycles };
     await writeFileAtomic(path.join(root, 'cycles.json'), `${JSON.stringify(index, null, 2)}\n`);
     return index;

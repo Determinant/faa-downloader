@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { sha256File, writeFileAtomic } from './fs-utils.ts';
+import { hasErrorCode, sha256File, writeFileAtomic } from './fs-utils.ts';
+import { isRecord, readJson } from './build-cache.ts';
 import { InvalidDownloadError } from './download-validation.ts';
 
 const DEFAULT_IDLE_TIMEOUT_MS = 120_000;
@@ -39,21 +40,26 @@ type TransferOptions = {
     fetch: typeof globalThis.fetch;
     logger: Logger;
     revalidate: boolean;
-    cached?: DownloadIdentity;
+    cached?: VerifiedDownload;
 };
 
 type DownloadIdentity = { url: string; etag?: string; lastModified?: string; size?: number; mtimeMs?: number;
     sha256?: string; validationKey?: string };
 export type DownloadResult = { available: false } | { available: true; changed: boolean; sha256: string };
-type TransferResult = { available: boolean; bytes: number; unchanged?: boolean; identity?: DownloadIdentity };
+type VerifiedDownload = { sha256: string; size: number; mtimeMs: number; identity?: DownloadIdentity };
+type ExistingDownload = ({ kind: 'verified' } & VerifiedDownload) | { kind: 'unusable'; sha256?: string };
+type TransferResult =
+    | { kind: 'unavailable' }
+    | { kind: 'unchanged'; file: VerifiedDownload }
+    | { kind: 'downloaded'; bytes: number; identity?: DownloadIdentity };
 
 async function readIdentity(file: string, url: string): Promise<DownloadIdentity | undefined> {
-    try {
-        const value = JSON.parse(await fs.readFile(file, 'utf8'));
-        if (value?.url === url) return value;
-    } catch (error) {
-        if (!hasErrorCode(error, 'ENOENT') && !(error instanceof SyntaxError)) throw error;
-    }
+    const value = await readJson(file);
+    if (!isRecord(value) || value.url !== url) return;
+    if (['etag', 'lastModified', 'sha256', 'validationKey'].some(key =>
+        value[key] !== undefined && typeof value[key] !== 'string')) return;
+    if (['size', 'mtimeMs'].some(key => value[key] !== undefined && !Number.isFinite(value[key]))) return;
+    return value as DownloadIdentity;
 }
 
 function responseIdentity(url: string, response: Response): DownloadIdentity {
@@ -69,13 +75,6 @@ class RetryableDownloadError extends Error {}
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
-}
-
-function hasErrorCode(error: unknown, code: string): boolean {
-    return typeof error === 'object'
-        && error !== null
-        && 'code' in error
-        && error.code === code;
 }
 
 function formatBytes(bytes: number): string {
@@ -231,8 +230,8 @@ async function transferOnce(
                     'accept-encoding': 'identity',
                     ...(offset > 0 ? { range: `bytes=${offset}-`,
                         ...(rangeValidator(partial) ? { 'if-range': rangeValidator(partial)! } : {}) } : {}),
-                    ...(cached?.etag ? { 'if-none-match': cached.etag }
-                        : cached?.lastModified ? { 'if-modified-since': cached.lastModified } : {})
+                    ...(cached?.identity?.etag ? { 'if-none-match': cached.identity.etag }
+                        : cached?.identity?.lastModified ? { 'if-modified-since': cached.identity.lastModified } : {})
                 }
             });
         } catch (error) {
@@ -246,7 +245,7 @@ async function transferOnce(
         const discardResponse = () => response.body?.cancel().catch(() => {});
         if (response.status === 304 && cached) {
             await discardResponse();
-            return { available: true, bytes: cached.size!, unchanged: true };
+            return { kind: 'unchanged', file: cached };
         }
         // FAA's CDN can ignore If-None-Match and send 200 for identical bytes.
         // A matching strong ETag identifies the complete representation; require
@@ -255,23 +254,23 @@ async function transferOnce(
         const complete = options.cached;
         const completeLength = response.status === 200 ? responseLength(response)
             : response.status === 206 ? parseContentRange(response)?.total : undefined;
-        if (complete?.etag?.startsWith('"') &&
-            response.headers.get('etag') === complete.etag && complete.size !== undefined &&
+        if (complete?.identity?.etag?.startsWith('"') &&
+            response.headers.get('etag') === complete.identity.etag &&
             completeLength === complete.size) {
             await discardResponse();
-            return { available: true, bytes: complete.size, unchanged: true };
+            return { kind: 'unchanged', file: complete };
         }
         if (response.status === 404 && options.skipNotFound) {
             await discardResponse();
             await fs.rm(partialPath, { force: true });
             options.logger.warn(`skipping unavailable download (404): ${url}`);
-            return { available: false, bytes: 0 };
+            return { kind: 'unavailable' };
         }
         if (response.status === 416 && offset > 0) {
             await discardResponse();
             if (unsatisfiedRangeSize(response) === offset && (!options.revalidate ||
                 rangeValidator(responseIdentity(url, response)) === rangeValidator(partial))) {
-                return { available: true, bytes: offset, identity: partial };
+                return { kind: 'downloaded', bytes: offset, identity: partial };
             }
             await fs.rm(partialPath, { force: true });
             throw new RetryableDownloadError(`Saved partial is not valid for ${url}`);
@@ -327,9 +326,80 @@ async function transferOnce(
                 `Incomplete download for ${url}: received ${received} of ${expectedTotal} bytes`
             );
         }
-        return { available: true, bytes: received, identity };
+        return { kind: 'downloaded', bytes: received, identity };
     } finally {
         watchdog.stop();
+    }
+}
+
+async function inspectDownload(
+    url: string, destination: string, metadataFile: string, options: DownloadOptions
+): Promise<ExistingDownload> {
+    const validate = options.validate;
+    const identity = await readIdentity(metadataFile, url);
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+        stat = await fs.stat(destination);
+    } catch (error) {
+        if (!hasErrorCode(error, 'ENOENT')) throw error;
+        return { kind: 'unusable' };
+    }
+    if (!stat.isFile()) throw new Error(`Download destination is not a regular file: ${destination}`);
+    let sha256: string | undefined;
+    try {
+        if (stat.size === 0) throw new InvalidDownloadError('cached download is empty');
+        sha256 = await sha256File(destination);
+        if (!options.validationKey || identity?.validationKey !== options.validationKey ||
+            identity.sha256 !== sha256) await validate?.(destination, destination);
+        return { kind: 'verified', identity, sha256, size: stat.size, mtimeMs: stat.mtimeMs };
+    } catch (error) {
+        if (!(error instanceof InvalidDownloadError)) throw error;
+        (options.logger ?? console).warn(`replacing invalid cached download "${destination}": ${errorMessage(error)}`);
+        // Retain its identity for change reporting, and its bytes until replacement commits.
+        return { kind: 'unusable', sha256 };
+    }
+}
+
+async function transferWithRetries(
+    url: string, destination: string, options: TransferOptions, maxAttempts: number
+): Promise<TransferResult> {
+    for (let attempt = 1; ; attempt += 1) {
+        try {
+            return await transferOnce(url, destination, options);
+        } catch (error) {
+            if (!(error instanceof RetryableDownloadError) || attempt === maxAttempts) throw error;
+            options.logger.warn(
+                `download attempt ${attempt} failed for "${url}": ${error.message}; retrying`
+            );
+            await new Promise(resolve => setTimeout(resolve, attempt * 500));
+        }
+    }
+}
+
+async function recordDownload(file: string, url: string, download: VerifiedDownload, validationKey?: string): Promise<void> {
+    await writeFileAtomic(file, JSON.stringify({ ...download.identity, url, sha256: download.sha256,
+        validationKey, size: download.size, mtimeMs: download.mtimeMs }));
+}
+
+async function commitDownload(
+    url: string, destination: string, metadataFile: string, identity: DownloadIdentity | undefined, options: DownloadOptions
+): Promise<string> {
+    const partialPath = `${destination}.part`;
+    const validate = options.validate;
+    try {
+        await validate?.(partialPath, destination);
+        const sha256 = await sha256File(partialPath);
+        // Invalidate the old validator before committing new bytes; a crash must
+        // never associate an old ETag with a replacement file.
+        await fs.rm(metadataFile, { force: true });
+        await fs.rename(partialPath, destination);
+        const stat = await fs.stat(destination);
+        await recordDownload(metadataFile, url, { identity, sha256, size: stat.size, mtimeMs: stat.mtimeMs }, options.validationKey);
+        await fs.rm(`${partialPath}.http.json`, { force: true });
+        return sha256;
+    } catch (error) {
+        await fs.rm(partialPath, { force: true });
+        throw error;
     }
 }
 
@@ -341,7 +411,6 @@ export async function downloadFile(
     const partialPath = `${destination}.part`;
     const metadataFile = options.metadataFile ?? `${destination}.http.json`;
     const logger = options.logger ?? console;
-    const validate = options.validate ?? (async () => {});
     const idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     const progressIntervalMs = options.progressIntervalMs ?? DEFAULT_PROGRESS_INTERVAL_MS;
     const maxAttempts = options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
@@ -352,92 +421,32 @@ export async function downloadFile(
         throw new Error('Download timeouts must be finite and positive; maxAttempts must be positive');
     }
 
-    let existing: Awaited<ReturnType<typeof fs.stat>> | undefined;
-    let cached: DownloadIdentity | undefined;
-    let existingSha256: string | undefined;
-    const identity = await readIdentity(metadataFile, url);
-    try {
-        existing = await fs.stat(destination);
-    } catch (error) {
-        if (!hasErrorCode(error, 'ENOENT')) throw error;
+    const existing = await inspectDownload(url, destination, metadataFile, options);
+    if (existing.kind === 'verified' && !options.revalidate) {
+        await fs.rm(partialPath, { force: true });
+        logger.log(`file "${destination}" already exists`);
+        await recordDownload(metadataFile, url, existing, options.validationKey);
+        return { available: true, changed: false, sha256: existing.sha256 };
     }
-    if (existing) {
-        if (!existing.isFile()) throw new Error(`Download destination is not a regular file: ${destination}`);
-        try {
-            if (existing.size === 0) {
-                throw new InvalidDownloadError('cached download is empty');
-            }
-            existingSha256 = await sha256File(destination);
-            if (!options.validationKey || identity?.validationKey !== options.validationKey ||
-                identity.sha256 !== existingSha256) await validate(destination, destination);
-            if (!options.revalidate) {
-                await fs.rm(partialPath, { force: true });
-                logger.log(`file "${destination}" already exists`);
-                await writeFileAtomic(metadataFile, JSON.stringify({ ...identity, url,
-                    sha256: existingSha256, validationKey: options.validationKey, size: existing.size, mtimeMs: existing.mtimeMs }));
-                return { available: true, changed: false, sha256: existingSha256 };
-            }
-        } catch (error) {
-            if (!(error instanceof InvalidDownloadError)) throw error;
-            logger.warn(`replacing invalid cached download "${destination}": ${errorMessage(error)}`);
-            // Keep the previous bytes until a validated replacement can be renamed.
-            existing = undefined;
-        }
-    }
-    if (existing && options.revalidate) {
-        if (identity?.size === existing.size && (identity.sha256 ? identity.sha256 === existingSha256
-            : identity.mtimeMs === existing.mtimeMs)) cached = identity;
-    }
-
+    const cached = existing.kind === 'verified' && existing.identity?.size === existing.size &&
+        (existing.identity.sha256 ? existing.identity.sha256 === existing.sha256
+            : existing.identity.mtimeMs === existing.mtimeMs) ? existing : undefined;
     await fs.mkdir(path.dirname(destination), { recursive: true });
-    let transfer: TransferResult | undefined;
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-            transfer = await transferOnce(url, destination, {
-                userAgent: options.userAgent,
-                idleTimeoutMs,
-                progressIntervalMs,
-                skipNotFound: options.skipNotFound ?? false,
-                fetch: options.fetch ?? globalThis.fetch,
-                logger,
-                revalidate: options.revalidate ?? false,
-                cached
-            });
-            break;
-        } catch (error) {
-            if (!(error instanceof RetryableDownloadError) || attempt === maxAttempts) throw error;
-            logger.warn(
-                `download attempt ${attempt} failed for "${url}": ${error.message}; retrying`
-            );
-            await new Promise(resolve => setTimeout(resolve, attempt * 500));
-        }
-    }
+    const transfer = await transferWithRetries(url, destination, {
+        userAgent: options.userAgent, idleTimeoutMs, progressIntervalMs,
+        skipNotFound: options.skipNotFound ?? false, fetch: options.fetch ?? globalThis.fetch,
+        logger, revalidate: options.revalidate ?? false, cached
+    }, maxAttempts);
 
-    if (!transfer?.available) return { available: false };
-    if (transfer.unchanged) {
+    if (transfer.kind === 'unavailable') return { available: false };
+    if (transfer.kind === 'unchanged') {
         await fs.rm(partialPath, { force: true });
         await fs.rm(`${partialPath}.http.json`, { force: true });
         logger.log(`source unchanged: "${destination}"`);
-        await writeFileAtomic(metadataFile, JSON.stringify({ ...cached, url, sha256: existingSha256,
-            validationKey: options.validationKey, size: existing.size, mtimeMs: existing.mtimeMs }));
-        return { available: true, changed: false, sha256: existingSha256! };
+        await recordDownload(metadataFile, url, transfer.file, options.validationKey);
+        return { available: true, changed: false, sha256: transfer.file.sha256 };
     }
-    let sha256: string;
-    try {
-        await validate(partialPath, destination);
-        sha256 = await sha256File(partialPath);
-        // Invalidate the old validator before committing new bytes; a crash must
-        // never associate an old ETag with a replacement file.
-        await fs.rm(metadataFile, { force: true });
-        await fs.rename(partialPath, destination);
-        const stat = await fs.stat(destination);
-        await writeFileAtomic(metadataFile, JSON.stringify({ ...transfer.identity, url, sha256,
-            validationKey: options.validationKey, size: stat.size, mtimeMs: stat.mtimeMs }));
-        await fs.rm(`${partialPath}.http.json`, { force: true });
-    } catch (error) {
-        await fs.rm(partialPath, { force: true });
-        throw error;
-    }
+    const sha256 = await commitDownload(url, destination, metadataFile, transfer.identity, options);
     logger.log(`downloaded "${destination}" (${formatBytes(transfer.bytes)})`);
-    return { available: true, changed: sha256 !== existingSha256, sha256 };
+    return { available: true, changed: sha256 !== existing.sha256, sha256 };
 }
