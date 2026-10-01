@@ -307,7 +307,11 @@ it does not download source data.
 
 Online builds revalidate dated PDFs, ZIPs (including NASR and CIFP), and Chart
 Supplement XML with ETag or Last-Modified, so same-edition corrections are rebuilt.
-Unchanged responses reuse local bytes. Files cached before HTTP validators were
+Unchanged responses reuse local bytes. When FAA returns `200` despite a conditional
+request, a matching strong ETag and full byte length let the downloader cancel the
+redundant body and reuse the validated local file. Weak tags or matching dates alone
+do not qualify. `checking` in the log means revalidation; `source unchanged` confirms
+reuse. Files cached before HTTP validators were
 recorded, or sources without validators, must be downloaded again to establish
 their current contents. Interrupted transfers resume only against the same source
 version. Failed downloads or invalid replacements retain the last good file and

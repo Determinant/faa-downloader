@@ -48,6 +48,89 @@ test('dated downloads revalidate, replace corrections, and preserve good bytes o
     assert.equal(conditions.at(-1), '"two"', 'a rejected download cannot replace the cached validator');
 });
 
+test('unchanged strong ETags on 200 cancel the body, retain the complete file, and discard redundant partials', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-unchanged-200-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const destination = path.join(directory, 'edition.pdf');
+    const url = 'https://example.test/edition.pdf';
+    const body = 'unchanged edition', etag = '"original"';
+    let requests = 0, cancellations = 0;
+    const logs: string[] = [];
+    const options = { userAgent: 'test', revalidate: true, maxAttempts: 1,
+        logger: { log: (message: string) => logs.push(message), warn() {} },
+        fetch: (async (_url, init) => {
+            const headers = new Headers(init?.headers);
+            requests++;
+            const responseHeaders = { etag, 'content-length': String(body.length) };
+            if (requests === 1) return new Response(body, { headers: responseHeaders });
+            if (requests === 2) assert.equal(headers.get('if-none-match'), etag);
+            else {
+                assert.equal(headers.get('range'), 'bytes=3-');
+                assert.equal(headers.get('if-range'), etag);
+            }
+            const resumed = requests === 4;
+            return new Response(new ReadableStream({
+                pull() { throw new Error('Unchanged response body must not be consumed'); },
+                cancel() { cancellations++; }
+            }, { highWaterMark: 0 }), { status: resumed ? 206 : 200, headers: resumed
+                ? { ...responseHeaders, 'content-length': String(body.length - 3),
+                    'content-range': `bytes 3-${body.length - 1}/${body.length}` }
+                : responseHeaders });
+        }) as typeof globalThis.fetch };
+    await downloadFile(url, destination, options);
+    const stat = await fs.stat(destination);
+    const metadata = await fs.readFile(`${destination}.http.json`, 'utf8');
+    await downloadFile(url, destination, options);
+    for (let attempt = 0; attempt < 2; attempt++) {
+        await fs.writeFile(`${destination}.part`, body.slice(0, 3));
+        await fs.writeFile(`${destination}.part.http.json`, JSON.stringify({ url, etag }));
+        await downloadFile(url, destination, options);
+    }
+    assert.equal(cancellations, 3);
+    assert.equal(await fs.readFile(destination, 'utf8'), body);
+    assert.equal((await fs.stat(destination)).ino, stat.ino);
+    assert.equal((await fs.stat(destination)).mtimeMs, stat.mtimeMs);
+    assert.equal(await fs.readFile(`${destination}.http.json`, 'utf8'), metadata);
+    await assert.rejects(fs.access(`${destination}.part`), { code: 'ENOENT' });
+    await assert.rejects(fs.access(`${destination}.part.http.json`), { code: 'ENOENT' });
+    assert.ok(logs.some(message => message.startsWith('checking ')));
+    assert.equal(logs.filter(message => message.startsWith('source unchanged:')).length, 3);
+});
+
+test('200 revalidation downloads corrections and never equates weak tags, dates, or sizes with byte identity', async t => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-200-correction-'));
+    t.after(() => fs.rm(directory, { recursive: true, force: true }));
+    const date = 'Thu, 01 Oct 2026 09:01:00 GMT';
+    for (const scenario of [
+        { name: 'changed-etag', oldTag: '"old"', newTag: '"new"', body: 'new' },
+        { name: 'weak-etag', oldTag: 'W/"same"', newTag: 'W/"same"', body: 'new' },
+        { name: 'date-only', oldTag: undefined, newTag: undefined, body: 'new' },
+        { name: 'different-length', oldTag: '"same"', newTag: '"same"', body: 'longer' },
+        { name: 'missing-length', oldTag: '"same"', newTag: '"same"', body: 'new' },
+        { name: 'local-edit', oldTag: '"same"', newTag: '"same"', body: 'old' },
+    ]) {
+        const destination = path.join(directory, scenario.name);
+        let requests = 0;
+        const options = { userAgent: 'test', revalidate: true, logger: silentLogger,
+            fetch: (async () => {
+                const initial = ++requests === 1;
+                const body = initial ? 'old' : scenario.body;
+                const etag = initial ? scenario.oldTag : scenario.newTag;
+                return new Response(body, { headers: { ...(etag ? { etag } : {}), 'last-modified': date,
+                    ...(scenario.name === 'missing-length' && !initial ? {} : { 'content-length': String(body.length) }) } });
+            }) as typeof globalThis.fetch };
+        const url = `https://example.test/${scenario.name}`;
+        await downloadFile(url, destination, options);
+        if (scenario.name === 'local-edit') {
+            await fs.writeFile(destination, 'bad');
+            await fs.utimes(destination, 1, 1);
+        }
+        await downloadFile(url, destination, options);
+        assert.equal(await fs.readFile(destination, 'utf8'), scenario.body, scenario.name);
+        assert.equal(requests, 2);
+    }
+});
+
 test('revalidation uses Last-Modified or downloads anew when the server supplies no validator', async t => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'download-modified-'));
     t.after(() => fs.rm(directory, { recursive: true, force: true }));

@@ -213,7 +213,7 @@ async function transferOnce(
     const watchdog = createWatchdog(controller, options.idleTimeoutMs);
     watchdog.reset();
 
-    options.logger.log(`${offset > 0 ? 'resuming' : 'downloading'} "${url}"`
+    options.logger.log(`${offset > 0 ? 'resuming' : cached ? 'checking' : 'downloading'} "${url}"`
         + `${offset > 0 ? ` from ${formatBytes(offset)}` : ''}`);
 
     try {
@@ -242,6 +242,19 @@ async function transferOnce(
         if (response.status === 304 && cached) {
             await discardResponse();
             return { available: true, bytes: cached.size!, unchanged: true };
+        }
+        // FAA's CDN can ignore If-None-Match and send 200 for identical bytes.
+        // A matching strong ETag identifies the complete representation; require
+        // its full length too, and cancel before consuming the redundant body. Weak
+        // tags and Last-Modified alone cannot prove byte identity on a 200.
+        const complete = options.cached;
+        const completeLength = response.status === 200 ? responseLength(response)
+            : response.status === 206 ? parseContentRange(response)?.total : undefined;
+        if (complete?.etag?.startsWith('"') &&
+            response.headers.get('etag') === complete.etag && complete.size !== undefined &&
+            completeLength === complete.size) {
+            await discardResponse();
+            return { available: true, bytes: complete.size, unchanged: true };
         }
         if (response.status === 404 && options.skipNotFound) {
             await discardResponse();
@@ -389,6 +402,8 @@ export async function downloadFile(
 
     if (!transfer?.available) return false;
     if (transfer.unchanged) {
+        await fs.rm(partialPath, { force: true });
+        await fs.rm(`${partialPath}.http.json`, { force: true });
         logger.log(`source unchanged: "${destination}"`);
         return true;
     }
