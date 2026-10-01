@@ -67,7 +67,7 @@ export async function publishedApproachAssociations(catalog: ProcedureCatalog, n
     let manifest;
     try { manifest = JSON.parse(await fs.readFile(path.join(navDirectory, 'manifest.json'), 'utf8')); }
     catch (error: any) { if (error.code === 'ENOENT') return; throw error; }
-    if (manifest.schemaVersion !== 2) return;
+    if (manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) return;
     const product = manifest.products?.find(p => p.id === 'terminal-procedures');
     if (manifest.effectiveDate !== catalog.effectiveDate || !product || !/^terminal-procedures\.[a-f0-9]{64}\.json$/.test(product.file)) {
         throw new Error('Invalid navigation generation for chart associations');

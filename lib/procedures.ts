@@ -4,7 +4,7 @@ import { JSDOM } from 'jsdom';
 
 export const FAA_DTPP_BASE_URL = 'https://aeronav.faa.gov/d-tpp/';
 // PDF page-index version; publication and association contracts version separately.
-export const PROCEDURE_BUILDER_VERSION = 2;
+export const PROCEDURE_BUILDER_VERSION = 3;
 
 export type ProcedureKind =
     | 'airport-diagram'
@@ -189,7 +189,12 @@ export function parseProcedureCatalog(
 
                     const boundPage = nullable(childText(record, 'bvpage'));
                     const boundSection = nullable(childText(record, 'bvsection'));
-                    const namedDestination = needsNamedDestination(chartCode, boundPage)
+                    const changePage = nullable(childText(record, 'cnpage'));
+                    const changeSection = nullable(childText(record, 'cnsection'));
+                    const changed = Boolean(changePage || changeSection);
+                    const printedPage = changed ? changePage : boundPage;
+                    const section = changed ? changeSection : boundSection;
+                    const namedDestination = needsNamedDestination(chartCode, printedPage)
                         ? `(${faaId})`
                         : null;
                     return {
@@ -200,10 +205,10 @@ export function parseProcedureCatalog(
                         pdfName,
                         pdfUrl: new URL(pdfName, `${FAA_DTPP_BASE_URL}${cycle}/`).href,
                         namedDestination,
-                        volumeTarget: boundPage || boundSection ? {
-                            volumeId,
-                            section: boundSection,
-                            printedPage: boundPage,
+                        volumeTarget: printedPage || section ? {
+                            volumeId: changed ? 'CN' : volumeId,
+                            section,
+                            printedPage,
                             pageIndex: null
                         } : null,
                         source: {
@@ -211,8 +216,8 @@ export function parseProcedureCatalog(
                             chartCode,
                             userAction: nullable(childText(record, 'useraction')),
                             changeNoticeFlag: nullable(childText(record, 'cn_flg')),
-                            changeNoticeSection: nullable(childText(record, 'cnsection')),
-                            changeNoticePage: nullable(childText(record, 'cnpage')),
+                            changeNoticeSection: changeSection,
+                            changeNoticePage: changePage,
                             procedureId: nullable(childText(record, 'procuid')),
                             twoColored: nullable(childText(record, 'two_colored')),
                             civil: nullable(childText(record, 'civil')),
@@ -275,10 +280,9 @@ export function resolveVolumePageIndexes(
     let resolved = 0;
     let unresolved = 0;
     for (const airport of catalog.airports) {
-        if (airport.volumeId !== normalizedVolume) continue;
         for (const procedure of airport.procedures) {
             const target = procedure.volumeTarget;
-            if (!target) continue;
+            if (!target || target.volumeId !== normalizedVolume) continue;
             const pageIndex = target.printedPage
                 ? uniquePage(labelPages.get(normalizePageToken(
                     `${target.section ?? ''}${target.printedPage}`

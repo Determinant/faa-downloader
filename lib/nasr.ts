@@ -1,5 +1,6 @@
 import type { CsvRecord } from './csv.ts';
 import { readNasrTables } from './nasr-tables.ts';
+import { nasrGroupEffectiveDate } from './nasr-cycle.ts';
 import { airportFrequencyIndex, airportFrequencyProperties } from './airport-frequencies.ts';
 
 type Geometry = {
@@ -207,7 +208,7 @@ function normalizePreferredRoutes(
     effective: string
 ): NasrProducts['preferredRoutes'] {
     if (routeRows.length === 0) throw new Error('PFR_BASE.csv contains no preferred routes');
-    const sourceDate = effective.replaceAll('-', '/');
+    const sourceDate = nasrGroupEffectiveDate(effective, 'PFR').replaceAll('-', '/');
     for (const rows of [routeRows, segmentRows]) {
         for (const row of rows) {
             if (present(row.EFF_DATE) !== sourceDate) {

@@ -74,6 +74,8 @@ export async function acquireChartBuildLock(basePath: string): Promise<() => Pro
     const lockPath = `${basePath}.build.lock`;
     const owner = { pid: process.pid, token: randomUUID() };
     const marker = `${owner.pid}-${owner.token}.json`;
+    // A new cycle may be reconciled before it has any raster sources.
+    await fs.mkdir(path.dirname(lockPath), { recursive: true });
     const pending = await fs.mkdtemp(`${lockPath}.pending-`);
     let acquired = false;
     try {

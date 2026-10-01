@@ -1,4 +1,5 @@
 import { parseCsvRecords, parseCsvRows, type CsvRecord } from './csv.ts';
+import { nasrGroupEffectiveDate } from './nasr-cycle.ts';
 
 export type TerminalProcedureInput = {
     departures: string;
@@ -36,6 +37,7 @@ export function buildTerminalProcedures(input: TerminalProcedureInput, effective
     const sourceRows: Record<string, number> = {};
     for (const group of ['DP', 'STAR'] as const) {
         const departure = group === 'DP';
+        const sourceDate = nasrGroupEffectiveDate(effectiveDate, group);
         const read = (value: string, table: string) => {
             const label = `${group}_${table}.csv`;
             const requiredHeaders = ['EFF_DATE', `${group}_COMPUTER_CODE`, 'ARTCC', ...(table === 'BASE'
@@ -48,9 +50,10 @@ export function buildTerminalProcedures(input: TerminalProcedureInput, effective
             const rows = parseCsvRecords(value, label);
             sourceRows[`${group}_${table}`] = rows.length;
             if (table === 'BASE' && rows.length === 0) throw new Error(`${group}_BASE.csv contains no procedures`);
-            for (const row of rows) {
-                if (row.EFF_DATE?.replaceAll('/', '-') !== effectiveDate) {
-                    throw new Error(`${group}_${table}: mismatched effective date`);
+            for (const [index, row] of rows.entries()) {
+                if (row.EFF_DATE?.trim().replaceAll('/', '-') !== sourceDate) {
+                    throw new Error(`${label} row ${index + 2}: mismatched effective date; ` +
+                        `expected ${sourceDate} for NASR cycle ${effectiveDate}; found ${row.EFF_DATE?.trim() || '(missing)'}`);
                 }
             }
             // Keep uncoded source records in a ledger without inventing filing identities.

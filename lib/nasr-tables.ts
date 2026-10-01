@@ -1,5 +1,6 @@
 import { parseCsvRecords, type CsvRecord } from './csv.ts';
 import type { NasrInput } from './nasr.ts';
+import { nasrGroupEffectiveDate } from './nasr-cycle.ts';
 
 const definitions = {
     airports: ['APT_BASE', ['SITE_NO', 'SITE_TYPE_CODE', 'ARPT_ID', 'LAT_DECIMAL', 'LONG_DECIMAL']],
@@ -23,12 +24,23 @@ export function readNasrTables(input: NasrInput) {
         }
         return [key, rows];
     })) as Record<keyof NasrInput, CsvRecord[]>;
-    const dates = new Set(Object.values(tables).flatMap(rows => rows.map(row => row.EFF_DATE.trim())));
+    // The 28-day groups identify the subscription cycle. Enroute tables retain
+    // their 56-day edition during the intervening change-notice cycle.
+    const currentTables = [tables.airports, tables.runways, tables.runwayEnds,
+        tables.frequencies, tables.fixes, tables.navaids];
+    const dates = new Set(currentTables.flatMap(rows => rows.map(row => row.EFF_DATE.trim())));
     if (dates.has('')) throw new Error('NASR record has a missing or mismatched effective date');
-    if (dates.size !== 1) throw new Error(`NASR inputs must have one effective date; found ${[...dates].join(', ')}`);
-    const date = [...dates][0].replaceAll('/', '-'), parsed = new Date(`${date}T00:00:00Z`);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) {
-        throw new Error(`Unexpected NASR effective date: ${date}`);
+    if (dates.size !== 1) throw new Error(`NASR 28-day inputs must have one effective date; found ${[...dates].join(', ')}`);
+    const date = [...dates][0].replaceAll('/', '-');
+    for (const key of Object.keys(definitions) as (keyof NasrInput)[]) {
+        const name = definitions[key][0];
+        const expected = nasrGroupEffectiveDate(date, name.split('_')[0]).replaceAll('-', '/');
+        for (const [index, row] of tables[key].entries()) {
+            if (row.EFF_DATE.trim() !== expected) {
+                throw new Error(`${name}.csv row ${index + 2} has a missing or mismatched effective date: ` +
+                    `expected ${expected} for NASR cycle ${date}; found ${row.EFF_DATE.trim() || '(missing)'}`);
+            }
+        }
     }
     const excluded: { table: string; row: number; reason: string; record: CsvRecord }[] = [];
     const excludedRows = new Set<CsvRecord>();

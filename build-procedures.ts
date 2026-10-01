@@ -90,7 +90,8 @@ export async function buildProcedureCatalog(options: BuildOptions): Promise<Proc
             path.join(outputRoot, 'charts'),
             catalog.effectiveDate,
             catalogDirectory,
-            new Set(catalog.airports.map(airport => airport.volumeId))
+            new Set(catalog.airports.flatMap(airport => [airport.volumeId,
+                ...airport.procedures.flatMap(procedure => procedure.volumeTarget ? [procedure.volumeTarget.volumeId] : [])]))
         );
         const existingManifest = await readJson(path.join(catalogDirectory, 'manifest.json'));
         const existingFile = isObject(existingManifest) && typeof existingManifest.file === 'string' &&
@@ -127,9 +128,8 @@ export async function buildProcedureCatalog(options: BuildOptions): Promise<Proc
             const resolution = resolveVolumePageIndexes(catalog, volume.id, pages);
             if (resolution.unresolved > 0) {
                 const targets = catalog.airports
-                    .filter(airport => airport.volumeId === volume.id)
                     .flatMap(airport => airport.procedures
-                        .filter(procedure => procedure.volumeTarget?.pageIndex === null)
+                        .filter(procedure => procedure.volumeTarget?.volumeId === volume.id && procedure.volumeTarget.pageIndex === null)
                         .map(procedure => `${airport.id}: ${procedure.name} (${procedure.pdfName})`));
                 throw new Error(
                     `${volume.id}: ${resolution.unresolved} PDF page targets could not be resolved:\n` +
@@ -277,6 +277,8 @@ async function findVolumeCandidates(
                 const name = match?.[1].toUpperCase();
                 const id = folder === 'cs' && /^cs-pac\.pdf$/i.test(entry.name)
                     ? 'PC1' : name === 'AK' ? 'AK1' : name;
+                // A prior change notice never supplies pages for a new edition.
+                if (id === 'CN' && cycle !== effectiveDate) continue;
                 if (id && requestedVolumes.has(id) && !candidates.has(id)) {
                     candidates.set(id, path.join(directory, entry.name));
                 }

@@ -15,6 +15,25 @@ async function fixture(t: TestContext) {
     return { root, base, lock: `${base}.build.lock` };
 }
 
+test('locks in a new cycle create missing parents and remain exclusive', async t => {
+    const f = await fixture(t);
+    const directory = path.join(f.root, 'sources', '2026-10-01', 'charts');
+    const base = path.join(directory, 'ifr-enroute-high-h04');
+    const results = await Promise.allSettled([
+        acquireChartBuildLock(base),
+        acquireChartBuildLock(base)
+    ]);
+    const owners = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+    try {
+        assert.equal(owners.length, 1);
+        const rejected = results.find(result => result.status === 'rejected');
+        assert.match(rejected.reason.message, /already in progress/);
+    } finally {
+        for (const release of owners) await release();
+    }
+    assert.deepEqual(await fs.readdir(directory), []);
+});
+
 for (const legacy of [true, false]) {
     test(`delayed cleanup of a stale ${legacy ? 'file' : 'directory'} lock cannot delete its replacement`,
         { timeout: 5000 }, async t => {

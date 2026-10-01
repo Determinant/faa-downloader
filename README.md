@@ -235,6 +235,15 @@ build provenance rather than treating the site as an unrelated third-party sourc
 
 Chart output is organized by publication date; daily obstacles have a rolling snapshot:
 
+Dated directories are not standalone copies of every product. On a 28-day change
+notice, navigation and the TPP catalog advance while raster charts and regional
+PDF books remain under their 56-day publication date. TPP and Chart Supplement
+catalogs use relative URLs to those books; retain the directories they reference.
+The downloader also saves the current TPP change notice as `tpp/tpp-cn.pdf`.
+Changed procedure targets point into that notice instead of the older base book.
+Raster consumers must select the newest available MBTiles manifest independently
+of the navigation cycle; `cycles.json` lists publication dates, not complete bundles.
+
 ~~~text
 dist/
 ├── charts/
@@ -561,7 +570,7 @@ Optional blank fields are omitted. Ordered `segments[]` retain the FAA sequence,
 value, type, state/country/ICAO region, NAVAID type, and next-segment value. Routes
 without segment records are retained with an empty array; route geometry is not
 inferred. Duplicate route identities, duplicate segment sequences, orphan segments,
-missing effective dates, and mixed effective cycles fail the build before replacing
+missing effective dates, and unexpected source editions fail the build before replacing
 the navigation export.
 
 The complete national file can be cached once per cycle for offline airport-pair
@@ -587,6 +596,13 @@ meaning and cannot be joined safely by name alone. The consumer can adapt these
 published fields without preserving the original FAA file layout.
 
 All required NASR tables validate headers, nonempty input and every row's edition.
+APT, FRQ, FIX and NAV must match the selected 28-day subscription cycle. AWY, PFR,
+DP and STAR use the corresponding 56-day major edition, as documented in the FAA's
+CSV_README.pdf and [change-notice README](https://nfdc.faa.gov/webContent/28DaySub/2026-10-01/README.txt).
+For example, the October 1, 2026 subscription carries September 3 enroute rows.
+Product `effectiveDate` identifies the enclosing subscription; each NASR entry in
+the manifest's `sourceArchives` records its own source `effectiveDate`. Older,
+future, mixed or missing row dates still fail validation.
 `sources/<cycle>/nav/coverage.json` accounts for each table's source/export/exclusion
 rows and retains excluded records with reasons. The original CIFP input is kept in
 the same local source cache. Empty core map products cannot publish. The current
@@ -769,6 +785,24 @@ npm run check
 npm test
 git diff --check
 ~~~
+
+Cycle rollover can be tested on any date without waiting for FAA publication:
+
+~~~bash
+npm run test:rollover
+~~~
+
+This offline integration suite replays saved FAA directory listings with small
+NASR/CIFP, XML, ZIP and PDF fixtures. It runs September 3 → October 1 change
+notice → October 29 full edition, plus a fresh October install. The October 29
+listings are modeled from the recorded publication formats. It checks discovery,
+downloads, extraction, packaging, navigation and PDF catalogs together, including
+carried-over source dates, cross-cycle file hashes, missing downloads, an
+interruption before manifest publication, and successful retries. Every network
+request must match a fixture. A single prepared tile replaces GDAL rendering;
+the suite does not render nationwide rasters or rebuild daily obstacles/terrain.
+It is also included in `npm test`. The normal chart build pins one selection
+date at startup so its stages cannot switch cycles across midnight.
 
 Build outputs, chart archives, and downloaded chart data are intentionally not committed. The source repository contains the builders, templates, tests, and configuration needed to reproduce them.
 

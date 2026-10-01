@@ -14,6 +14,7 @@ import { pruneGeneration, publishGeneration, stageArtifact, stageJson } from './
 import { migrateNavSources, navSourceDirectory } from './lib/nav-source-layout.ts';
 import { downloadFile } from './lib/http-download.ts';
 import { buildNasrProducts, type NasrInput } from './lib/nasr.ts';
+import { nasrGroupEffectiveDate } from './lib/nasr-cycle.ts';
 import { buildRouteHistory } from './lib/route-history.ts';
 import { buildMagneticModel } from './lib/magnetic-model.ts';
 import type { TerminalProcedureInput } from './lib/terminal-procedures.ts';
@@ -48,6 +49,7 @@ type Options = {
     sourceDir?: string;
     routeHistorySource?: string;
     cycle?: string;
+    today?: string;
 };
 
 export function parseArgs(argv: string[]): Options {
@@ -231,7 +233,7 @@ async function acquireArchives(
     }
 
     const indexHtml = await fetchText(NASR_INDEX_URL);
-    const current = discoverCurrentNasrCycle(indexHtml);
+    const current = discoverCurrentNasrCycle(indexHtml, NASR_INDEX_URL, options.today);
     const cycleHtml = await fetchText(current.url);
     const urls = discoverNasrGroupUrls(cycleHtml, current.url);
     const rawDirectory = rawDirectoryForCycle(current.cycle);
@@ -364,7 +366,7 @@ export async function pruneNasrCycles(
     }
 }
 
-type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle' | 'routeHistorySource'> & {
+type NasrBuildOptions = Pick<Options, 'output' | 'sourceDir' | 'cycle' | 'routeHistorySource' | 'today'> & {
     retainCycles?: number;
     concurrency?: number;
 };
@@ -463,6 +465,7 @@ async function buildNavigationCycle(buildOptions: Options, outputRoot: string, c
 
         const sourceArchives = [...await Promise.all(GROUPS.map(async group => ({
             group,
+            effectiveDate: nasrGroupEffectiveDate(acquired.cycle, group),
             url: acquired.urls[group],
             filename: path.basename(acquired.archives[group]),
             sha256: await sha256File(acquired.archives[group])

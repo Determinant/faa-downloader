@@ -41,6 +41,19 @@ test('rejects mixed cycles, orphan routes, duplicate points, and malformed assig
     assert.throws(() => build({ departures: input.departures.replace('SPTNS1.TECKY', 'BADCODE') }), /Invalid procedure code/);
 });
 
+test('change notices retain the 56-day DP/STAR edition but reject other dates', () => {
+    const result = buildTerminalProcedures(input, '2026-10-01');
+    assert.equal(result.metadata.effectiveDate, '2026-10-01');
+    assert.deepEqual(result.procedures, build().procedures);
+    for (const key of Object.keys(input)) {
+        for (const date of ['2026/07/09', '2026/08/06', '2026/10/01', '2026/10/29', '']) {
+            assert.throws(() => buildTerminalProcedures({ ...input,
+                [key]: input[key].replace('2026/09/03', date) }, '2026-10-01'), /effective date/);
+        }
+    }
+    assert.throws(() => buildTerminalProcedures(input, '2026-10-29'), /effective date/);
+});
+
 test('rejects header-only procedure groups rather than exporting a missing SID or STAR catalog', () => {
     for (const keys of [
         ['departures', 'departureAirports', 'departureRoutes'],

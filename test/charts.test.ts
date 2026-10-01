@@ -516,6 +516,22 @@ test('chart discovery covers all selected PDF volumes and rasters in representat
     assert.ok(!requested.some(url => url.includes('2026-08-06/')));
     assert.ok(!requested.some(url => url.includes('2026-10-01/')));
 
+    pages['https://aeronav.faa.gov/upload_313-d/terminal/2026-10-01/'] = '<a href="CN.pdf">CN.pdf</a>';
+    const noticeGroups = await discoverCharts({ fetch, today: '2026-10-01' });
+    const notice = noticeGroups.find(group => group.prefix === 'tpp');
+    assert.deepEqual(notice.files.CN.current, {
+        url: 'https://aeronav.faa.gov/upload_313-d/terminal/2026-10-01/CN.pdf', date: '2026-10-01'
+    });
+    for (const region of PROCEDURE_REGIONS) assert.deepEqual(notice.files[region], procedures.files[region]);
+    assert.ok(!requested.some(url => url.includes('2026-08-06/')));
+    // A subsequent full edition must not carry forward an old change notice.
+    pages['https://aeronav.faa.gov/upload_313-d/terminal/'] += '<a href="2026-10-29/">2026-10-29</a>';
+    pages['https://aeronav.faa.gov/upload_313-d/terminal/2026-10-29/'] =
+        pages['https://aeronav.faa.gov/upload_313-d/terminal/2026-09-03/'];
+    const next = (await discoverCharts({ fetch, today: '2026-10-29' })).find(group => group.prefix === 'tpp');
+    assert.equal(next.files.CN, undefined);
+    assert.ok(Object.values(next.files).every(listing => listing.current?.date === '2026-10-29'));
+
     pages['https://aeronav.faa.gov/enroute/09-03-2026/'] = [...IFR_LOW_REGIONS, ...IFR_HIGH_REGIONS]
         .filter(region => region !== 'L36' && region !== 'H12')
         .map(region => `<a href="ENR_${region}.zip">ENR_${region}.zip</a>`).join('');

@@ -18,6 +18,7 @@ import {
 } from '../download-nasr.ts';
 import { parseCsvRecords, parseCsvRows } from '../lib/csv.ts';
 import { buildNasrProducts, type NasrInput } from '../lib/nasr.ts';
+import { nasrGroupEffectiveDate } from '../lib/nasr-cycle.ts';
 import { assertSafeZipEntry } from '../lib/zip.ts';
 
 function csv(headers: string[], rows: Array<Array<string | number>>): string {
@@ -415,6 +416,52 @@ test('required NASR tables reject missing schemas, empty input and undated rows 
     }
 });
 
+test('NASR change notices accept the current 56-day airway and preferred-route edition', () => {
+    const input = preferredRouteInput();
+    for (const key of ['airports', 'runways', 'runwayEnds', 'frequencies', 'fixes', 'navaids'] as const) {
+        input[key] = input[key].replaceAll('2026/09/03', '2026/10/01');
+    }
+    const products = buildNasrProducts(input);
+    assert.equal(products.effectiveDate, '2026-10-01');
+    assert.equal(products.airways.metadata.effectiveDate, '2026-10-01');
+    assert.equal(products.preferredRoutes.metadata.effectiveDate, '2026-10-01');
+    const previous = buildNasrProducts(preferredRouteInput());
+    assert.deepEqual(products.airways.airways, previous.airways.airways);
+    assert.deepEqual(products.preferredRoutes.routes, previous.preferredRoutes.routes);
+
+    for (const key of ['airways', 'airwaySegments', 'preferredRoutes', 'preferredRouteSegments'] as const) {
+        for (const date of ['2026/07/09', '2026/08/06', '2026/10/01', '2026/10/29', '']) {
+            assert.throws(() => buildNasrProducts({ ...input,
+                [key]: input[key].replace('2026/09/03', date) }), /effective date/);
+        }
+    }
+    for (const key of ['airports', 'runways', 'runwayEnds', 'frequencies', 'fixes', 'navaids'] as const) {
+        assert.throws(() => buildNasrProducts({ ...input,
+            [key]: input[key].replace('2026/10/01', '2026/09/03') }), /effective date/);
+    }
+    const nextMajor = Object.fromEntries(Object.entries(input).map(([key, value]) =>
+        [key, value.replaceAll('2026/10/01', '2026/10/29')])) as NasrInput;
+    assert.throws(() => buildNasrProducts(nextMajor), /effective date/);
+});
+
+test('NASR group editions advance on major cycles, including across calendar years', () => {
+    for (const [cycle, enroute] of [
+        ['2026-08-06', '2026-07-09'],
+        ['2026-09-03', '2026-09-03'],
+        ['2026-10-01', '2026-09-03'],
+        ['2026-10-29', '2026-10-29'],
+        ['2026-12-24', '2026-12-24'],
+        ['2027-01-21', '2026-12-24'],
+        ['2027-02-18', '2027-02-18']
+    ]) {
+        for (const group of ['APT', 'FRQ', 'FIX', 'NAV']) assert.equal(nasrGroupEffectiveDate(cycle, group), cycle);
+        for (const group of ['AWY', 'PFR', 'DP', 'STAR']) assert.equal(nasrGroupEffectiveDate(cycle, group), enroute);
+    }
+    for (const cycle of ['2026-09-04', '2026-02-30', 'bad-date']) {
+        assert.throws(() => nasrGroupEffectiveDate(cycle, 'AWY'), /Unexpected NASR effective date/);
+    }
+});
+
 test('excluded NASR points and dependent rows remain accounted for with source row identities', () => {
     const valid = preferredRouteInput();
     const data = buildNasrProducts({ ...valid, airports: valid.airports.replace('"37"', '""') });
@@ -510,8 +557,8 @@ test('preferred routes reject ambiguous joins and mismatched cycles', () => {
             /missing EFF_DATE/],
         [{ preferredRouteSegments: recordCsv(preferredSegmentHeaders.filter(header => header !== 'EFF_DATE'), [segmentRow]) },
             /missing EFF_DATE/],
-        [routes([{ ...routeRow, EFF_DATE: '2026/08/06' }]), /one effective date/],
-        [segments([{ ...segmentRow, EFF_DATE: '2026/08/06' }]), /one effective date/]
+        [routes([{ ...routeRow, EFF_DATE: '2026/08/06' }]), /PFR_BASE.csv.*mismatched effective date/],
+        [segments([{ ...segmentRow, EFF_DATE: '2026/08/06' }]), /PFR_SEG.csv.*mismatched effective date/]
     ];
     for (const [overrides, error] of cases) {
         assert.throws(() => buildNasrProducts(preferredRouteInput(overrides)), error);
@@ -694,5 +741,38 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     ]));
     await archive('PFR');
     await assert.rejects(buildNasrData(options), /no parent route/);
+    await assertUnchanged();
+
+    // A change notice refreshes the four 28-day groups while retaining the
+    // preceding major cycle's AWY/PFR/DP/STAR archives and row dates.
+    await fs.writeFile(path.join(sourceDir, 'PFR_SEG.csv'), files['PFR_SEG.csv']);
+    await archive('PFR');
+    for (const group of ['APT', 'FRQ', 'FIX', 'NAV']) {
+        for (const [name, contents] of Object.entries(files)) {
+            if (name.startsWith(`${group}_`) || name === `${group}.csv`) {
+                await fs.writeFile(path.join(sourceDir, name), contents.replaceAll('2026/09/03', '2026/10/01'));
+            }
+        }
+        await archive(group);
+    }
+    const noticeOptions = { ...options, cycle: '2026-10-01' };
+    const noticeNav = path.join(options.output, 'charts', noticeOptions.cycle, 'nav');
+    // CIFP must still match the 28-day subscription, even with carried DP/STAR.
+    await assert.rejects(buildNasrData(noticeOptions), /CIFP header does not match/);
+    await assert.rejects(fs.access(noticeNav), { code: 'ENOENT' });
+    await assertUnchanged();
+    await fs.writeFile(cifpFile, cifp.slice(0, 35) + '2610' + cifp.slice(39));
+    await buildNasrData(noticeOptions);
+    const noticeManifest = JSON.parse(await fs.readFile(path.join(noticeNav, 'manifest.json'), 'utf8'));
+    assert.equal(noticeManifest.effectiveDate, '2026-10-01');
+    assert.deepEqual(Object.fromEntries(noticeManifest.sourceArchives.filter(source => source.group !== 'CIFP')
+        .map(source => [source.group, source.effectiveDate])), {
+        APT: '2026-10-01', FRQ: '2026-10-01', FIX: '2026-10-01', NAV: '2026-10-01',
+        AWY: '2026-09-03', PFR: '2026-09-03', DP: '2026-09-03', STAR: '2026-09-03'
+    });
+    const noticeTerminal = JSON.parse(await fs.readFile(path.join(noticeNav,
+        noticeManifest.products.find(product => product.id === 'terminal-procedures').file), 'utf8'));
+    assert.equal(noticeTerminal.approaches.metadata.effectiveDate, '2026-10-01');
+    assert.deepEqual(noticeTerminal.procedures, procedureData.procedures);
     await assertUnchanged();
 });

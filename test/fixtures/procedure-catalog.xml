@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<digital_tpp cycle="2609" from_edate="0901Z  09/03/26" to_edate="0901Z  10/01/26">
+  <state_code ID="CA">
+    <city_name ID="HAYWARD" volume="SW-2">
+      <airport_name ID="HAYWARD EXEC" military="N" apt_ident="HWD" icao_ident="KHWD" alnum="5015">
+        <record>
+          <chartseq>10100</chartseq><chart_code>MIN</chart_code>
+          <chart_name>TAKEOFF MINIMUMS</chart_name><useraction></useraction>
+          <pdf_name>SW2TO.PDF</pdf_name><cn_flg>N</cn_flg><cnsection></cnsection>
+          <cnpage></cnpage><bvsection>L</bvsection><bvpage></bvpage>
+          <procuid></procuid><two_colored>N</two_colored><civil></civil>
+          <faanfd18></faanfd18><copter></copter><amdtnum></amdtnum>
+          <amdtdate></amdtdate>
+        </record>
+        <record>
+          <chartseq>53525</chartseq><chart_code>IAP</chart_code>
+          <chart_name>RNAV (GPS) RWY 28L</chart_name><useraction>C</useraction>
+          <pdf_name>05015R28L.PDF</pdf_name><cn_flg>N</cn_flg><cnsection></cnsection>
+          <cnpage></cnpage><bvsection></bvsection><bvpage>94</bvpage>
+          <procuid>23139</procuid><two_colored>N</two_colored><civil>C</civil>
+          <faanfd18></faanfd18><copter>N</copter><amdtnum>1E</amdtnum>
+          <amdtdate>02/20/2025</amdtdate><future_field>kept</future_field>
+        </record>
+        <record>
+          <chartseq>70000</chartseq><chart_code>NEW</chart_code>
+          <chart_name>FUTURE PRODUCT</chart_name><useraction></useraction>
+          <pdf_name>05015NEW.PDF</pdf_name><cn_flg>N</cn_flg><cnsection></cnsection>
+          <cnpage></cnpage><bvsection></bvsection><bvpage>95</bvpage>
+          <procuid>future</procuid><two_colored>N</two_colored><civil>C</civil>
+          <faanfd18></faanfd18><copter></copter><amdtnum></amdtnum>
+          <amdtdate></amdtdate>
+        </record>
+      </airport_name>
+    </city_name>
+  </state_code>
+</digital_tpp>

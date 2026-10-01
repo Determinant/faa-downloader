@@ -58,6 +58,20 @@ FAA metadata volume `AK-1` maps to `tpp/tpp-ak.pdf`, and `PC-1` maps to `cs/cs-p
 Pacific procedures use the supplement's terminal-procedure section headers for page
 labels, so they cannot collide with the supplement's other numbered sections.
 
+At the intervening 28-day change notice, the downloader retains the regional base
+books and downloads `CN.pdf` as `tpp-cn.pdf` in the new cycle. When FAA XML supplies
+`cnpage` or `cnsection`, the procedure's `volumeTarget.volumeId` is `CN`; its page
+index resolves against that cycle's notice. Unchanged procedures keep their base
+book targets. Resolve the target's volume ID through `catalog.volumes`, since one
+airport can have procedures in both the regional book and the notice. Prior-cycle
+notices are never reused. Without a local current notice, these targets remain
+unindexed and retain their current individual FAA PDF URLs.
+
+Route-to-plate associations use the same-cycle terminal export from navigation
+manifest versions 2 and 3. The shared-fixes layout in version 3 does not change the
+terminal product or its identity checks. Manual association reviews remain tied
+to their exact edition and input hashes.
+
 IAPs, airport diagrams, SIDs, charted ODPs, and STARs normally carry direct printed
 page targets. Some military-only products have no combined-volume fields; those retain
 their individual FAA PDF URL and have a null volume target. Any advertised target that

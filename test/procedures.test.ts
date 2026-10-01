@@ -13,42 +13,7 @@ import {
     resolveVolumePageIndexes
 } from '../lib/procedures.ts';
 
-const XML = `<?xml version="1.0" encoding="UTF-8"?>
-<digital_tpp cycle="2609" from_edate="0901Z  09/03/26" to_edate="0901Z  10/01/26">
-  <state_code ID="CA">
-    <city_name ID="HAYWARD" volume="SW-2">
-      <airport_name ID="HAYWARD EXEC" military="N" apt_ident="HWD" icao_ident="KHWD" alnum="5015">
-        <record>
-          <chartseq>10100</chartseq><chart_code>MIN</chart_code>
-          <chart_name>TAKEOFF MINIMUMS</chart_name><useraction></useraction>
-          <pdf_name>SW2TO.PDF</pdf_name><cn_flg>N</cn_flg><cnsection></cnsection>
-          <cnpage></cnpage><bvsection>L</bvsection><bvpage></bvpage>
-          <procuid></procuid><two_colored>N</two_colored><civil></civil>
-          <faanfd18></faanfd18><copter></copter><amdtnum></amdtnum>
-          <amdtdate></amdtdate>
-        </record>
-        <record>
-          <chartseq>53525</chartseq><chart_code>IAP</chart_code>
-          <chart_name>RNAV (GPS) RWY 28L</chart_name><useraction>C</useraction>
-          <pdf_name>05015R28L.PDF</pdf_name><cn_flg>N</cn_flg><cnsection></cnsection>
-          <cnpage></cnpage><bvsection></bvsection><bvpage>94</bvpage>
-          <procuid>23139</procuid><two_colored>N</two_colored><civil>C</civil>
-          <faanfd18></faanfd18><copter>N</copter><amdtnum>1E</amdtnum>
-          <amdtdate>02/20/2025</amdtdate><future_field>kept</future_field>
-        </record>
-        <record>
-          <chartseq>70000</chartseq><chart_code>NEW</chart_code>
-          <chart_name>FUTURE PRODUCT</chart_name><useraction></useraction>
-          <pdf_name>05015NEW.PDF</pdf_name><cn_flg>N</cn_flg><cnsection></cnsection>
-          <cnpage></cnpage><bvsection></bvsection><bvpage>95</bvpage>
-          <procuid>future</procuid><two_colored>N</two_colored><civil>C</civil>
-          <faanfd18></faanfd18><copter></copter><amdtnum></amdtnum>
-          <amdtdate></amdtdate>
-        </record>
-      </airport_name>
-    </city_name>
-  </state_code>
-</digital_tpp>`;
+const XML = (await fs.readFile(new URL('./fixtures/procedure-catalog.xml', import.meta.url), 'utf8')).trimEnd();
 
 test('d-TPP parser preserves complete records and normalized targets', () => {
     const catalog = parseProcedureCatalog(XML, 'https://example.test/metafile.xml', 'abc', 'now');
@@ -126,6 +91,69 @@ test('d-TPP parser excludes deleted procedures and stale deletion placeholders',
             { pageIndex: 220, text: 'future chart', pageLabels: ['95'] }
         ]), { resolved: 2, unresolved: 0 });
     }
+});
+
+test('change-notice pages and sections take precedence over the regional book', () => {
+    const xml = XML
+        .replace('<cnsection></cnsection>', '<cnsection>C</cnsection>')
+        .replace('<cnpage></cnpage><bvsection></bvsection><bvpage>94</bvpage>',
+            '<cnpage>22</cnpage><bvsection></bvsection><bvpage>94</bvpage>');
+    const catalog = parseProcedureCatalog(xml, 'test', 'abc');
+    const procedures = catalog.airports[0].procedures;
+    assert.equal(catalog.airports[0].volumeId, 'SW2');
+    assert.deepEqual(procedures.map(p => p.volumeTarget?.volumeId), ['CN', 'CN', 'SW2']);
+    assert.deepEqual(resolveVolumePageIndexes(catalog, 'SW2', [
+        { pageIndex: 3, text: 'outdated approach', pageLabels: ['94'] },
+        { pageIndex: 4, text: 'unchanged chart', pageLabels: ['95'] }
+    ]), { resolved: 1, unresolved: 0 });
+    assert.equal(procedures[1].volumeTarget?.pageIndex, null);
+    assert.deepEqual(resolveVolumePageIndexes(catalog, 'CN', [
+        { pageIndex: 7, text: 'HAYWARD EXEC (KHWD/HWD)', pageLabels: ['C1'] },
+        { pageIndex: 31, text: 'updated approach', pageLabels: ['22'] }
+    ]), { resolved: 2, unresolved: 0 });
+    assert.deepEqual(procedures.map(p => p.volumeTarget?.pageIndex), [7, 31, 4]);
+    // A flag without CN page/section metadata on a major cycle keeps its base target.
+    const base = parseProcedureCatalog(XML.replaceAll('<cn_flg>N</cn_flg>', '<cn_flg>Y</cn_flg>'), 'test', 'abc');
+    assert.ok(base.airports[0].procedures.every(p => p.volumeTarget?.volumeId === 'SW2'));
+});
+
+test('procedure builds index the current notice, include newly added plates, and reject unresolved replacements', async t => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'faa-procedures-notice-'));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    t.mock.method(globalThis, 'fetch', () => { throw new Error('Unexpected network access'); });
+    const previous = path.join(root, 'charts', '2026-09-03', 'tpp');
+    const current = path.join(root, 'charts', '2026-10-01', 'tpp');
+    await fs.mkdir(previous, { recursive: true });
+    await fs.mkdir(current, { recursive: true });
+    const fixture = new URL('./fixtures/procedure-volume.pdf', import.meta.url);
+    await fs.copyFile(fixture, path.join(previous, 'tpp-sw2.pdf'));
+    await fs.copyFile(fixture, path.join(previous, 'tpp-cn.pdf'));
+    const sourceXml = path.join(root, 'metafile.xml');
+    const xml = XML.replace('cycle="2609"', 'cycle="2610"')
+        .replace('from_edate="0901Z  09/03/26" to_edate="0901Z  10/01/26"',
+            'from_edate="0901Z  10/01/26" to_edate="0901Z  10/29/26"')
+        .replace('<cnpage></cnpage><bvsection></bvsection><bvpage>94</bvpage>',
+            '<cnpage>94</cnpage><bvsection></bvsection><bvpage>94</bvpage>')
+        .replace('<cnpage></cnpage><bvsection></bvsection><bvpage>95</bvpage>',
+            '<cnpage>95</cnpage><bvsection></bvsection><bvpage></bvpage>');
+    await fs.writeFile(sourceXml, xml);
+    const options = { output: root, sourceXml };
+    const partial = await buildProcedureCatalog(options);
+    assert.deepEqual(partial.volumes.map(v => v.id), ['SW2'], 'previous notice must not be reused');
+    assert.deepEqual(partial.airports[0].procedures.map(p => p.volumeTarget?.pageIndex), [0, null, null]);
+    await fs.copyFile(fixture, path.join(current, 'tpp-cn.pdf'));
+    const complete = await buildProcedureCatalog(options);
+    assert.deepEqual(complete.volumes.map(v => [v.id, v.url, v.resolvedTargetCount]), [
+        ['CN', 'tpp-cn.pdf', 2], ['SW2', '../../2026-09-03/tpp/tpp-sw2.pdf', 1]
+    ]);
+    assert.deepEqual(complete.airports[0].procedures.map(p => p.volumeTarget?.pageIndex), [0, 1, 2]);
+    assert.equal((await buildProcedureCatalog(options)).generatedAt, complete.generatedAt);
+    await fs.access(path.join(current, 'tpp-cn.pdf'));
+    const manifestFile = path.join(current, 'manifest.json');
+    const manifest = await fs.readFile(manifestFile, 'utf8');
+    await fs.writeFile(sourceXml, xml.replace('<cnpage>94</cnpage>', '<cnpage>999</cnpage>'));
+    await assert.rejects(buildProcedureCatalog(options), /CN: 1 PDF page targets could not be resolved/);
+    assert.equal(await fs.readFile(manifestFile, 'utf8'), manifest);
 });
 
 test('Pacific page labels come from terminal headers, not other supplement sections', () => {

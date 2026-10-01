@@ -202,7 +202,29 @@ function createDownloadPlan(
     return downloads;
 }
 
+export async function downloadChartFiles(
+    groups: ChartGroup[], output: string, concurrency = DEFAULT_DOWNLOAD_CONCURRENCY
+): Promise<void> {
+    const outputRoot = path.resolve(output);
+    const chartRoot = path.join(outputRoot, 'charts');
+    const downloadRoot = path.join(outputRoot, 'zips');
+    await fs.mkdir(chartRoot, { recursive: true });
+    await fs.mkdir(downloadRoot, { recursive: true });
+    const downloads = createDownloadPlan(groups, chartRoot, downloadRoot);
+    console.log(`Acquiring ${downloads.length} chart files with concurrency ${concurrency}`);
+    await mapWithConcurrency(downloads, concurrency, async download => {
+        await downloadFile(download.candidate.url, download.localPath, {
+            userAgent: 'faa-regs-chart-builder/1.0', validate: validateChartDownload
+        });
+        if (download.candidate.extractions) {
+            await extractChart(download.localPath, chartRoot, download.candidate.date, download.candidate.extractions);
+        }
+    });
+}
+
 async function buildCharts(options: Options): Promise<void> {
+    // Select every cycle-dependent feed as of the same day, even across midnight.
+    const today = new Date().toISOString().slice(0, 10);
     const outputRoot = path.resolve(options.output);
     const chartRoot = path.join(outputRoot, 'charts');
     const downloadRoot = path.join(outputRoot, 'zips');
@@ -212,36 +234,12 @@ async function buildCharts(options: Options): Promise<void> {
     await migratePdfBooks(outputRoot);
     await migrateChartSources(chartRoot);
 
-    const downloads = createDownloadPlan(
-        await discoverCharts(),
-        chartRoot,
-        downloadRoot
-    );
-
-    console.log(`Acquiring ${downloads.length} chart files with concurrency ${options.concurrency}`);
-    await mapWithConcurrency(
-        downloads,
-        options.concurrency,
-        async download => {
-            await downloadFile(download.candidate.url, download.localPath, {
-                userAgent: 'faa-regs-chart-builder/1.0',
-                validate: validateChartDownload
-            });
-            if (download.candidate.extractions) {
-                await extractChart(
-                    download.localPath,
-                    chartRoot,
-                    download.candidate.date,
-                    download.candidate.extractions
-                );
-            }
-        }
-    );
+    await downloadChartFiles(await discoverCharts({ today }), outputRoot, options.concurrency);
 
     await tileCharts(chartRoot, options.force, options.tileConcurrency);
     await buildChartPackages(options.output, options.regions, options.force);
-    await buildNasrData({ output: options.output, concurrency: options.concurrency });
-    const procedures = await buildProcedureCatalog({ output: options.output });
+    await buildNasrData({ output: options.output, concurrency: options.concurrency, today });
+    const procedures = await buildProcedureCatalog({ output: options.output, today });
     await buildChartSupplements({ output: options.output, effectiveDate: procedures.effectiveDate, force: options.force });
     await buildObstacles({ output: options.output });
     await buildChartCycles(options.output);

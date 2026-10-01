@@ -54,6 +54,30 @@ async function fixture(t: TestContext, layout: 'flat' | 'nested' = 'nested') {
 
 const metadata = async () => ({ bounds: [-122, 40, -102, 49] as [number, number, number, number], minZoom: 4, maxZoom: 11 });
 
+test('reconciles a new cycle without raster sources alongside an existing chart cycle', async t => {
+    const f = await fixture(t);
+    const cycle = path.join(f.charts, '2026-10-01');
+    const { sourceDirectory, cacheDirectory, deliveryDirectory } = chartLayoutForCycleDirectory(cycle);
+    await fs.mkdir(deliveryDirectory, { recursive: true });
+    const pdf = path.join(cycle, 'original.pdf');
+    await fs.writeFile(pdf, 'new cycle PDF');
+    const legacyManifest = path.join(cycle, 'chart-manifest.json');
+    await fs.writeFile(legacyManifest, '{"charts":[{"file":"missing.mbtiles"}]}\n');
+    await assert.rejects(fs.access(sourceDirectory), { code: 'ENOENT' });
+    await assert.rejects(fs.access(cacheDirectory), { code: 'ENOENT' });
+
+    await writeChartManifests(f.charts, metadata);
+
+    assert.equal(await fs.readFile(pdf, 'utf8'), 'new cycle PDF');
+    await assert.rejects(fs.access(legacyManifest), { code: 'ENOENT' });
+    await assert.rejects(fs.access(path.join(cacheDirectory, 'chart-manifest.json')), { code: 'ENOENT' });
+    assert.deepEqual(await fs.readdir(sourceDirectory), []);
+    assert.deepEqual(await fs.readdir(deliveryDirectory), []);
+    const manifest = JSON.parse(await fs.readFile(path.join(f.cache, 'chart-manifest.json'), 'utf8'));
+    assert.equal(manifest.charts.length, 1);
+    assert.equal(manifest.charts[0].sha256, f.receipt.output.sha256);
+});
+
 for (const layout of ['flat', 'nested'] as const) for (const interrupted of [false, true]) {
     test(`migrates ${layout} caches${interrupted ? ' after an interrupted move' : ''} without changing artifacts`, async t => {
         const f = await fixture(t, layout);

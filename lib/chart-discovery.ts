@@ -282,13 +282,13 @@ function anchorFilename(anchor: HTMLAnchorElement): string {
     return String(anchor.textContent || '').trim() || path.basename(href);
 }
 
-function latestPublishedDirectory(
+function publishedDirectories(
     dom: JSDOM,
     baseUrl: string,
     pattern: RegExp,
     parseDate: (value: string) => string | null,
     today: string
-): PublicationDirectory | undefined {
+): PublicationDirectory[] {
     const directories = anchors(dom).flatMap(anchor => {
         const href = anchorHref(anchor);
         const rawDate = `${anchor.textContent || ''} ${href}`.match(pattern)?.[1];
@@ -299,7 +299,7 @@ function latestPublishedDirectory(
         if (!url.pathname.endsWith('/')) url.pathname += '/';
         return [{ date, url: url.href }];
     });
-    return directories.sort((left, right) => right.date.localeCompare(left.date))[0];
+    return directories.sort((left, right) => right.date.localeCompare(left.date));
 }
 
 async function fetchDom(url: string, context: DiscoveryContext): Promise<JSDOM> {
@@ -332,24 +332,32 @@ async function discoverChartSupplements(context: DiscoveryContext): Promise<Regi
 
 async function discoverTerminalProcedures(context: DiscoveryContext): Promise<RegionMap> {
     const files = createRegionMap(TPP_REGIONS);
-    const directory = latestPublishedDirectory(
+    const directories = publishedDirectories(
         await fetchDom(TPP_URL, context),
         TPP_URL,
         /(\d{4}-\d{2}-\d{2})/,
         parseDateKey,
         context.today
     );
-    if (!directory) return files;
-
-    for (const anchor of anchors(await fetchDom(directory.url, context))) {
-        const href = anchorHref(anchor);
-        const filename = anchorFilename(anchor);
-        const match = filename.match(/^([A-Z0-9]+)\.pdf$/i);
-        if (!match) continue;
-        addCandidate(files, match[1].toUpperCase(), {
-            url: new URL(href || filename, directory.url).href,
-            date: directory.date
-        }, context.today);
+    for (const directory of directories) {
+        for (const anchor of anchors(await fetchDom(directory.url, context))) {
+            const href = anchorHref(anchor);
+            const filename = anchorFilename(anchor);
+            const match = filename.match(/^([A-Z0-9]+)\.pdf$/i);
+            if (!match) continue;
+            const region = match[1].toUpperCase();
+            // The mid-cycle publication contains CN.pdf instead of regional
+            // books. Keep the current notice and find the preceding base books.
+            if (region === 'CN') {
+                if (directory !== directories[0]) continue;
+                files.CN ??= {};
+            }
+            addCandidate(files, region, {
+                url: new URL(href || filename, directory.url).href,
+                date: directory.date
+            }, context.today);
+        }
+        if (TPP_REGIONS.every(region => files[region].current)) break;
     }
     return files;
 }
@@ -362,13 +370,13 @@ async function discoverIfrEnroute(context: DiscoveryContext): Promise<{
         low: createRegionMap(IFR_LOW_REGIONS),
         high: createRegionMap(IFR_HIGH_REGIONS)
     };
-    const directory = latestPublishedDirectory(
+    const directory = publishedDirectories(
         await fetchDom(IFR_ENROUTE_URL, context),
         IFR_ENROUTE_URL,
         /(\d{2}-\d{2}-\d{4})/,
         parseAmericanDate,
         context.today
-    );
+    )[0];
     if (!directory) return files;
 
     for (const anchor of anchors(await fetchDom(directory.url, context))) {
@@ -394,13 +402,13 @@ async function discoverVfr(context: DiscoveryContext): Promise<{
 }> {
     const sectional = createRegionMap(VFR_SECTIONAL_REGIONS);
     const terminal = createRegionMap(VFR_TERMINAL_REGIONS);
-    const directory = latestPublishedDirectory(
+    const directory = publishedDirectories(
         await fetchDom(VFR_URL, context),
         VFR_URL,
         /(\d{2}-\d{2}-\d{4})/,
         parseAmericanDate,
         context.today
-    );
+    )[0];
     if (!directory) return { sectional, terminal };
 
     const sectionalUrl = new URL('sectional-files/', directory.url).href;
