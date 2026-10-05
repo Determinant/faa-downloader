@@ -5,3 +5,4 @@ charts/
 !test/fixtures/glide-delivery-v1/charts/**
 zips/
 .aim-backup-*/
+/ops/

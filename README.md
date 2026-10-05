@@ -22,6 +22,10 @@ Run only the product you need, or build them into the shared dist/ directory.
 stages automatically; no follow-up build commands are needed.
 It also writes `dist/charts/cycles.json` beside the dated directories, containing
 `schemaVersion`, `generatedAt`, and a `cycles` array of ISO dates, newest first.
+The `rasterCycles` array lists the subset with raster manifests, so consumers can
+skip raster requests for navigation/TPP-only change notices. It is derived from
+published manifest files and refreshes when those files appear or disappear,
+even if the dated directories stay the same. Older consumers can ignore it.
 Run `npm run build:chart-cycles` to refresh just this index from existing output
 without downloading or rendering charts. Publish it after the dated files.
 Historical filed-route frequencies are packaged during the navigation stage.
@@ -262,14 +266,21 @@ lifetimes and are unaffected by this cycle limit.
 Full chart builds serialize through a build-root lock. Run standalone builders,
 cleanup, and uploads separately from full builds; CT109's automation already uses
 an external publish lock. This retention applies to the local output on the builder.
-The separate `faa-regs-ops` uploader preserves older destination files, so it does
-not enforce this limit on DO. Standalone builders and `clean:generated` do not run
+The separate operations uploader preserves older destination files, so it does
+not enforce this limit on the published origin. Standalone builders and `clean:generated` do not run
 the chart-cycle cleanup. Standalone `build:nav` applies the completed-edition rule
 to navigation and its source cache after its own successful publication.
 
 Commit changes before deploying to CT109. Deploy the recorded commit from a clean
 checkout or a `git archive` of that commit, and verify the installed files against
 it. Do not deploy uncommitted working-tree changes.
+
+Private deployment automation lives in an independently versioned, ignored
+`ops/` checkout inside this repository. It is not a submodule and is not included
+in application source exports. Run its checks separately with `npm --prefix ops run check`
+and `npm --prefix ops test`; the application test command covers only the
+application's `test/` directory. Installed-host details and deployment instructions
+belong in that private checkout.
 
 This repository is also the build and maintenance source for the chart artifacts
 published at `https://charts.tedyin.com/charts/`. Downstream applications such as
@@ -285,7 +296,9 @@ catalogs use relative URLs to those books; retain the directories they reference
 The current TPP change notice publishes as `tpp/tpp-cn.<sha256>.pdf`.
 Changed procedure targets point into that notice instead of the older base book.
 Raster consumers must select the newest available MBTiles manifest independently
-of the navigation cycle; `cycles.json` lists publication dates, not complete bundles.
+of the navigation cycle, within the raster edition's validity interval;
+`cycles.json` lists publication dates, not complete bundles, and `rasterCycles`
+identifies dates with raster manifests.
 
 ~~~text
 dist/
