@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Glide Preview</title>
+  <link rel="stylesheet" href="/vendor/leaflet.css">
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/vendor/leaflet.js"></script>
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <header class="brand">
+      <div class="brand-icon" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="m5 8 9 4 10-5 3 2-8 7 6 6-2 2-9-5-5 3-2-2 4-4-7-6ZM4 28h24"/></svg></div>
+      <div><p class="eyebrow">Glide Planner</p><h1>Coverage explorer</h1></div>
+    </header>
+    <p class="intro">Explore off-field landing candidates. Airport glide coverage is handled separately in Glide Planner.</p>
+
+    <section class="panel location-panel">
+      <label class="label" for="analysis-version">Analysis results</label>
+      <select id="analysis-version" aria-label="Analysis version"><option value="1">Current rules · v1</option></select>
+      <label class="label" for="place">Explore a location</label>
+      <select id="place">
+        <option value="overview">U.S. build overview</option>
+        <option value="valley">Central Valley, California</option>
+        <option value="yuma">Yuma, Arizona</option>
+        <option value="bay">SF Bay Area</option>
+        <option value="la">Los Angeles</option>
+        <option value="keywest">Key West, Florida</option>
+        <option value="texas">North Texas</option>
+      </select>
+      <form id="coordinates-form">
+        <label class="label" for="coordinates">Or enter latitude, longitude</label>
+        <div class="input-row"><input id="coordinates" placeholder="36.42, -119.80" autocomplete="off" aria-describedby="coordinate-error"><button type="submit">Go</button></div>
+        <span id="coordinate-error" class="error" role="alert"></span>
+      </form>
+    </section>
+
+    <section class="panel">
+      <p class="label section-label">Candidate areas</p>
+      <label class="tier-row"><span class="swatch preferred"></span><span class="tier-text"><strong>Preferred</strong><span id="preferred-length">At least one 2,000 ft fit</span></span><input id="preferred" type="checkbox" role="switch" checked aria-label="Show preferred areas"></label>
+      <label class="tier-row"><span class="swatch emergency"></span><span class="tier-text"><strong>Last resort</strong><span id="fallback-length">Constrained openings</span></span><input id="emergency" type="checkbox" role="switch" checked aria-label="Show best effort areas"></label>
+      <div class="range-label"><label for="opacity">Overlay opacity</label><output id="opacity-value">45%</output></div>
+      <input id="opacity" type="range" min="10" max="85" value="45">
+      <div class="layer-actions"><button id="compare" type="button" aria-pressed="false">Hide areas to compare</button><button id="reset" type="button" title="Restore both tiers and default opacity">Reset</button></div>
+      <label class="grid-control"><input id="grid" type="checkbox"> Show saved analysis grid</label>
+    </section>
+
+    <section class="panel details" id="details" aria-live="polite">
+      <p class="label section-label">Inspect an area</p>
+      <p class="detail-hint">Click a colored patch to see its qualifying length and surface flags.</p>
+    </section>
+
+    <div class="sidebar-footer">
+      <p><strong>Candidate areas, not landing clearance.</strong> A filled area contains a qualifying fit; every position or direction is not necessarily usable.</p>
+      <p>Zero off-field candidates does not mean zero airport landing options. Blank ground can be rejected or not yet analyzed; the blue grid shows where saved results exist. Imagery is a viewing background only.</p>
+      <a id="download" class="download" href="#">Download visible areas · GeoJSON <span aria-hidden="true">↗</span></a>
+    </div>
+  </aside>
+
+  <main class="map-shell">
+    <div id="map" aria-label="Interactive map of off-field landing candidates"></div>
+    <div class="map-topbar">
+      <div class="source-chip"><span class="status-dot"></span><span id="source-label">Live build</span><span class="version" id="version"></span></div>
+      <div class="basemap-switch" role="group" aria-label="Map background"><button id="satellite" class="active" type="button" aria-pressed="true">Satellite</button><button id="streets" type="button" aria-pressed="false">Streets</button></div>
+    </div>
+    <div class="view-summary" aria-live="polite"><span class="summary-title" id="summary-title">Loading saved areas…</span><div id="summary-counts"></div></div>
+    <div class="map-message" id="map-message" hidden></div>
+    <div class="build-status"><div><span class="status-dot" id="status-dot"></span><span id="status" role="status">Reading completed results…</span></div><button id="refresh" type="button" title="Reload visible results">Refresh</button></div>
+    <div class="cursor-coordinates" id="cursor-coordinates"></div>
+  </main>
+</body>
+</html>

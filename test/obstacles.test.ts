@@ -201,6 +201,38 @@ test('online builds check freshness, reuse the current ZIP, recover corrupt cach
     assert.equal(data.features[0].properties.heightAglFt, 125);
 });
 
+test('dependent builders reuse the shared obstacle snapshot under its build lock', async t => {
+    const options = await setup(t);
+    const body = await archive(options, csv(record()));
+    let gets = 0, consumed = 0;
+    const fetcher: typeof fetch = async (_url, init) => {
+        if (init?.method === 'HEAD') return new Response(null, {
+            headers: { etag: '"shared-snapshot"', 'last-modified': 'Fri, 18 Sep 2026 03:31:59 GMT' }
+        });
+        gets++;
+        return new Response(new Uint8Array(body), { headers: { 'content-length': String(body.length) } });
+    };
+    const onSnapshot = async (manifest: Awaited<ReturnType<typeof buildObstacles>>, file: string) => {
+        consumed++;
+        assert.equal(file, path.join(options.output, 'charts', 'obstacles', manifest.dataset.path));
+        assert.equal(await sha256File(file), manifest.dataset.sha256);
+        assert.equal((await readExport(file)).features[0].id, original.OAS);
+        await assert.rejects(buildObstacles(options), /already in progress/,
+            'the shared snapshot must remain protected throughout consumer indexing');
+    };
+    const first = await buildObstacles({ output: options.output, fetch: fetcher, onSnapshot });
+    assert.deepEqual(await buildObstacles({ output: options.output, fetch: fetcher, onSnapshot }), first);
+    assert.equal(consumed, 2, 'both newly built and cached snapshots are provided to the consumer');
+    assert.equal(gets, 1, 'the second consumer reuses the shared download and publication');
+
+    await assert.rejects(buildObstacles({ output: options.output, fetch: fetcher,
+        onSnapshot: async () => { throw new Error('indexing failed'); }
+    }), /indexing failed/);
+    await assert.rejects(fs.access(path.join(options.output, 'obstacles.build.lock')), { code: 'ENOENT' });
+    assert.deepEqual(await buildObstacles({ output: options.output, fetch: fetcher }), first);
+    assert.equal(gets, 1);
+});
+
 test('failed downloads or validation leave the previous publication intact and release the build lock', async t => {
     const options = await setup(t);
     const goodZip = await archive(options, csv(record()));

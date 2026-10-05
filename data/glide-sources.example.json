@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "regions": [{
+    "id": "regional-pilot",
+    "bounds": [-122.1, 38.0, -122.0, 38.1],
+    "coverageBounds": [-122.25, 37.89, -121.85, 38.21],
+    "sources": {
+      "elevation": [{ "name": "Regional bare-earth DEM, metres MSL", "date": "2026-01-01", "attribution": "Replace with the actual source attribution and survey date", "file": "inputs/elevation-10m.tif" }],
+      "landcover": [{ "name": "NLCD numerical land cover", "date": "2026-01-01", "attribution": "Replace with actual product and release", "file": "inputs/landcover.tif" }],
+      "canopy": [{ "name": "Unmasked Science tree canopy percentage (including agriculture)", "date": "2026-01-01", "attribution": "Replace with actual product and release", "file": "inputs/canopy.tif" }],
+      "impervious": [{ "name": "Impervious percentage", "date": "2026-01-01", "attribution": "Replace with actual product and release", "file": "inputs/impervious.tif" }],
+      "buildings": [{ "name": "Buildings and residential polygons", "date": "2026-01-01", "attribution": "Replace with dataset attribution and license", "file": "inputs/buildings.gpkg" }],
+      "powerlines": [{ "name": "Overhead transmission and distribution lines", "date": "2026-01-01", "attribution": "Replace with dataset attribution and license", "file": "inputs/powerlines.gpkg" }],
+      "obstacles": [{ "name": "DOF and supplemental structures, merged", "date": "2026-01-01", "attribution": "Replace with dataset attribution and license", "file": "inputs/obstacles.geojson" }],
+      "water": [{ "name": "Water and wetland polygons", "date": "2026-01-01", "attribution": "Replace with dataset attribution and license", "file": "inputs/water.gpkg" }],
+      "roads": [{ "name": "Road corridors", "date": "2026-01-01", "attribution": "Replace with dataset attribution and license", "file": "inputs/roads.gpkg" }]
+    }
+  }]
+}

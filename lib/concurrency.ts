@@ -44,3 +44,36 @@ export async function mapWithConcurrency<T, R>(
     if (failed) throw failure;
     return results;
 }
+
+/** Bounded, completion-ordered preparation feeds independent consumers; results retain input order. */
+export async function mapWithPrefetch<T, P, R>(items: readonly T[], concurrency: number,
+    prepare: (item: T, index: number) => Promise<P>, consume: (prepared: P, index: number) => Promise<R>): Promise<R[]> {
+    if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('concurrency must be a positive integer');
+    const preparing = new Set<Promise<void>>(), consuming = new Set<Promise<void>>();
+    const ready: { value: P; index: number }[] = [], results = new Array<R>(items.length);
+    let next = 0, failed = false, failure: unknown;
+    const launch = (jobs: Set<Promise<void>>, task: () => Promise<void>) => {
+        const job = Promise.resolve().then(task).catch(error => {
+            if (!failed) { failed = true; failure = error; }
+        }).finally(() => jobs.delete(job));
+        jobs.add(job);
+    };
+    for (;;) {
+        if (!failed) {
+            while (ready.length && consuming.size < concurrency) {
+                const { value, index } = ready.shift()!;
+                launch(consuming, async () => { results[index] = await consume(value, index); });
+            }
+            // At most one extra region per consumer is downloading or ready.
+            while (next < items.length && preparing.size + ready.length < concurrency) {
+                const index = next++;
+                launch(preparing, async () => { ready.push({ value: await prepare(items[index], index), index }); });
+            }
+        }
+        if (!preparing.size && !consuming.size && (failed || !ready.length && next === items.length)) break;
+        // Drain every accepted operation on failure before the caller closes shared resources.
+        await Promise.race([...preparing, ...consuming]);
+    }
+    if (failed) throw failure;
+    return results;
+}

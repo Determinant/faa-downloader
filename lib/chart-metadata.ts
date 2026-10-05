@@ -1,5 +1,4 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { gdalCommand } from './gdal.ts';
 
 export type ChartMetadata = {
     bounds: [west: number, south: number, east: number, north: number];
@@ -7,13 +6,11 @@ export type ChartMetadata = {
     maxZoom: number;
 };
 
-const execFileAsync = promisify(execFile);
-
 export async function readChartMetadata(mbtilesPath: string): Promise<ChartMetadata> {
     try {
-        const { stdout } = await execFileAsync('gdalinfo', [
+        const stdout = await gdalCommand('gdalinfo', [
             '-json', '-noct', '-norat', mbtilesPath
-        ], { maxBuffer: 16 * 1024 * 1024 });
+        ]);
         return parseChartMetadata(JSON.parse(stdout));
     } catch (error) {
         throw new Error(`Unable to read chart metadata: ${mbtilesPath}`, { cause: error });

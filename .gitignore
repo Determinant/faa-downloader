@@ -1,5 +1,7 @@
 node_modules/
 dist/
 charts/
+!test/fixtures/glide-delivery-v1/charts/
+!test/fixtures/glide-delivery-v1/charts/**
 zips/
 .aim-backup-*/

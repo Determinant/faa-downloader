@@ -13,6 +13,7 @@ import { migrateNavSources, navSourceDirectory } from './lib/nav-source-layout.t
 import { pruneGeneration, publishGeneration, stageJson } from './lib/publication.ts';
 import { SUPPLEMENT_BUILDER_VERSION } from './lib/chart-supplements.ts';
 import { extractZipEntry } from './lib/zip.ts';
+import { cleanGlide } from './lib/glide.ts';
 
 type Artifact = { file: string; sha256: string; bytes?: number; byteLength?: number };
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -219,6 +220,7 @@ export async function cleanGenerated(output = 'dist'): Promise<void> {
             if (await exists(path.join(directory, 'mbtiles', 'manifest.json'))) await cleanPackages(root, cycle);
         }
         if (await exists(path.join(charts, 'terrain', 'manifest.json'))) await cleanTerrain(root);
+        if (await exists(path.join(charts, 'glide', 'manifest.json'))) await cleanGlide(root);
         if (await exists(path.join(charts, 'obstacles', 'manifest.json'))) await cleanObstacles(root);
     } finally { await release(); }
 }

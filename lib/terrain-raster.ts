@@ -1,24 +1,13 @@
-import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
+import { gdalCommand as terrainCommand } from './gdal.ts';
+export { gdalCommand as terrainCommand } from './gdal.ts';
 import { TERRAIN_NODATA, terrainSpacing, terrainGridBounds } from './terrain-grid.ts';
 
 export type TerrainBounds = [west: number, south: number, east: number, north: number];
 export type TerrainBlock = { zoom: number; x: number; y: number };
 export type TerrainBatch = TerrainBlock & { span: number; blocks: TerrainBlock[] };
 export const TERRAIN_BATCH_SPAN = 8;
-const exec = promisify(execFile);
-
-export async function terrainCommand(command: string, args: string[]): Promise<string> {
-    try {
-        const { stdout } = await exec(command, args, { maxBuffer: 16 * 1024 * 1024,
-            env: { ...process.env, PROJ_NETWORK: 'OFF', GDAL_PAM_ENABLED: 'NO', GDAL_CACHEMAX: '128' } });
-        return stdout;
-    } catch (error) {
-        throw new Error(`${command} failed: ${String(error.stderr || error.message).trim()}`, { cause: error });
-    }
-}
 
 export async function terrainGdalVersion(): Promise<string> {
     const versions = [];

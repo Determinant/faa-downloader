@@ -1,0 +1,83 @@
+[
+  {
+    "id": "sf-east-bay",
+    "title": "SF Bay \u00b7 Oakland\u2013Concord hills",
+    "bounds": [
+      -122.375,
+      37.625,
+      -122,
+      38
+    ],
+    "probes": [
+      {
+        "label": "Previously flagged Bay pond-edge candidate; inspect source and current surface",
+        "coordinate": [
+          -122.147782,
+          37.643572
+        ],
+        "expected": "review"
+      }
+    ]
+  },
+  {
+    "id": "sf-coast",
+    "title": "SF \u00b7 Ocean Beach and Golden Gate Park",
+    "bounds": [
+      -122.625,
+      37.625,
+      -122.375,
+      37.875
+    ]
+  },
+  {
+    "id": "la-basin",
+    "title": "LA \u00b7 Sepulveda/Hansen basins and coast",
+    "bounds": [
+      -118.5,
+      33.875,
+      -118.25,
+      34.375
+    ]
+  },
+  {
+    "id": "key-west-tile",
+    "title": "Key West \u00b7 full island and surroundings",
+    "bounds": [
+      -81.875,
+      24.5,
+      -81.625,
+      24.625
+    ],
+    "contexts": [
+      {
+        "label": "Boca Chica airport vicinity review window (not an airport boundary)",
+        "bounds": [
+          -81.71,
+          24.555,
+          -81.665,
+          24.59
+        ]
+      }
+    ]
+  },
+  {
+    "id": "colorado-salida",
+    "title": "Colorado \u00b7 Salida and Arkansas Valley",
+    "bounds": [
+      -106.125,
+      38.375,
+      -105.875,
+      38.625
+    ]
+  },
+  {
+    "id": "colorado-leadville",
+    "title": "Colorado \u00b7 Leadville mountain valley",
+    "bounds": [
+      -106.375,
+      39.125,
+      -106.125,
+      39.375
+    ]
+  }
+]

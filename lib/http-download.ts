@@ -73,6 +73,14 @@ function rangeValidator(identity?: DownloadIdentity): string | undefined {
 
 class RetryableDownloadError extends Error {}
 
+/** Callers can apply a service-specific retry policy without parsing error text. */
+export class DownloadHttpError extends Error {
+    constructor(readonly status: number, statusText: string, readonly url: string) {
+        super(`Download request failed (${status} ${statusText}): ${url}`);
+        this.name = 'DownloadHttpError';
+    }
+}
+
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
@@ -277,9 +285,7 @@ async function transferOnce(
         }
         if (!response.ok) {
             await discardResponse();
-            const error = new Error(
-                `Download request failed (${response.status} ${response.statusText}): ${url}`
-            );
+            const error = new DownloadHttpError(response.status, response.statusText, url);
             if (response.status === 408 || response.status === 429 || response.status >= 500) {
                 throw new RetryableDownloadError(error.message, { cause: error });
             }

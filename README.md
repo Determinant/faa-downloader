@@ -65,6 +65,13 @@ Requirements:
 - GDAL CLI tools on PATH for chart tiling: gdalinfo, gdal_translate, gdalwarp, and gdaladdo
   (manifest-only refreshes also use gdalinfo to read archive bounds and zoom limits)
 - Standalone terrain builds also use gdalbuildvrt and GDAL's GeoTIFF/ENVI drivers
+- Standalone glide preparation also uses ogrinfo, ogr2ogr, gdal_rasterize, and GDAL's SQLite/GEOS support
+
+Charts and glide share `lib/gdal.ts`: bounded persistent Node workers call the
+installed GDAL library through `koffi`, without Python or a bundled GDAL copy.
+Matching library/tool versions preserve existing glide checkpoints. Discovery
+is automatic; `GDAL_LIBRARY` can select a library explicitly, `GDAL_BACKEND=native`
+requires it, and `GDAL_BACKEND=cli` selects the slower command-line fallback.
 
 Install dependencies and run the checks:
 
@@ -99,6 +106,9 @@ Paths are relative to `dist/` (or the selected `--output` root).
 | npm run build:nav | Downloads current NASR groups and AQ history, or uses explicit local sources | Publishes the complete cycle's `charts/<cycle>/nav/` bundle: map points, airways, preferred routes, SID/STAR sequences, and route history |
 | npm run build:obstacles | Downloads the full FAA Daily DOF CSV ZIP, or uses `--source=FILE` | Publishes `charts/obstacles/manifest.json` and a compressed GeoJSON snapshot, independent of chart cycles |
 | npm run build:terrain | Checks current USGS 3DEP GeoTIFF revisions and downloads changed files, or imports local GeoTIFFs | Publishes paired 2.45-arc-second maximum and interpolated-surface elevation packages plus source provenance at `charts/terrain/`; independent of chart cycles; run `--estimate` for uncompressed geometry ([details](docs/terrain.md)) |
+| npm run build:glide | Automatically acquires CONUS elevation, cover, vegetation and mapped/FAA hazards; optional `--bbox` or `--sources` | Experimental connected landing areas: green ≥2,000 × 200 ft; purple targets 1,500 × 100 ft, down to 600 × 60 ft. See the [strategy and limits](docs/glide.md#current-strategy), [shape simplification](docs/glide.md#fit-and-displayed-area) and [resume caveat](docs/glide.md#source-identity-on-restart). |
+| npm run build:glide-packages -- --input=dist/charts/glide/manifest.json --output=dist/glide-packaging-test | Repackages completed schema-8/9 polygons from any engine version; no source downloads or screening | Shared region archives, exact detail and numeric overview below 5 GB, staged separately for the future client integration; `--verify --output=ROOT` checks the completed release ([commands and format](docs/glide.md#repackage-a-completed-publication)) |
+| npm run preview:glide | Reads completed glide checkpoints while a build runs | Local interactive map at http://127.0.0.1:4177/ with satellite/street backgrounds, tier filters, inspection, and GeoJSON export ([details](docs/glide.md#interactive-preview)) |
 | npm run build:procedures | Downloads d-TPP XML or uses `--source-xml`; indexes any existing TPP PDFs | Publishes `charts/<cycle>/tpp/` with plate URLs and available PDF page targets; does not download the books |
 | npm run build:supplements | Existing regional Chart Supplement PDFs plus cached/downloaded XML or `--source-xml` | Publishes `charts/<cycle>/cs/` airport page indexes; does not download the books |
 | npm run build:chart-packages | Verified sheet MBTiles and their manifests in `mbtiles/<cycle>/` | Publishes delivery archives and offline region indexes in `charts/<cycle>/mbtiles/` |

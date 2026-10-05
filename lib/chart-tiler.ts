@@ -1,9 +1,8 @@
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import { includesCycle, isCycle, type CycleWindow } from './cycle-retention.ts';
 import path from 'node:path';
-import { promisify } from 'node:util';
+import { gdalCommand, withGdal } from './gdal.ts';
 
 import {
     CHART_DEFINITIONS,
@@ -55,7 +54,6 @@ const IFR_CUTLINE_SRS = [
     `+rf=${IFR_PROJECTION.inverseFlattening}`,
     '+units=m', '+no_defs'
 ].join(' ');
-const execFileAsync = promisify(execFile);
 
 export type ChartCutline = {
     srs: string;
@@ -79,25 +77,15 @@ export type ChartManifest = {
     }>;
 };
 
-async function runCommand(
-    command: string,
-    args: string[]
-): Promise<{ stdout: string; stderr: string }> {
-    try {
-        return await execFileAsync(command, args, { maxBuffer: 16 * 1024 * 1024 });
-    } catch (error: any) {
-        const detail = String(error.stderr || error.stdout || error.message || error).trim();
-        throw new Error(`${command} ${args.join(' ')} failed${detail ? `: ${detail}` : ''}`);
-    }
-}
+const CHART_GDAL_TOOLS = ['gdalinfo', 'gdal_translate', 'gdalwarp', 'gdaladdo'];
 
 export async function verifyGdalTools(): Promise<void> {
-    for (const command of ['gdalinfo', 'gdal_translate', 'gdalwarp', 'gdaladdo']) {
-        await runCommand(command, ['--version']);
+    for (const command of CHART_GDAL_TOOLS) {
+        await gdalCommand(command, ['--version']);
     }
-    const formats = await runCommand('gdalinfo', ['--formats']);
+    const formats = await gdalCommand('gdalinfo', ['--formats']);
     for (const format of ['WEBP', 'MBTiles']) {
-        if (!formats.stdout.includes(format)) {
+        if (!formats.includes(format)) {
             throw new Error(`GDAL does not provide the required ${format} driver`);
         }
     }
@@ -323,59 +311,61 @@ export async function tileMbtilesFromTiff(
             console.warn(`rebuilding stale or unverifiable chart cache "${mbtilesPath}"`);
         }
 
-        const workDirectory = await fs.mkdtemp(`${basePath}.work-`);
-        const rgbVrtPath = path.join(workDirectory, 'rgb.vrt');
-        const alphaVrtPath = path.join(workDirectory, 'alpha.vrt');
-        const nextMbtilesPath = path.join(workDirectory, 'next.mbtiles');
-        let sourcePath = tifPath;
-        try {
-            const info = await runCommand('gdalinfo', [sourcePath]);
-            if (info.stdout.includes('ColorInterp=Palette')) {
-                await runCommand('gdal_translate', [
-                    '-expand', 'rgb', '-of', 'VRT', sourcePath, rgbVrtPath
-                ]);
-                sourcePath = rgbVrtPath;
-            }
+        return withGdal(1, async () => {
+            const workDirectory = await fs.mkdtemp(`${basePath}.work-`);
+            const rgbVrtPath = path.join(workDirectory, 'rgb.vrt');
+            const alphaVrtPath = path.join(workDirectory, 'alpha.vrt');
+            const nextMbtilesPath = path.join(workDirectory, 'next.mbtiles');
+            let sourcePath = tifPath;
+            try {
+                const info = await gdalCommand('gdalinfo', [sourcePath]);
+                if (info.includes('ColorInterp=Palette')) {
+                    await gdalCommand('gdal_translate', [
+                        '-expand', 'rgb', '-of', 'VRT', sourcePath, rgbVrtPath
+                    ]);
+                    sourcePath = rgbVrtPath;
+                }
 
-            console.log(`rendering mbtiles for "${tifPath}"`);
-            const warpArguments = [
-                '-r', RESAMPLING,
-                '-t_srs', TARGET_SRS, '-dstalpha', '-of', 'VRT'
-            ];
-            if (cutline) {
-                warpArguments.push(
-                    '-cutline_srs', cutline.srs,
-                    '-cutline', cutline.wkt,
-                    '-crop_to_cutline'
-                );
+                console.log(`rendering mbtiles for "${tifPath}"`);
+                const warpArguments = [
+                    '-r', RESAMPLING,
+                    '-t_srs', TARGET_SRS, '-dstalpha', '-of', 'VRT'
+                ];
+                if (cutline) {
+                    warpArguments.push(
+                        '-cutline_srs', cutline.srs,
+                        '-cutline', cutline.wkt,
+                        '-crop_to_cutline'
+                    );
+                }
+                warpArguments.push(sourcePath, alphaVrtPath);
+                await gdalCommand('gdalwarp', warpArguments);
+                await gdalCommand('gdal_translate', [
+                    '-of', 'MBTILES',
+                    '-co', `NAME=${path.basename(basePath)}`,
+                    '-co', `DESCRIPTION=${path.basename(basePath)}`,
+                    '-co', `TILE_FORMAT=${TILE_FORMAT}`,
+                    '-co', `QUALITY=${WEBP_QUALITY}`,
+                    '-co', `RESAMPLING=${RESAMPLING.toUpperCase()}`,
+                    '-co', 'ZOOM_LEVEL_STRATEGY=UPPER',
+                    alphaVrtPath,
+                    nextMbtilesPath
+                ]);
+                await gdalCommand('gdaladdo', [
+                    '-r', RESAMPLING,
+                    '-oo', `TILE_FORMAT=${TILE_FORMAT}`,
+                    '-oo', `QUALITY=${WEBP_QUALITY}`,
+                    nextMbtilesPath,
+                    ...OVERVIEW_FACTORS
+                ]);
+                await fs.rename(nextMbtilesPath, mbtilesPath);
+                const receipt = await writeChartBuildReceipt(tifPath, mbtilesPath);
+                console.log(`Wrote ${mbtilesPath}`);
+                return receipt;
+            } finally {
+                await fs.rm(workDirectory, { recursive: true, force: true });
             }
-            warpArguments.push(sourcePath, alphaVrtPath);
-            await runCommand('gdalwarp', warpArguments);
-            await runCommand('gdal_translate', [
-                '-of', 'MBTILES',
-                '-co', `NAME=${path.basename(basePath)}`,
-                '-co', `DESCRIPTION=${path.basename(basePath)}`,
-                '-co', `TILE_FORMAT=${TILE_FORMAT}`,
-                '-co', `QUALITY=${WEBP_QUALITY}`,
-                '-co', `RESAMPLING=${RESAMPLING.toUpperCase()}`,
-                '-co', 'ZOOM_LEVEL_STRATEGY=UPPER',
-                alphaVrtPath,
-                nextMbtilesPath
-            ]);
-            await runCommand('gdaladdo', [
-                '-r', RESAMPLING,
-                '-oo', `TILE_FORMAT=${TILE_FORMAT}`,
-                '-oo', `QUALITY=${WEBP_QUALITY}`,
-                nextMbtilesPath,
-                ...OVERVIEW_FACTORS
-            ]);
-            await fs.rename(nextMbtilesPath, mbtilesPath);
-            const receipt = await writeChartBuildReceipt(tifPath, mbtilesPath);
-            console.log(`Wrote ${mbtilesPath}`);
-            return receipt;
-        } finally {
-            await fs.rm(workDirectory, { recursive: true, force: true });
-        }
+        }, CHART_GDAL_TOOLS);
     });
 }
 
@@ -385,25 +375,27 @@ export async function tileCharts(
     concurrency = DEFAULT_TILE_CONCURRENCY,
     window?: CycleWindow
 ): Promise<void> {
-    await verifyGdalTools();
-    await migrateChartSources(chartRoot);
-    const sources = path.join(path.dirname(chartRoot), 'sources');
-    await fs.mkdir(sources, { recursive: true });
-    const tiffs = (await findTiffs(sources)).filter(file => !window ||
-        includesCycle(window, path.relative(sources, file).split(path.sep)[0]));
-    if (tiffs.length === 0) {
-        console.log(`No chart TIFFs found under ${sources}`);
-        await writeChartManifestsWithReceipts(chartRoot, new Map(), undefined, window);
-        return;
-    }
-    console.log(`Rendering ${tiffs.length} chart TIFFs with concurrency ${concurrency}`);
-    const builds = await mapWithConcurrency(tiffs, concurrency, async tifPath => {
-        const receipt = await tileMbtilesFromTiff(tifPath, force);
-        return [
-            path.resolve(chartMbtilesPath(tifPath)),
-            receipt
-        ] as const;
-    });
-    const verifiedReceipts = new Map(builds);
-    await writeChartManifestsWithReceipts(chartRoot, verifiedReceipts, undefined, window);
+    return withGdal(concurrency, async () => {
+        await verifyGdalTools();
+        await migrateChartSources(chartRoot);
+        const sources = path.join(path.dirname(chartRoot), 'sources');
+        await fs.mkdir(sources, { recursive: true });
+        const tiffs = (await findTiffs(sources)).filter(file => !window ||
+            includesCycle(window, path.relative(sources, file).split(path.sep)[0]));
+        if (tiffs.length === 0) {
+            console.log(`No chart TIFFs found under ${sources}`);
+            await writeChartManifestsWithReceipts(chartRoot, new Map(), undefined, window);
+            return;
+        }
+        console.log(`Rendering ${tiffs.length} chart TIFFs with concurrency ${concurrency}`);
+        const builds = await mapWithConcurrency(tiffs, concurrency, async tifPath => {
+            const receipt = await tileMbtilesFromTiff(tifPath, force);
+            return [
+                path.resolve(chartMbtilesPath(tifPath)),
+                receipt
+            ] as const;
+        });
+        const verifiedReceipts = new Map(builds);
+        await writeChartManifestsWithReceipts(chartRoot, verifiedReceipts, undefined, window);
+    }, CHART_GDAL_TOOLS);
 }

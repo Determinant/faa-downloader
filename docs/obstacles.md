@@ -1,7 +1,9 @@
 # Daily obstacles
 
-`build:charts` includes `buildObstacles`; `npm run build:obstacles` runs the same
-stage independently. Both use the full [FAA Daily DOF CSV ZIP](https://aeronav.faa.gov/Obst_Data/DAILY_DOF_CSV.ZIP).
+`build:charts` and `build:glide` include `buildObstacles`;
+`npm run build:obstacles` runs the same stage independently. All three share the
+same download cache and prepared snapshot under their output root, using the full
+[FAA Daily DOF CSV ZIP](https://aeronav.faa.gov/Obst_Data/DAILY_DOF_CSV.ZIP).
 The snapshot includes verified and unverified records, including the FAA's limited
 coverage outside the US. It covers known obstacles affecting aeronautical charting,
 not every physical obstruction. See the [FAA source and format documentation](https://www.faa.gov/air_traffic/flight_info/aeronav/digital_products/dailydof/).
@@ -63,6 +65,8 @@ units, codes, and dates. A malformed record fails the build with its source line
 number. Publication happens only after the complete dataset passes validation;
 download or conversion failures preserve the previous public directory. Concurrent
 obstacle builds sharing an output root are guarded by the existing build-lock helper.
+Dependent builders consume the verified snapshot under that lock; Glide then
+reuses its own cached spatial index and performs landing-area screening separately.
 
 Each run replaces the full snapshot, so removed obstacles disappear without replaying
 daily change files. Upload the compressed artifact **before** `manifest.json`.

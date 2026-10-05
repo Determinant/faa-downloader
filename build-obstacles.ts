@@ -22,7 +22,11 @@ type ObstacleManifest = {
     };
 };
 
-type BuildOptions = { output: string; sourceFile?: string; fetch?: typeof globalThis.fetch };
+type BuildOptions = {
+    output: string; sourceFile?: string; fetch?: typeof globalThis.fetch;
+    /** Consume verified bytes while the lock prevents another build from pruning this snapshot. */
+    onSnapshot?: (manifest: ObstacleManifest, file: string) => Promise<void>;
+};
 
 export async function buildObstacles(options: BuildOptions) {
     const outputRoot = path.resolve(options.output);
@@ -89,6 +93,7 @@ export async function buildObstacles(options: BuildOptions) {
         if (cached && path.basename(cached.dataset.path) === cached.dataset.path &&
             await matchesFile(path.join(published, cached.dataset.path), cached.dataset)) {
             console.log('Daily obstacles are already current');
+            await options.onSnapshot?.(cached, path.join(published, cached.dataset.path));
             return cached;
         }
         if (options.sourceFile) await validate(archive);
@@ -130,6 +135,7 @@ export async function buildObstacles(options: BuildOptions) {
         }
         console.log(`Daily obstacles: ${stats.count} records (${stats.unverifiedCount} unverified), `
             + `${(bytes / 1_000_000).toFixed(1)} MB gzip; source ${source.lastModified ?? 'local ZIP (date unknown)'}`);
+        await options.onSnapshot?.(manifest, destination);
         return manifest;
     } finally {
         try { if (work) await fs.rm(work, { recursive: true, force: true }); }
