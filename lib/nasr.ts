@@ -379,6 +379,7 @@ export function buildNasrProducts(input: NasrInput): NasrProducts {
             trafficPatternAltitudeFt: numberValue(row.TPA),
             chart: present(row.CHART_NAME),
             notamId: present(row.NOTAM_ID),
+            responsibleArtcc: present(row.RESP_ARTCC_ID),
             towerType,
             towered: towerType ? towerType !== 'NON-ATCT' : undefined,
             fuelTypes: present(row.FUEL_TYPES),

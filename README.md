@@ -623,6 +623,14 @@ NASR true alignment is blank, including KSLI. The airport artifact hash and sour
 metadata cover this enrichment. Rebuild with `npm run build:nav` (or the full
 `npm run build:charts` pipeline), then upload the dated `nav/` artifacts before its
 `manifest.json`, preserving earlier immutable files.
+
+Airport `responsibleArtcc` preserves `APT_BASE.csv` `RESP_ARTCC_ID` for regional
+NOTAM lookup, independently of radio assignments. It is the responsible Center,
+not a geometric boundary or a derived FIR/ICAO alias. Missing values stay absent.
+The additive field requires rebuilding and publishing the hashed airport export.
+The navigation builder version invalidates older projection receipts, so a warm
+`build:nav` also includes this field without manually deleting source caches.
+
 Airport radio records come from `FRQ.csv`, with `frequencyMHz`, published `use`,
 `sector`, `hours`, and `remarks`. `frequencies[]` retains only ATIS/D-ATIS,
 AWOS/ASOS, Tower, CTAF, and Ground: older PWAs strictly validate those service

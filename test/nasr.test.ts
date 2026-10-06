@@ -791,3 +791,22 @@ test('NASR cycle build packages navigation, CIFP approaches, magnetic model and 
     assert.deepEqual(noticeTerminal.procedures, procedureData.procedures);
     await assertUnchanged();
 });
+
+test('airport regional association preserves the responsible ARTCC independently of radio assignments', () => {
+    const frequencies = recordCsv(frequencyHeaders, [{ ...frequencyRow, FACILITY_TYPE: 'RCAG',
+        FACILITY: 'TEST RCAG', ARTCC_OR_FSS_ID: 'ZOA', FREQ: '127.95', FREQ_USE: 'TEST RCAG' }]);
+    for (const responsibleArtcc of ['ZLA', 'ZAN', 'ZHN', ' ZLA ', '', ' ', undefined]) {
+        const airport = { EFF_DATE: '2026/09/03', SITE_NO: '00001.', SITE_TYPE_CODE: 'A', ARPT_ID: 'SBA',
+            STATE_CODE: 'CA', COUNTRY_CODE: 'US', LAT_DECIMAL: 34.4278, LONG_DECIMAL: -119.84,
+            ...(responsibleArtcc === undefined ? {} : { RESP_ARTCC_ID: responsibleArtcc }) };
+        const products = buildNasrProducts(preferredRouteInput({
+            airports: recordCsv(Object.keys(airport), [airport]), frequencies
+        }));
+        const properties = products.airports.features[0].properties;
+        assert.equal(properties.responsibleArtcc, responsibleArtcc?.trim() || undefined);
+        assert.equal(Object.hasOwn(properties, 'responsibleArtcc'), Boolean(responsibleArtcc?.trim()));
+        assert.deepEqual(properties.centerFrequencies,
+            [{ type: 'CENTER', frequencyMHz: 127.95, use: 'TEST RCAG', facilityId: 'ZOA' }]);
+        assert.equal(properties.firId, undefined, 'an ARTCC does not establish a FIR alias');
+    }
+});

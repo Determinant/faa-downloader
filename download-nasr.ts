@@ -31,7 +31,7 @@ import { DEFAULT_RETAIN_CYCLES, parseRetainCycles, productCycleWindow } from './
 const NASR_INDEX_URL =
     'https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/';
 // Bump when navigation projection rules or bundled magnetic-model inputs change.
-const NAVIGATION_BUILDER_VERSION = 1;
+const NAVIGATION_BUILDER_VERSION = 2;
 const GROUPS = ['APT', 'FRQ', 'FIX', 'NAV', 'AWY', 'PFR', 'DP', 'STAR'] as const;
 const REQUIRED_FILES: Record<(typeof GROUPS)[number], string[]> = {
     APT: ['APT_BASE.csv', 'APT_RWY.csv', 'APT_RWY_END.csv'],
