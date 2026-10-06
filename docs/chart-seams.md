@@ -61,6 +61,24 @@ others already included parts of the collar.
 all sectional footprint samples, the two documented source separations, and the
 rotated-source transform. The reference image check supplements these fast tests.
 
+## Origin of the clipping defect
+
+The reported Las Vegas and McCall gaps date to the nationwide IFR-low expansion
+in `22e5caf` (September 15, 2026), which introduced the L07/L09 and L11/L13
+community corners and joined them in the FAA Lambert projection. All 37 low-sheet
+corner records remained identical through `24c3e2a`, the last revision before the
+measured-frame correction. IFR-high imported its 12 corner records in `9b8b719`
+(September 22); those also remained unchanged. Earlier limited IFR coverage does
+not establish the history of these newly added sheet joins.
+
+The affected published manifest was generated September 23, 2026, at
+12:10:58.998 UTC (SHA-256
+`aea8f8323fd08bbb2ecef6781f45a63d33c8f81ba4b7b70aa24cfed783fdae7e`).
+The October 1 build/cache refactoring and October 5 native GDAL worker migration
+did not introduce these gaps. The Git dates establish when the defective masks
+entered the code; the manifest establishes the affected published artifact, not
+an exact first-deployment timestamp.
+
 ## September 3, 2026 audit
 
 The October 6 investigation matched all 162 source hashes and all sheet identities
