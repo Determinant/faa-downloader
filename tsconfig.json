@@ -28,6 +28,7 @@
     "build-glide-packages.ts",
     "tools/glide-overview-probe.ts",
     "tools/glide-rebuild-chunks.ts",
+    "tools/check-ifr-neatlines.ts",
     "preview-glide.ts",
     "review-glide.ts",
     "build-chart-supplements.ts",

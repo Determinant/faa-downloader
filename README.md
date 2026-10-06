@@ -48,11 +48,15 @@ The source date and scope are written into the generated FAR interface. Chart do
 FAA chart GeoTIFFs contain the entire printed sheet, including collars, legends, and
 insets that are not part of the accurately georeferenced main chart. The chart builder
 clips every configured VFR and IFR raster to a reviewed neatline before reprojection
-and MBTiles generation. The sectional, TAC, and IFR cutlines are adapted
+and MBTiles generation. The sectional and TAC cutlines are adapted
 from the MIT-licensed [N129BZ/chartmaker](https://github.com/N129BZ/chartmaker)
 project, with local inset corrections for the Miami and Puerto Rico TACs.
+All 49 CONUS IFR low/high frames are measured from the FAA 2026-09-03 GeoTIFFs.
+They retain the printed black border while excluding the surrounding scale rulers;
+insetting the mask inside that thick border creates geographic gaps between sheets.
 IFR corners are joined in the FAA raster's Lambert projection so wide edges
-follow the printed neatline without retaining coordinate rulers; flyway neatlines were
+follow the printed frame. See [chart seam verification](docs/chart-seams.md) for
+source identities, reference checks and the remaining source gaps. Flyway neatlines were
 measured against the FAA 2026-09-03 rasters. A new VFR or IFR raster intentionally
 fails tiling until its cutline is reviewed and added.
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the retained license notice.
@@ -118,6 +122,7 @@ Paths are relative to `dist/` (or the selected `--output` root).
 | npm run build:chart-packages | Verified sheet MBTiles and their manifests in `mbtiles/<cycle>/` | Publishes delivery archives and offline region indexes in `charts/<cycle>/mbtiles/` |
 | npm run build:chart-manifests | Existing sheet MBTiles, receipts, and source TIFFs | Verifies sheets and refreshes `mbtiles/<cycle>/chart-manifest.json`; also migrates legacy sheet and delivery layouts |
 | npm run chart-cutlines | Reviewed chartmaker source and checked-in cutlines | Verifies or regenerates source coordinates during development |
+| npm run check:chart-neatlines -- --sources=DIR | Reviewed September 3, 2026 IFR GeoTIFFs | Checks all 49 current IFR frames against source hashes, pixel coordinates and actual border ink |
 
 `build:nav` owns the navigation data; `build:procedures` owns the plate catalog and
 page indexes. Manifest maintenance can move legacy files and should run on local
@@ -439,9 +444,10 @@ even with asynchronous syncing. ZLayers reads `mbtiles/manifest.json`, with fall
 for older published layouts. If packages do not exist yet, or imagery/region definitions
 changed, follow the manifest command with `npm run build:chart-packages`.
 
-Upgrading from builds made before the Lambert IFR cutline change requires rebuilding
-the affected IFR sheets (L02–L04 in the former default coverage). Their old receipts
-are intentionally invalid: a manifest refresh cannot correct the imagery. Run
+Upgrading from builds made before the measured IFR frame correction requires rebuilding
+all 37 low and 12 high IFR sheets. Their old receipts are intentionally invalid:
+a manifest refresh cannot correct the imagery. The earlier Lambert projection change
+also required rebuilding L02–L04 in the former default coverage. Run
 `npm run build:charts -- --tile=dist/sources/YYYY-MM-DD/charts/ifr-enroute-low-l02.tif`
 for each affected sheet, then rerun `build:chart-manifests` and `build:chart-packages`.
 Alternatively, `npm run build:charts` rebuilds stale sheets as part of the full pipeline.
@@ -533,7 +539,10 @@ only read and cache these static artifacts; the hosting server performs no chart
 rendering. Overview levels extend through factor 128 so high-density clients can retain
 2× chart sampling at the widest supported map view.
 
-The 141 community cutlines are generated from the pinned N129BZ/chartmaker shapefiles. Verify
+The 141 retained community cutlines are generated from the pinned N129BZ/chartmaker
+shapefiles. Current IFR definitions override those older community corners with
+the measured frames in `lib/ifr-neatlines.ts`; regenerating the community module
+does not replace those corrections. Verify
 or refresh them from a clean checkout at the pinned commit. The generated coordinates
 are checked in, so ordinary download and tile builds do not use chartmaker or require
 its checkout:

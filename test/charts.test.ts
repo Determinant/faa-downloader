@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { CHART_DEFINITIONS } from '../lib/chart-definitions.ts';
+import { IFR_NEATLINE_PROVENANCE } from '../lib/ifr-neatlines.ts';
 import { configuredRasterFilenames, discoverCharts } from '../lib/chart-discovery.ts';
 import type { ChartMetadata } from '../lib/chart-metadata.ts';
 import {
@@ -139,8 +140,9 @@ test('IFR cutlines use the FAA raster projection', () => {
         .split(' ')
         .map(Number);
     assert.ok(first);
-    assert.ok(Math.abs(first[0] - -919_698.469335528) < 1e-6);
-    assert.ok(Math.abs(first[1] - 744_513.963466994) < 1e-6);
+    // Independent native coordinate of the reviewed L12 FAA frame corner.
+    assert.ok(Math.abs(first[0] - -921_254.92645204) < 0.001);
+    assert.ok(Math.abs(first[1] - 744_912.31375664) < 0.001);
 });
 
 test('a chart retry removes stale GDAL temporary files before using its cache', async () => {
@@ -317,9 +319,7 @@ test('publishes inspected metadata and verified identities, preserving the manif
             sourceSha256: createHash('sha256').update(sourceBytes).digest('hex'),
             tilerVersion: 1,
             buildConfigurationSha256: receipt.configurationSha256,
-            cutlineProvenance:
-                'N129BZ/chartmaker@1d71db443916b8052dde41d612c3311bac25a5ae' +
-                '+local-lambert-neatline@faa-raster-2026-09-03'
+            cutlineProvenance: IFR_NEATLINE_PROVENANCE
         });
         assert.match(manifest.charts[0].buildConfigurationSha256, /^[a-f0-9]{64}$/);
 

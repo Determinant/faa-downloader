@@ -1,0 +1,1256 @@
+{
+  "effectiveDate": "2026-09-03",
+  "method": "FAA source-verified printed frames; original gap samples and retained source limits",
+  "probes": [
+    {
+      "label": "Recovered gap: low-l12, low-l14, low-l28",
+      "kind": "ifr-low",
+      "coordinate": [
+        -91.801870193,
+        44.538130237
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        253915.553197,
+        617149.698805
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l12, low-l14, low-l28",
+      "kind": "ifr-low",
+      "coordinate": [
+        -92.161536573,
+        44.558061871
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        225300.599001,
+        618413.199911
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l12, low-l14, low-l28",
+      "kind": "ifr-low",
+      "coordinate": [
+        -92.221709725,
+        44.541842651
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        220580.960105,
+        616465.576021
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l12, low-l26, low-l27, low-l28, low-l29",
+      "kind": "ifr-low",
+      "coordinate": [
+        -85.821486113,
+        41.088010531
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        766163.343983,
+        269347.597709
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l12, low-l26, low-l27, low-l28, low-l29",
+      "kind": "ifr-low",
+      "coordinate": [
+        -90.997355556,
+        41.378118707
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        333163.669879,
+        270026.614605
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l12, low-l26, low-l27, low-l28, low-l29",
+      "kind": "ifr-low",
+      "coordinate": [
+        -83.760708962,
+        40.934514655
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        939479.355581,
+        271831.041121
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l10, low-l12, low-l16, low-l26, low-l27",
+      "kind": "ifr-low",
+      "coordinate": [
+        -88.334805915,
+        38.126225938
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        580784.351362,
+        -75162.00539
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l10, low-l12, low-l16, low-l26, low-l27",
+      "kind": "ifr-low",
+      "coordinate": [
+        -86.00013601,
+        37.966445271
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        785385.600893,
+        -75188.969785
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l10, low-l12, low-l16, low-l26, low-l27",
+      "kind": "ifr-low",
+      "coordinate": [
+        -94.314022769,
+        40.723294342
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        57662.120994,
+        190538.280509
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l03, low-l07, low-l08, low-l09",
+      "kind": "ifr-low",
+      "coordinate": [
+        -117.652832644,
+        36.218434287
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -2007250.837563,
+        -55683.885634
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l03, low-l07, low-l08, low-l09",
+      "kind": "ifr-low",
+      "coordinate": [
+        -115.05890828,
+        36.547360581
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1773442.141286,
+        -74300.96452
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l03, low-l07, low-l08, low-l09",
+      "kind": "ifr-low",
+      "coordinate": [
+        -118.002873234,
+        36.161889397
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -2039172.282179,
+        -53942.46916
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l06n, low-l08, low-l15, low-l17",
+      "kind": "ifr-low",
+      "coordinate": [
+        -101.610402786,
+        34.985740908
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -601235.639361,
+        -421562.958688
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l06n, low-l08, low-l15, low-l17",
+      "kind": "ifr-low",
+      "coordinate": [
+        -102.488056694,
+        34.933517319
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -681366.187974,
+        -421128.656567
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l06n, low-l08, low-l15, low-l17",
+      "kind": "ifr-low",
+      "coordinate": [
+        -103.004842353,
+        34.907411505
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -728526.742798,
+        -419997.05688
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l05, low-l07, low-l08",
+      "kind": "ifr-low",
+      "coordinate": [
+        -113.873926181,
+        34.549638146
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1715777.409269,
+        -312868.756163
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l05, low-l07, low-l08",
+      "kind": "ifr-low",
+      "coordinate": [
+        -113.86754197,
+        34.539671939
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1715432.751622,
+        -314068.503655
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l05, low-l07, low-l08",
+      "kind": "ifr-low",
+      "coordinate": [
+        -113.882722256,
+        34.58606294
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1715733.940313,
+        -308758.490132
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l03, low-l09, low-l11",
+      "kind": "ifr-low",
+      "coordinate": [
+        -120.584056822,
+        39.629404517
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -2155845.603197,
+        374988.060051
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l03, low-l09, low-l11",
+      "kind": "ifr-low",
+      "coordinate": [
+        -120.562166966,
+        39.519842177
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -2157408.445487,
+        362846.130016
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l03, low-l09, low-l11",
+      "kind": "ifr-low",
+      "coordinate": [
+        -120.587512289,
+        39.562039062
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -2158196.034666,
+        367924.152062
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l01, low-l11, low-l12, low-l13",
+      "kind": "ifr-low",
+      "coordinate": [
+        -108.449718497,
+        44.299115317
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1068078.446396,
+        665333.80771
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l01, low-l11, low-l12, low-l13",
+      "kind": "ifr-low",
+      "coordinate": [
+        -109.26143424,
+        44.291074436
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1132163.635243,
+        674278.465475
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l01, low-l11, low-l12, low-l13",
+      "kind": "ifr-low",
+      "coordinate": [
+        -108.082818455,
+        44.28978089
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1039294.979533,
+        660054.675913
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l28, low-l29, low-l30, low-l31",
+      "kind": "ifr-low",
+      "coordinate": [
+        -82.911284367,
+        41.873845257
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        996304.371122,
+        383865.973823
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l28, low-l29, low-l30, low-l31",
+      "kind": "ifr-low",
+      "coordinate": [
+        -82.763885556,
+        42.626325212
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        997202.756166,
+        467994.827445
+      ]
+    },
+    {
+      "label": "Recovered gap: low-l28, low-l29, low-l30, low-l31",
+      "kind": "ifr-low",
+      "coordinate": [
+        -82.867199221,
+        42.056921021
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        997220.591751,
+        404419.458734
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l06n.tif / ifr-enroute-low-l06s.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -106.7656361,
+        31.40735165
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1119304.336283,
+        -767676.054646
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l06n.tif / ifr-enroute-low-l15.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -104.862463739,
+        34.742966573
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -898959.36388,
+        -421467.884692
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l06n.tif / ifr-enroute-low-l19.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -101.121454193,
+        31.879256648
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -580011.569473,
+        -768228.658309
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l06s.tif / ifr-enroute-low-l19.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -102.771635286,
+        28.672361134
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -766575.728371,
+        -1112621.943286
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l07.tif / ifr-enroute-low-l09.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -119.673262958,
+        35.922409697
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -2190818.436121,
+        -40624.859477
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l10.tif / ifr-enroute-low-l27.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -94.336416365,
+        38.331282791
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        57708.663372,
+        -73620.056304
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l11.tif / ifr-enroute-low-l13.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -121.326065657,
+        43.960356388
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -2079785.737435,
+        851944.934964
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l15.tif / ifr-enroute-low-l16.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -94.922328,
+        38.30696935
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        6757.112237,
+        -76512.226203
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l16.tif / ifr-enroute-low-l17.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -94.900237918,
+        35.191453538
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        9056.684029,
+        -420683.569368
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l16.tif / ifr-enroute-low-l18.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -92.429658462,
+        35.153088865
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        233431.800095,
+        -421629.811991
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l16.tif / ifr-enroute-low-l25.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -85.7213787,
+        36.986387416
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        820659.239711,
+        -180401.848894
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l16.tif / ifr-enroute-low-l27.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -94.329522269,
+        38.318168308
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        58318.881573,
+        -75063.536447
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l17.tif / ifr-enroute-low-l18.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -92.451034762,
+        35.137037641
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        231540.75645,
+        -423458.952678
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l17.tif / ifr-enroute-low-l19.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -101.128815238,
+        31.879859504
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -580703.461113,
+        -768114.807229
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l17.tif / ifr-enroute-low-l22.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -93.514165623,
+        32.049692126
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        140574.366235,
+        -767685.497803
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l18.tif / ifr-enroute-low-l22.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -92.525148296,
+        32.03145621
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        234181.667319,
+        -767671.57207
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l19.tif / ifr-enroute-low-l20.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -93.600274726,
+        28.943424943
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        137761.230273,
+        -1114018.060762
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l19.tif / ifr-enroute-low-l22.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -93.589412895,
+        28.956436393
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        138807.570274,
+        -1112545.821666
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l20.tif / ifr-enroute-low-l22.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -93.58817915,
+        28.9434627
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        138951.518182,
+        -1113995.420876
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l23.tif / ifr-enroute-low-l24.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -83.499610574,
+        27.824774167
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        1144720.149152,
+        -1167919.923248
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l25.tif / ifr-enroute-low-l26.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -85.711704008,
+        36.996607237
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        821396.783101,
+        -179191.603521
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l27.tif / ifr-enroute-low-l28.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -92.79087606,
+        41.429146725
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        183782.632028,
+        270563.079224
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l27.tif / ifr-enroute-low-l29.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -83.482217421,
+        40.881553274
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        963374.642243,
+        268940.253361
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-low-l28.tif / ifr-enroute-low-l30.tif",
+      "kind": "ifr-low",
+      "coordinate": [
+        -82.639882567,
+        43.374573847
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        996010.053587,
+        551465.062851
+      ]
+    },
+    {
+      "label": "Adjacent sheets: ifr-enroute-high-h01.tif / ifr-enroute-high-h03.tif",
+      "kind": "ifr-high",
+      "coordinate": [
+        -104.465090001,
+        43.77078744
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -759129.474476,
+        567112.351808
+      ]
+    },
+    {
+      "label": "Reported north of Las Vegas",
+      "kind": "ifr-low",
+      "coordinate": [
+        -115.2,
+        36.518
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1786425.961938,
+        -74701.671192
+      ]
+    },
+    {
+      "label": "Reported south of McCall",
+      "kind": "ifr-low",
+      "coordinate": [
+        -116.1,
+        44.255
+      ],
+      "covered": true,
+      "projectedCoordinate": [
+        -1667797.282091,
+        775750.586835
+      ]
+    },
+    {
+      "label": "FAA frame separation L29/L30",
+      "kind": "ifr-low",
+      "coordinate": [
+        -79.538934875,
+        40.768267579
+      ],
+      "covered": false,
+      "projectedCoordinate": [
+        1292541.779488,
+        305510.423899
+      ]
+    },
+    {
+      "label": "FAA frame separation L07/L08/L09",
+      "kind": "ifr-low",
+      "coordinate": [
+        -114.170359215,
+        36.601926058
+      ],
+      "covered": false,
+      "projectedCoordinate": [
+        -1694818.318454,
+        -85369.128816
+      ]
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-albuquerque.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -105.440826222,
+        34.109313208
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-anchorage.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -145.661595124,
+        62.091951911
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-atlanta.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -84.435052112,
+        34.1041112
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-bethel.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -166.905686843,
+        61.87180798
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-billings.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -104.727592667,
+        46.721703388
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-brownsville.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -99.828471051,
+        26.120122125
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-cape_lisburne.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -163.630493329,
+        70.082195012
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-charlotte.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -78.480085221,
+        34.130081488
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-cheyenne.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -104.891340894,
+        42.298404655
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-chicago.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -88.896167796,
+        42.1365082
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-cincinnati.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -81.409414516,
+        38.144181453
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-cold_bay.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -159.119354478,
+        55.044921703
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-dallas-ft_worth.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -98.433875816,
+        34.137305328
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-dawson.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -138.174176541,
+        66.149996499
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-denver.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -107.409199569,
+        37.857940201
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-detroit.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -80.89175652,
+        42.137786913
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-dutch_harbor.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -168.169949035,
+        54.123498472
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-el_paso.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -105.755953048,
+        30.136438957
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-fairbanks.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -151.166442098,
+        66.150282722
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-great_falls.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -112.721437174,
+        46.751071231
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-green_bay.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -88.748474972,
+        46.200304387
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-halifax.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -64.897143583,
+        45.949885852
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-hawaiian_islands.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -157.505893071,
+        20.997301795
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-honolulu_inset.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -157.922533756,
+        21.188212896
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-houston.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -93.754392318,
+        30.139727541
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-jacksonville.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -81.752335537,
+        30.127091078
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-juneau.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -135.530534025,
+        58.132054794
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-kansas_city.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -93.40804508,
+        38.136478463
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-ketchikan.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -134.247798222,
+        54.127046158
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-klamath_falls.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -120.891218393,
+        42.307060729
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-kodiak.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -156.508535788,
+        58.095949468
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-lake_huron.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -80.746218123,
+        46.143536715
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-las_vegas.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -114.395110207,
+        37.822699997
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-los_angeles.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -118.328881,
+        34.066156877
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-mariana_islands_inset.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        145.53191159,
+        14.275389164
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-mcgrath.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -156.157027915,
+        62.095480103
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-memphis.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -91.433443919,
+        34.146711281
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-miami.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -79.72133521,
+        26.254644731
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-montreal.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -72.746596519,
+        46.119962587
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-new_orleans.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -87.755758712,
+        30.133491596
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-new_york.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -72.896057819,
+        42.151155441
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-nome.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -164.382519356,
+        66.152709113
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-omaha.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -96.888752543,
+        42.305237424
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-phoenix.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -112.420290125,
+        33.503077435
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-point_barrow.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -148.527804567,
+        70.163194419
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-salt_lake_city.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -112.887849908,
+        42.302479613
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-samoan_islands_inset.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -171.494635721,
+        -13.941926458
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-san_antonio.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -99.783899518,
+        30.131751906
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-san_francisco.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -121.384459868,
+        38.127919582
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-seattle.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -120.72648478,
+        46.755087166
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-seward.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -146.339501977,
+        60.350935661
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-st_louis.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -87.421970769,
+        38.15467466
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-twin_cities.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -96.72606783,
+        46.757934074
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-washington.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -75.382013591,
+        38.14134863
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-western_aleutian_islands-east-eastern_hemisphere.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        178.999472686,
+        52.0952073
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-western_aleutian_islands-east-western_hemisphere.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -176.236103845,
+        52.097766319
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-western_aleutian_islands-west.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        173.893327575,
+        52.105026275
+      ],
+      "covered": true
+    },
+    {
+      "label": "Sectional footprint: vfr-sectional-wichita.tif",
+      "kind": "vfr-sectional",
+      "coordinate": [
+        -100.368359573,
+        38.138783831
+      ],
+      "covered": true
+    }
+  ]
+}

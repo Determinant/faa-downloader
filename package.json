@@ -27,6 +27,7 @@
     "build:supplements": "node --import=tsx build-chart-supplements.ts --output=dist",
     "clean:generated": "node --import=tsx clean-generated.ts --output=dist",
     "chart-cutlines": "node --import=tsx generate-chart-cutlines.ts",
+    "check:chart-neatlines": "node --import=tsx tools/check-ifr-neatlines.ts",
     "check": "tsc --noEmit",
     "test": "node --import=tsx --test test/*.test.ts",
     "test:rollover": "node --import=tsx --test test/cycle-rollover.test.ts"

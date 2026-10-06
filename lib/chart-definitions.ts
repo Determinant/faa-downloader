@@ -3,10 +3,9 @@ import {
     CHARTMAKER_CUTLINES,
     type LongitudeLatitude
 } from './chartmaker-cutlines.ts';
+import { IFR_NEATLINES, IFR_NEATLINE_PROVENANCE } from './ifr-neatlines.ts';
 
 const CHARTMAKER_PROVENANCE = `N129BZ/chartmaker@${CHARTMAKER_COMMIT}` as const;
-const IFR_PROVENANCE =
-    `${CHARTMAKER_PROVENANCE}+local-lambert-neatline@faa-raster-2026-09-03` as const;
 const MEASURED_VFR_PROVENANCE = 'local-measurement@faa-raster-2026-09-03';
 
 export type { LongitudeLatitude } from './chartmaker-cutlines.ts';
@@ -24,7 +23,7 @@ export type ChartPresentation = {
 export type ChartDefinition = ChartPresentation & {
     coordinates: readonly LongitudeLatitude[];
     provenance: typeof CHARTMAKER_PROVENANCE
-        | typeof IFR_PROVENANCE
+        | typeof IFR_NEATLINE_PROVENANCE
         | typeof MEASURED_VFR_PROVENANCE;
 };
 
@@ -106,14 +105,17 @@ function presentationForFilename(filename: string): ChartPresentation {
 const chartmakerDefinitions: Record<string, ChartDefinition> = Object.fromEntries(
     Object.entries(CHARTMAKER_CUTLINES).map(([filename, coordinates]) => {
         const presentation = presentationForFilename(filename);
+        const ifr = isIfrChartKind(presentation.kind);
+        const measured = IFR_NEATLINES[filename];
+        if (ifr && !measured) throw new Error(`Missing reviewed IFR neatline: ${filename}`);
         return [
             filename,
             defineChart(
                 presentation.title,
                 presentation.kind,
-                coordinates,
-                isIfrChartKind(presentation.kind)
-                    ? IFR_PROVENANCE
+                ifr ? measured.coordinates : coordinates,
+                ifr
+                    ? IFR_NEATLINE_PROVENANCE
                     : CHARTMAKER_PROVENANCE
             )
         ];
