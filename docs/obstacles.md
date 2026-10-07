@@ -69,9 +69,38 @@ Dependent builders consume the verified snapshot under that lock; Glide then
 reuses its own cached spatial index and performs landing-area screening separately.
 
 Each run replaces the full snapshot, so removed obstacles disappear without replaying
-daily change files. Upload the compressed artifact **before** `manifest.json`.
+daily change files. Upload both immutable artifacts **before** `manifest.json`.
 The local builder removes older snapshots after switching the manifest.
 The existing chart publisher's data-then-manifest upload covers this directory.
 Consumers should resolve `dataset.path` from the manifest, decompress the gzip bytes,
 and use `source.lastModified` for source freshness. A successful build does not imply
 that FAA has published a newer source that day.
+
+## Filtered numeric index for ZLayer
+
+Every build also publishes `index` in the manifest: `format: "zlayer-obstructions"`,
+`version: 1`, `path: "obstacles-index-<sha256>.bin"`, SHA-256, byte length and retained
+count. `index.source` repeats `dataset.sha256`, `dataset.count`, and the exact
+`source.lastModified` if present. A local ZIP has no invented date. The full GeoJSON
+continues to serve Glide and other consumers unchanged.
+
+The converter validates all CSV rows and duplicate IDs before filtering for the
+index, including rows below 500 feet AGL. Both files are written during one source
+traversal, with a bounded numeric output buffer. Invalid or duplicate dropped rows
+still fail publication. Both immutable files must exist before the manifest switches;
+the build receipt verifies both files before reusing a cached publication.
+
+Index v1 uses an 8-byte little-endian header (UInt32 version 1 and UInt32 count),
+then 34 bytes per retained record: Float64 base-36 OAS ID with its hyphen removed,
+Float64 longitude, Float64 latitude, Int32 height AGL, Int32 elevation MSL,
+UInt8 symbol ordinal and UInt8 verified (0/1). Retain every record at least 500 feet
+AGL, without coordinate quantization. Preserve source order; an all-low source
+produces a valid zero-count 8-byte artifact.
+
+The symbol ordinal is `shape * 4 + group * 2 + strobe`. Shape 0/1/2 means low/tall/wind:
+tall starts at 1,000 feet; case-insensitive `WINDMILL`/`WIND TURBINE` prefixes take
+precedence. Group is quantity > 1; strobe is lighting H/S. Field, floor or symbol
+changes require a new format version coordinated with ZLayer. Publication is not
+truncated to a particular consumer's memory allowance; each client must check its
+allocation policy before accepting a large artifact. ZLayer currently supports
+8 MiB / 246,723 retained records and rejects larger indices explicitly.

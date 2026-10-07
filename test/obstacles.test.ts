@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { gunzipSync } from 'node:zlib';
 import { buildObstacles, DAILY_DOF_URL } from '../build-obstacles.ts';
 import { sha256File } from '../lib/fs-utils.ts';
-import { writeObstacleGeoJson } from '../lib/obstacles.ts';
+import { writeObstacleArtifacts, writeObstacleGeoJson } from '../lib/obstacles.ts';
 
 const execFileAsync = promisify(execFile);
 const columns = 'OAS,VERIFIED STATUS,COUNTRY,STATE,CITY,LATDEC,LONDEC,DMSLAT,DMSLON,TYPE,QUANTITY,AGL,AMSL,LIGHTING,ACCURACY,MARKING,FAA STUDY,ACTION,JDATE'.split(',');
@@ -144,7 +144,11 @@ test('local ZIP builds publish a complete manifest with matching hashes and no i
     assert.equal(manifest.dataset.bytes, (await fs.stat(file)).size);
     assert.equal(manifest.dataset.uncompressedBytes, gunzipSync(await fs.readFile(file)).length);
     assert.equal(manifest.dataset.count, 1);
-    assert.deepEqual(await fs.readdir(published), ['manifest.json', manifest.dataset.path]);
+    assert.deepEqual((await fs.readdir(published)).sort(), ['manifest.json', manifest.dataset.path, manifest.index.path].sort());
+    assert.equal(await sha256File(path.join(published, manifest.index.path)), manifest.index.sha256);
+    assert.equal(manifest.index.bytes, 8);
+    assert.equal(manifest.index.count, 0);
+    assert.deepEqual(manifest.index.source, { sha256: manifest.dataset.sha256, count: manifest.dataset.count });
     assert.deepEqual(await fs.readdir(path.join(options.output, 'charts')), ['obstacles']);
     assert.equal((await fs.stat(published)).mode & 0o777, 0o755);
 });
@@ -327,4 +331,32 @@ test('online and local builds cannot replace an active builder’s snapshot or c
     assert.equal(data.features[0].id, original.OAS);
     await assert.rejects(fs.access(path.join(options.output, 'obstacles.build.lock')), { code: 'ENOENT' });
     assert.deepEqual(await fs.readdir(path.join(options.output, 'charts')), ['obstacles']);
+});
+
+test('filtered numeric artifacts preserve exact fields across flushes and validate dropped records', async t => {
+    const options = await setup(t), numeric = path.join(options.root, 'index.bin');
+    const rows = Array.from({ length: 2100 }, (_, i) => record({ OAS: `06-${String(i).padStart(6, '0')}`,
+        AGL: i === 0 ? '499' : i % 2 ? '500' : '1000', TYPE: i === 2099 ? 'WIND TURBINE' : 'TOWER',
+        LATDEC: '36.123456789', QUANTITY: '2', LIGHTING: 'H', 'VERIFIED STATUS': 'U' }));
+    await fs.writeFile(options.csvFile, csv(...rows), 'latin1');
+    const result = await writeObstacleArtifacts(options.csvFile, options.destination, numeric);
+    const bytes = await fs.readFile(numeric);
+    assert.equal(result.dataset.count, 2100); assert.equal(result.index.count, 2099);
+    assert.equal(bytes.length, 8 + 34 * 2099);
+    assert.equal(bytes.readUInt32LE(0), 1); assert.equal(bytes.readUInt32LE(4), 2099);
+    for (const i of [1, 2, 2048, 2049, 2099]) {
+        const offset = 8 + 34 * (i - 1);
+        assert.equal(bytes.readDoubleLE(offset), parseInt(`06${String(i).padStart(6, '0')}`, 36));
+        assert.equal(bytes.readDoubleLE(offset + 8), -116.75);
+        assert.equal(bytes.readDoubleLE(offset + 16), 36.123456789);
+        assert.equal(bytes.readInt32LE(offset + 24), i % 2 ? 500 : 1000);
+        assert.equal(bytes.readInt32LE(offset + 28), -166);
+        assert.equal(bytes[offset + 32], i === 2099 ? 11 : i % 2 ? 3 : 7);
+        assert.equal(bytes[offset + 33], 0);
+    }
+    for (const rows of [[record({ AGL: '499' }), record({ AGL: '500' })],
+        [record({ AGL: '499' }), record({ AGL: '499' })], [record({ AGL: '499', LATDEC: '999' })]]) {
+        await fs.writeFile(options.csvFile, csv(...rows), 'latin1');
+        await assert.rejects(writeObstacleArtifacts(options.csvFile, options.destination, numeric), /Duplicate OAS|Invalid LATDEC/);
+    }
 });

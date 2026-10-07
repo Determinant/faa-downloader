@@ -2,6 +2,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
+import { createObstacleIndexWriter } from './obstacle-index.ts';
 import { parseCsvRows, type CsvRecord } from './csv.ts';
 
 const REQUIRED_COLUMNS = [
@@ -65,6 +66,8 @@ function obstacleFeature(row: CsvRecord) {
     };
 }
 
+export type ObstacleFeature = ReturnType<typeof obstacleFeature>;
+
 async function* sourceLines(file: string) {
     // FAA's CSV contains Windows-1252 text (including smart punctuation), one
     // obstacle per physical line. Decode without loading the national file.
@@ -114,12 +117,13 @@ async function* readObstacles(file: string) {
     if (!ids.size) throw new Error('DOF.CSV contains no obstacles');
 }
 
-export async function writeObstacleGeoJson(sourceFile: string, destination: string) {
+export async function writeObstacleGeoJson(sourceFile: string, destination: string, onFeature?: (feature: ObstacleFeature) => Promise<void>) {
     const stats = { count: 0, verifiedCount: 0, unverifiedCount: 0,
         bbox: [Infinity, Infinity, -Infinity, -Infinity], uncompressedBytes: 0 };
     async function* jsonChunks() {
         let buffer = '{"type":"FeatureCollection","features":[';
         for await (const feature of readObstacles(sourceFile)) {
+            await onFeature?.(feature);
             buffer += `${stats.count ? ',' : ''}${JSON.stringify(feature)}`;
             stats.count++;
             if (feature.properties.verified) stats.verifiedCount++;
@@ -141,4 +145,15 @@ export async function writeObstacleGeoJson(sourceFile: string, destination: stri
     }
     await pipeline(Readable.from(jsonChunks()), createGzip({ level: 9 }), createWriteStream(destination));
     return stats;
+}
+
+/** Both artifacts derive from the same fully validated stream. Partial files stay
+ * in staging and cannot replace the published manifest on failure. */
+export async function writeObstacleArtifacts(sourceFile: string, geoJson: string, numeric: string) {
+    const writer = await createObstacleIndexWriter(numeric);
+    try {
+        const dataset = await writeObstacleGeoJson(sourceFile, geoJson, feature => writer.add(feature));
+        const index = await writer.finish();
+        return { dataset, index };
+    } finally { await writer.close(); }
 }

@@ -9,14 +9,16 @@ import { sha256File } from './lib/fs-utils.ts';
 import { buildFingerprint, matchesFile, readCachedJson, writeCachedJson } from './lib/build-cache.ts';
 import { InvalidDownloadError } from './lib/download-validation.ts';
 import { downloadFile } from './lib/http-download.ts';
-import { writeObstacleGeoJson } from './lib/obstacles.ts';
+import { writeObstacleArtifacts, writeObstacleGeoJson } from './lib/obstacles.ts';
 import { extractZipEntry, listZipEntries, validateZipArchive } from './lib/zip.ts';
 
 export const DAILY_DOF_URL = 'https://aeronav.faa.gov/Obst_Data/DAILY_DOF_CSV.ZIP';
 const USER_AGENT = 'faa-regs-obstacle-builder/1.0';
-const OBSTACLE_BUILDER_VERSION = 1;
+const OBSTACLE_BUILDER_VERSION = 2;
 type ObstacleManifest = {
     schemaVersion: number; generatedAt: string; source: Record<string, string>; horizontalDatum: string;
+    index: { path: string; format: 'zlayer-obstructions'; version: 1; sha256: string; bytes: number; count: number;
+        source: { sha256: string; count: number; lastModified?: string } };
     dataset: Awaited<ReturnType<typeof writeObstacleGeoJson>> & {
         path: string; format: string; compression: string; sha256: string; bytes: number
     };
@@ -91,7 +93,8 @@ export async function buildObstacles(options: BuildOptions) {
         const inputSha256 = buildFingerprint({ builder: OBSTACLE_BUILDER_VERSION, source });
         const cached = await readCachedJson<ObstacleManifest>(manifestFile, receipt, inputSha256);
         if (cached && path.basename(cached.dataset.path) === cached.dataset.path &&
-            await matchesFile(path.join(published, cached.dataset.path), cached.dataset)) {
+            await matchesFile(path.join(published, cached.dataset.path), cached.dataset) && cached.index &&
+            path.basename(cached.index.path) === cached.index.path && await matchesFile(path.join(published, cached.index.path), cached.index)) {
             console.log('Daily obstacles are already current');
             await options.onSnapshot?.(cached, path.join(published, cached.dataset.path));
             return cached;
@@ -99,7 +102,11 @@ export async function buildObstacles(options: BuildOptions) {
         if (options.sourceFile) await validate(archive);
         await extractZipEntry(archive, 'DOF.CSV', csv);
         const compressed = path.join(staged, 'obstacles.geojson.gz');
-        const stats = await writeObstacleGeoJson(csv, compressed);
+        const numeric = path.join(staged, 'index.bin');
+        const { dataset: stats, index: indexStats } = await writeObstacleArtifacts(csv, compressed, numeric);
+        const indexSha256 = await sha256File(numeric);
+        const indexFilename = `obstacles-index-${indexSha256}.bin`;
+        await fs.rename(numeric, path.join(staged, indexFilename));
         const sha256 = await sha256File(compressed);
         const filename = `obstacles-${sha256}.geojson.gz`;
         const bytes = (await fs.stat(compressed)).size;
@@ -107,21 +114,25 @@ export async function buildObstacles(options: BuildOptions) {
         const manifest: ObstacleManifest = {
             schemaVersion: 1, generatedAt: new Date().toISOString(), source,
             horizontalDatum: 'WGS84',
+            index: { path: indexFilename, format: 'zlayer-obstructions', version: 1, sha256: indexSha256, ...indexStats,
+                source: { sha256, count: stats.count, ...(source.lastModified ? { lastModified: source.lastModified } : {}) } },
             dataset: { path: filename, format: 'geojson', compression: 'gzip', sha256, bytes, ...stats }
         };
         await fs.mkdir(published, { recursive: true, mode: 0o755 });
         const destination = path.join(published, filename);
-        try {
-            await fs.link(path.join(staged, filename), destination);
-        } catch (error: any) {
-            if (error.code !== 'EEXIST') throw error;
-            if (await sha256File(destination) !== sha256) {
-                throw new Error(`Published obstacle snapshot is corrupt: ${filename}`);
+        for (const [name, digest] of [[filename, sha256], [indexFilename, indexSha256]]) {
+            try {
+                await fs.link(path.join(staged, name), path.join(published, name));
+            } catch (error: any) {
+                if (error.code !== 'EEXIST') throw error;
+                if (await sha256File(path.join(published, name)) !== digest) {
+                    throw new Error(`Published obstacle snapshot is corrupt: ${name}`);
+                }
             }
         }
         await writeCachedJson(manifestFile, receipt, inputSha256, manifest);
         for (const name of await fs.readdir(published)) {
-            if (name !== filename && /^obstacles-[a-f0-9]{64}\.geojson\.gz$/.test(name)) {
+            if (name !== filename && name !== indexFilename && /^obstacles-(?:[a-f0-9]{64}\.geojson\.gz|index-[a-f0-9]{64}\.bin)$/.test(name)) {
                 await fs.rm(path.join(published, name));
             }
         }
@@ -155,7 +166,7 @@ Builds the FAA's full daily obstacle snapshot, independent of the chart cycle.
   --source=FILE  Local DAILY_DOF_CSV.ZIP; no network requests
   --help, -h     Show this help
 
-Publishes DIR/charts/obstacles/manifest.json and compressed GeoJSON.
+Publishes DIR/charts/obstacles/manifest.json, compressed GeoJSON and a filtered numeric index.
 Online builds check source freshness and cache ZIPs under DIR/obstacles/.`);
             return;
         }
